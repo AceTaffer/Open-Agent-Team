@@ -416,6 +416,12 @@ body.theme-light .team-resume { background: #fdf3df; }
 .team-input { order: 0; }
 body.team-input-bottom .team-input { order: 20; border-top: 1px solid var(--border); border-bottom: none; }
 .role-chat .rc-ai { white-space: pre-wrap; word-break: break-word; font-size: 13px; }
+/* ★ 用户自己的消息气泡（颜色可在设置里调整，默认蓝色） */
+.role-chat .rc-user {
+  background: var(--user-bubble, #3b82f6); color: #fff;
+  padding: 8px 12px; border-radius: 12px 12px 3px 12px; margin: 4px 0 8px auto;
+  max-width: 86%; width: fit-content; white-space: pre-wrap; word-break: break-word; font-size: 13px;
+}
 
 /* 界面间距预设（设置页） */
 body[data-spacing="compact"] .panel { padding: 14px; }

@@ -46,6 +46,7 @@ const I18N = {
  p5e: ' 对话历史自动恢复（重开程序回到上次会话并显示全部记录）',
  template: '厂商模板', displayName: '显示名称', apiKey: 'API Key（留空 = 不修改）', capabilities: '能力标签（逗号分隔）', note: '备注', defaultPrice: '默认单价（¥/百万token，可选）',
  modelList: '模型清单', fetchModels: ' 从接口拉取模型', allChat: '全选对话类', all: '全选', none: '清空', testConn: '测试连通性', cancel: '取消', save: '保存',
+ testHint: '测试使用「已保存」的配置：修改后请先保存，再测试连通性', testNeedSave: '请先点击「保存」保存配置，然后再点「测试连通性」',
  create: '创建', newSession: '新建会话', sessionWorkspace: '工作区（默认当前工作区）', sessionTitle: '会话名称（可空）', noSessions: '（暂无会话）',
  roleName: '角色名称', roleDesc: '角色描述（给队长看的分工说明）', rolePromptPh: '自定义系统提示词（留空用内置）', enabled: '启用', noSkills: '（暂无技能）', budget: '预算¥',
  rolePerm: '该角色的工具权限（团队任务生效）', permFollow: '跟随会话',
@@ -55,7 +56,7 @@ const I18N = {
  notConfigured: '未配置', noKey: '未配置Key', models: '模型', balance: '余额', failure: '失败', none2: '无', savedOk: '已保存', importDone: '导入完成', skillImportDone: '技能导入完成',
  taskBudget: '任务总预算 ¥', concurrentHint: '（支持同时运行多个任务）', running: '运行中', done: '已完成', stopped: '已停止',
  chatTools: '工具', chatToolsTip: '允许 AI 直接读写工作区文件、执行命令（关闭后只聊天）', thinking: '思考中…', thoughtDone: '已思考', clearPanel: '清空面板', collapse: '折叠', expand: '展开',
- tabSettings: '设置', settingsTitle: '设置', appearance: '外观', theme: '主题', themeDark: '深色', themeLight: '浅色', accentColor: '强调色', fontSize: '字体大小',
+ tabSettings: '设置', settingsTitle: '设置', appearance: '外观', theme: '主题', themeDark: '深色', themeLight: '浅色', accentColor: '强调色', userBubbleColor: '我的气泡颜色', fontSize: '字体大小',
  agentPolicy: 'Agent 工作方式 / 权限', defaultPermission: '新会话默认权限',
  permLabel: '权限：', permView: '查看', permModify: '修改', permLimited: '受限', permFullOpt: '完全',
  permDesc: '查看=只读；修改=工作区内读写；受限=工作区外可读、区内可写；完全=允许敏感操作并减少确认步骤。',
@@ -135,6 +136,7 @@ const I18N = {
  p5e: ' Chat history auto-restore (reopen app → last session with full transcript)',
  template: 'Template', displayName: 'Display name', apiKey: 'API Key (blank = keep)', capabilities: 'Capabilities (comma separated)', note: 'Note', defaultPrice: 'Default price (¥/M tokens, optional)',
  modelList: 'Models', fetchModels: ' Fetch models', allChat: 'Select chat models', all: 'Select all', none: 'Clear', testConn: 'Test', cancel: 'Cancel', save: 'Save',
+ testHint: 'Testing uses the SAVED config: save your changes first, then test', testNeedSave: 'Click "Save" first, then "Test connectivity"',
  create: 'Create', newSession: 'New Session', sessionWorkspace: 'Workspace (default = current)', sessionTitle: 'Session title (optional)', noSessions: '(no sessions)',
  roleName: 'Role name', roleDesc: 'Role description', rolePromptPh: 'Custom system prompt (blank = built-in)', enabled: 'Enabled', noSkills: '(no skills)', budget: 'Budget ¥',
  rolePerm: 'Tool permission for this role (team tasks)', permFollow: 'Follow session',
@@ -144,7 +146,7 @@ const I18N = {
  notConfigured: 'not set', noKey: 'no key', models: 'models', balance: 'Balance', failure: 'failed', none2: 'none', savedOk: 'Saved', importDone: 'Imported', skillImportDone: 'Skills imported',
  taskBudget: 'Task budget ¥', concurrentHint: '(multiple tasks can run at once)', running: 'running', done: 'done', stopped: 'stopped',
  chatTools: 'Tools', chatToolsTip: 'Let the AI read/write workspace files and run commands (off = plain chat)', thinking: 'Thinking…', thoughtDone: 'Thought', clearPanel: 'Clear panel', collapse: 'Collapse', expand: 'Expand',
- tabSettings: 'Settings', settingsTitle: 'Settings', appearance: 'Appearance', theme: 'Theme', themeDark: 'Dark', themeLight: 'Light', accentColor: 'Accent color', fontSize: 'Font size',
+ tabSettings: 'Settings', settingsTitle: 'Settings', appearance: 'Appearance', theme: 'Theme', themeDark: 'Dark', themeLight: 'Light', accentColor: 'Accent color', userBubbleColor: 'My bubble color', fontSize: 'Font size',
  agentPolicy: 'Agent Policy / Permissions', defaultPermission: 'Default permission (new sessions)',
  permLabel: 'Permission:', permView: 'View', permModify: 'Modify', permLimited: 'Limited', permFullOpt: 'Full',
  permDesc: 'View=read only; Modify=read/write inside workspace; Limited=read outside + write inside; Full=sensitive ops allowed with fewer confirmations.',
@@ -248,7 +250,7 @@ const TEAM_PRESETS = {
 /* 版本迭代记录（设置页展示） */
 const APP_VERSION = '1.0.1'
 const CHANGELOG = [
-  ['P8.1', '2026-10', ['修复团队任务三个问题：① 队长汇总阶段现可真实写文件（报告/文档直接落盘并核对）', '② 角色间协作 ask_role 支持中文角色名匹配（此前「程序/测试」等名称会报未找到角色），并新增「协作询问/协作回复」过程卡片', '③ 团队任务支持每角色独立工具权限（团队配置页可为单个角色设置，覆盖会话默认权限）', '单角色对话（单独与某个 AI 聊天）现支持工具调用：可直接让某角色用 ask_role 联系队友、读写工作区等，过程卡片实时可见', '上游接口 30 秒无数据自动中断并给出明确提示（避免接口繁忙时无限等待）']],
+  ['P8.1', '2026-10', ['修复团队任务三个问题：① 队长汇总阶段现可真实写文件（报告/文档直接落盘并核对）', '② 角色间协作 ask_role 支持中文角色名匹配（此前「程序/测试」等名称会报未找到角色），并新增「协作询问/协作回复」过程卡片', '③ 团队任务支持每角色独立工具权限（团队配置页可为单个角色设置，覆盖会话默认权限）', '单角色对话（单独与某个 AI 聊天）现支持工具调用：可直接让某角色用 ask_role 联系队友、读写工作区等，过程卡片实时可见', '角色对话记忆：被询问的角色会保存队友的问询记录，之后单独对话时能回忆并同步双方视图；协作气泡使用各自角色颜色', '单独对话的发言气泡：用户消息独立显示不再被 AI 回复覆盖，颜色可在设置中调整', '上游接口 30 秒无数据自动中断并给出明确提示（避免接口繁忙时无限等待）', '新建团队会话不再显示消息条数后缀（避免误认为会话序号）', '更新源仓库默认填入 AceTaffer/Open-Agent-Team（分享包/新安装即自带）', 'API 弹窗提示：测试连通性使用「已保存」的配置，需先保存再测试']],
   ['P8', '2026-10', ['正式版 1.0.0', '凭据保险箱中的 API 可被 AI 直接调用（对话与团队任务新增 vault_call 工具，密钥自动携带；支持自定义认证头与 {{key}}/{{参数}} 占位）', '字体大小范围扩展为 10–35px，默认 13px']],
   ['P7.4', '2026-10', ['厂商模板扩充：OpenAI(GPT) / Anthropic(Claude) / 智谱GLM / MiniMax / xAI(Grok) / Gemini + 自定义', '作者声明更新（作者 Acct · AI 协作 deepseek-v4.1-flash · 邮箱 577940959@qq.com）', 'GitHub 仓库已建立并接入热更新（AceTaffer/Open-Agent-Team）']],
   ['P7.3', '2026-10', ['支持把图片/文档直接拖入对话与团队任务（自动存入工作区 uploads/，图片可作为对话附件）', '设置页新增作者声明（作者 Acct · AI 开发协作 · 联系邮箱）', '新增宣传片工程（web/promo：ASCII 终端风格网页动画，可复制再生成视频）', '内置 ffmpeg 视频工具链（tools/ffmpeg.exe，用于动画→MP4 导出）']],
@@ -330,6 +332,12 @@ function steerSend(taskId, agent) {
  if (!msg || !msg.trim()) return
  api('POST', '/api/team/steer', { taskId, agent, message: msg.trim() }).then(() =>alert(t('steerSent')))
 }
+// ★ 协作气泡：用发言角色自己的颜色
+function styleAskBox(el, colorRoleId) {
+ const c = roleColor(colorRoleId)
+ if (c) el.style.borderLeft = '4px solid ' + c
+ return el
+}
 function steerBox(message, agent) {
  const el = document.createElement('div')
  el.className = 'steer-box'
@@ -345,6 +353,7 @@ function applyUi() {
  const sysLight = !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches)
  document.body.classList.toggle('theme-light', theme === 'light' || (theme === 'system' && sysLight))
  if (ui.accent) document.documentElement.style.setProperty('--accent', ui.accent)
+ document.documentElement.style.setProperty('--user-bubble', ui.userColor || '#3b82f6')
  const fs = Math.max(10, Math.min(35, Number(ui.fontSize) || 13))
  document.documentElement.style.setProperty('--font-size', fs + 'px')
  // ★ 界面间距与团队输入框位置（设置页可调）
@@ -355,6 +364,7 @@ function renderSettings() {
  const ui = state.settings.ui || {}
  $('set-theme').value = ui.theme || 'dark'
  $('set-accent').value = ui.accent || '#2f9e8f'
+ if ($('set-user-color')) $('set-user-color').value = ui.userColor || '#3b82f6'
  $('set-font').value = Number(ui.fontSize) || 13
  $('set-font-val').textContent = (Number(ui.fontSize) || 13) + 'px'
  $('set-default-perm').value = state.settings.defaultPermission || 'modify'
@@ -921,7 +931,8 @@ async function refreshTeamSessions(selectId) {
  }
  if (selectId) state.teamSessionId = selectId
  if (!state.teamSessionId || !state.teamSessions.some((s) =>s.id === state.teamSessionId)) state.teamSessionId = state.teamSessions[0].id
- sel.innerHTML = state.teamSessions.map((s) => `<option value="${s.id}" ${s.id === state.teamSessionId ? 'selected' : ''}>${esc(s.title || '(untitled)')} · ${s.messageCount}</option>`).join('')
+  // ★ 不再显示消息条数后缀（容易被误解为"第几个会话"序号）
+  sel.innerHTML = state.teamSessions.map((s) => `<option value="${s.id}" ${s.id === state.teamSessionId ? 'selected' : ''}>${esc(s.title || '(untitled)')}</option>`).join('')
  sel.value = state.teamSessionId
  const cur = state.teamSessions.find((s) =>s.id === state.teamSessionId)
  $('team-session-ws').textContent = cur?.workspace ? ` ${cur.workspace}` : ''
@@ -1141,9 +1152,11 @@ function setTeamFocus(id) {
 function applyTeamFilter() {
  const stream = $('team-stream')
  if (!stream) return
- stream.querySelectorAll('[data-agent]').forEach((el) => {
- el.classList.toggle('hidden', !!state.teamFocus && el.dataset.agent !== state.teamFocus)
- })
+  stream.querySelectorAll('[data-agent]').forEach((el) => {
+   // ★ 支持 "角色A,角色B"：协作消息在双方的视图里都能看到
+   const owners = String(el.dataset.agent || '').split(',')
+   el.classList.toggle('hidden', !!state.teamFocus && !owners.includes(state.teamFocus))
+  })
  document.querySelectorAll('#team-activity .role-chip').forEach((el) => el.classList.toggle('active', el.dataset.role === state.teamFocus))
  document.querySelectorAll('#role-summary .role-item').forEach((el) => el.classList.toggle('active', el.dataset.role === state.teamFocus))
  document.querySelectorAll('#team-tabs .team-tab').forEach((el) => el.classList.toggle('active', el.dataset.role === (state.teamFocus || '')))
@@ -1180,9 +1193,10 @@ async function roleChatSend() {
  box.className = 'role-chat agent-block'
  box.dataset.agent = roleId
  box.style.borderLeftColor = roleColor(roleId)
- box.innerHTML = `<div class="agent-head"><span class="agent-name">你 → ${esc(roleLabel(roleId))}</span></div><div class="rc-ai"></div>`
- box.querySelector('.rc-ai').textContent = text
- $('team-stream').appendChild(box)
+  // ★ 用户消息与 AI 回复分属两个气泡：AI 回复不再覆盖用户发言
+  box.innerHTML = `<div class="agent-head"><span class="agent-name">你 → ${esc(roleLabel(roleId))}</span></div><div class="rc-user"></div><div class="rc-ai"></div>`
+  box.querySelector('.rc-user').textContent = text
+  $('team-stream').appendChild(box)
  applyTeamFilter()
  scrollIfNearBottom($('team-stream'), true)
  // 任务进行中：同时作为中途指令发给该角色（它会真正采纳）
@@ -1200,23 +1214,28 @@ async function roleChatSend() {
     const s = line.trim(); if (!s.startsWith('data:')) continue
     try {
      const j = JSON.parse(s.slice(5))
-     if (j.delta) { if (first) { target.textContent = ''; first = false } target.textContent += j.delta; scrollIfNearBottom($('team-stream')) }
+     if (j.delta) { if (first) { first = false } target.textContent += j.delta; scrollIfNearBottom($('team-stream')) }
      if (j.error) target.textContent = t('failure') + ': ' + j.error
      // ★ 单角色对话中的工具与协作事件（ask_role 联系队友等）
      if (j.question) appendQuestionCard(box, j.question, roleId)
      if (j.confirm) appendConfirmCard(box, j.confirm)
      if (j.ask) {
+      // ★ 协作消息挂在总流上并标记双方，切换任一角色视图都能看到；气泡用发言者角色色
       const el = document.createElement('div')
       el.className = 'ask-box'
-      el.innerHTML = `<b>${t('askLabel')}</b> ${esc(roleLabel(j.ask.from))} → ${esc(roleLabel(j.ask.to))}<div>${esc(j.ask.question || '')}</div>`
-      box.appendChild(el)
+      el.dataset.agent = `${j.ask.from || roleId},${j.ask.to || ''}`
+      el.innerHTML = `<b>${t('askLabel')}</b> <b style="color:${roleColor(j.ask.from)}">${esc(roleLabel(j.ask.from))}</b> → <b style="color:${roleColor(j.ask.to)}">${esc(roleLabel(j.ask.to))}</b><div>${esc(j.ask.question || '')}</div>`
+      styleAskBox(el, j.ask.from)
+      $('team-stream').appendChild(el); applyTeamFilter()
       if (j.ask.to) roleSetStatus(j.ask.to, 'thinking', { sub: `${roleLabel(j.ask.from)} ${t('asking')}` })
      }
      if (j.ask_done) {
       const el = document.createElement('div')
       el.className = 'ask-box done'
-      el.innerHTML = `<b>${t('askReply')}</b> ${esc(roleLabel(j.ask_done.to))} → ${esc(roleLabel(j.ask_done.from))}<div>${esc(String(j.ask_done.answer || '').slice(0, 400))}</div>`
-      box.appendChild(el)
+      el.dataset.agent = `${j.ask_done.from || roleId},${j.ask_done.to || ''}`
+      el.innerHTML = `<b>${t('askReply')}</b> <b style="color:${roleColor(j.ask_done.to)}">${esc(roleLabel(j.ask_done.to))}</b> → <b style="color:${roleColor(j.ask_done.from)}">${esc(roleLabel(j.ask_done.from))}</b><div>${esc(String(j.ask_done.answer || '').slice(0, 400))}</div>`
+      styleAskBox(el, j.ask_done.to)
+      $('team-stream').appendChild(el); applyTeamFilter()
      }
      if (j.tool && j.tool !== 'ask_role') {
       const el = document.createElement('div')
@@ -1263,8 +1282,9 @@ function handleTeamEvent(ev, run, ref) {
  if (ev.type === 'ask') {
  const box = document.createElement('div')
  box.className = 'ask-box'
- box.dataset.agent = ev.to || ev.agent || ''
- box.innerHTML = `<b>${t('askLabel')}</b> ${esc(roleLabel(ev.from))} → ${esc(roleLabel(ev.to))}<div>${esc(ev.question || '')}</div>`
+ box.dataset.agent = `${ev.from || ''},${ev.to || ''}` // ★ 询问双方视图里都能看到
+ box.innerHTML = `<b>${t('askLabel')}</b> <b style="color:${roleColor(ev.from)}">${esc(roleLabel(ev.from))}</b> → <b style="color:${roleColor(ev.to)}">${esc(roleLabel(ev.to))}</b><div>${esc(ev.question || '')}</div>`
+ styleAskBox(box, ev.from)
  run.body.appendChild(box); applyTeamFilter()
  if (ev.to) roleSetStatus(ev.to, 'thinking', { sub: `${roleLabel(ev.from)} ${t('asking')}` })
  return
@@ -1272,8 +1292,9 @@ function handleTeamEvent(ev, run, ref) {
  if (ev.type === 'ask_done') {
  const box = document.createElement('div')
  box.className = 'ask-box done'
- box.dataset.agent = ev.from || ev.agent || ''
- box.innerHTML = `<b>${t('askReply')}</b> ${esc(roleLabel(ev.to))} → ${esc(roleLabel(ev.from))}<div>${esc(String(ev.answer || '').slice(0, 600))}</div>`
+ box.dataset.agent = `${ev.from || ''},${ev.to || ''}`
+ box.innerHTML = `<b>${t('askReply')}</b> <b style="color:${roleColor(ev.to)}">${esc(roleLabel(ev.to))}</b> → <b style="color:${roleColor(ev.from)}">${esc(roleLabel(ev.from))}</b><div>${esc(String(ev.answer || '').slice(0, 600))}</div>`
+ styleAskBox(box, ev.to)
  run.body.appendChild(box); applyTeamFilter()
  return
  }
@@ -2224,13 +2245,15 @@ async function main() {
  // API 弹窗
  $('btn-modal-cancel').onclick = () => $('modal').classList.add('hidden')
  $('btn-modal-save').onclick = saveModal
- $('btn-modal-test').onclick = async () => {
- if (!editingId) return
- $('modal-msg').textContent = '…'
- const r = await api('POST', `/api/providers/${editingId}/test`)
- state.balances[editingId] = r.result
- $('modal-msg').textContent = r.ok ? `✓ ${r.result.note || ''}` : `✗ ${r.result.note || ''}`
- }
+  $('btn-modal-test').onclick = async () => {
+   // ★ 未保存的新 API：不再静默无反应，明确提醒先保存
+   if (!editingId) { $('modal-msg').textContent = t('testNeedSave'); $('modal-msg').className = 'modal-msg err'; return }
+   $('modal-msg').className = 'modal-msg'
+   $('modal-msg').textContent = '…'
+   const r = await api('POST', `/api/providers/${editingId}/test`)
+   state.balances[editingId] = r.result
+   $('modal-msg').textContent = r.ok ? `✓ ${r.result.note || ''}` : `✗ ${r.result.note || ''}`
+  }
  $('btn-fetch-models').onclick = async () => {
  if (!editingId) { $('mm-status').textContent = t('save'); return }
  $('mm-status').textContent = '…'
@@ -2409,6 +2432,10 @@ async function main() {
  $('set-theme').onchange = () =>saveUi({ theme: $('set-theme').value })
  $('set-accent').oninput = () =>document.documentElement.style.setProperty('--accent', $('set-accent').value)
  $('set-accent').onchange = () =>saveUi({ accent: $('set-accent').value })
+ if ($('set-user-color')) {
+  $('set-user-color').oninput = () => document.documentElement.style.setProperty('--user-bubble', $('set-user-color').value)
+  $('set-user-color').onchange = () => saveUi({ userColor: $('set-user-color').value })
+ }
  $('set-font').oninput = () => { $('set-font-val').textContent = $('set-font').value + 'px'; document.documentElement.style.setProperty('--font-size', $('set-font').value + 'px') }
  $('set-font').onchange = () =>saveUi({ fontSize: Number($('set-font').value) })
  $('set-default-perm').onchange = async () => { state.settings.defaultPermission = $('set-default-perm').value; await api('PUT', '/api/settings', { defaultPermission: state.settings.defaultPermission }) }

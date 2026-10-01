@@ -136,7 +136,7 @@ let roles = []          // ★ 角色为数组，可增删改（Open Agent Team�
 let plugins = []        // HTTP API 插件
 let skills = []         // ★ Agent 技能预设 [{id,name,description,prompt}]
 let sessions = []       // ★ 会话：每个 API 下可多个独立会话（含消息、工作区、模型）
-let settings = { developerMode: false, exeEnabled: false, exeAllowlist: [], githubLogin: '', workspaces: [], activeWorkspace: '', language: '', taskBudgetCost: 0, chatTools: true, defaultPermission: 'modify', reasoningEffort: 'low', artProvider: '', artModel: '', videoProvider: '', videoModel: '', updateRepo: '', updateBranch: 'main', ui: { theme: 'dark', accent: '#2f9e8f', fontSize: 13, spacing: 'normal', teamInputPos: 'bottom' } }
+let settings = { developerMode: false, exeEnabled: false, exeAllowlist: [], githubLogin: '', workspaces: [], activeWorkspace: '', language: '', taskBudgetCost: 0, chatTools: true, defaultPermission: 'modify', reasoningEffort: 'low', artProvider: '', artModel: '', videoProvider: '', videoModel: '', updateRepo: 'AceTaffer/Open-Agent-Team', updateBranch: 'main', ui: { theme: 'dark', accent: '#2f9e8f', fontSize: 13, spacing: 'normal', teamInputPos: 'bottom' } }
 
 // ★ 技能市场：内置技能（可一键导入到技能库）
 const BUILTIN_SKILLS = [
@@ -307,11 +307,15 @@ async function loadData() {
   stats = { ...{ calls: 0, promptTokens: 0, completionTokens: 0, cacheHitTokens: 0, cost: 0, toolCalls: 0, byRole: {}, byModel: {}, updatedAt: 0 }, ...(await readJson(STATS_FILE, {})) }
   plugins = await readJson(PLUGINS_FILE, [])
   settings = { ...settings, ...(await readJson(SETTINGS_FILE, {})) }
+  // ★ 更新源默认保留：老配置/分享包里为空时自动填官方仓库（避免每次更新后被清空）
+  if (!settings.updateRepo) settings.updateRepo = 'AceTaffer/Open-Agent-Team'
+  if (!settings.updateBranch) settings.updateBranch = 'main'
   // ★ 工作区初始化：至少保留默认 workspace，激活目录不存在时回退
   if (!Array.isArray(settings.workspaces) || !settings.workspaces.length) settings.workspaces = [WORKSPACE_DIR]
   if (!settings.activeWorkspace || !existsSync(settings.activeWorkspace)) settings.activeWorkspace = WORKSPACE_DIR
   for (const p of providers) p.models = normalizeModels(p.models)
   await loadVault()
+  await loadRoleChats()
   await loadJsPlugins()
 }
 const saveProviders = () => writeFile(PROVIDERS_FILE, JSON.stringify(providers, null, 2), 'utf8')
@@ -845,14 +849,20 @@ async function askRoleImpl(call, ctx = {}) {
   if (!role) return `未找到角色「${call.role}」，可用角色：${roles.map((r) => `${r.id}（${r.label}）`).join('、')}`
   const target = resolveRoleTarget(role)
   if (!target) return `角色「${role.label}」没有可用的对话模型`
+  const caller = ctx.agentId ? findRole(ctx.agentId) : null
+  const question = String(call.question || call.query || '').slice(0, 2000)
   try {
     const answer = await chatComplete(target.provider, target.model, [
       { role: 'system', content: roleSystemPrompt(role) },
-      { role: 'user', content: `${ctx.task ? `【总任务】${ctx.task}\n` : ''}【来自队友的协作询问】${String(call.question || call.query || '').slice(0, 2000)}\n请用简体中文直接给出你的专业意见，简洁明确（不要调用工具、不要执行任务本身）。` },
+      ...roleChatHistory(role.id, 8),
+      { role: 'user', content: `${ctx.task ? `【总任务】${ctx.task}\n` : ''}【来自队友${caller ? `「${caller.label}」` : ''}的协作询问】${question}\n请用简体中文直接给出你的专业意见，简洁明确（不要调用工具、不要执行任务本身）。` },
     ], {
       stream: false, temperature: 0.4,
       onUsage: (u) => { const cost = calcCost(getPrice(target.provider, target.model), u); statsAdd({ role: role.id, model: target.model, usage: u, cost: cost || 0 }); ctx.reportUsage?.(role.id, target.provider, target.model, u) },
     })
+    // ★ 被询问方留痕：之后与用户单独对话时能记得这次协作（两边同步的关键）
+    roleChatAppend(role.id, 'user', `${caller ? `【队友「${caller.label}」的协作询问】` : '【队友的协作询问】'}${question}`)
+    roleChatAppend(role.id, 'assistant', answer || '')
     return `【${role.label} 的回复】\n${answer || '（对方没有给出内容）'}`
   } catch (e) { return `询问「${role.label}」失败：${e.message}` }
 }
@@ -1260,6 +1270,23 @@ async function ghDownload(u, file) {
     if (!r.ok) throw new Error(`GitHub API HTTP ${r.status}`)
     await writeFile(file, Buffer.from(await r.arrayBuffer()))
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+ * 10.5b ★ 角色对话记忆（单独对话与队友协作询问都会留痕；
+ *   被询问的角色之后能记得自己收到过谁的问询、回复过什么）
+ * ═══════════════════════════════════════════════════════════════ */
+const ROLE_CHATS_FILE = path.join(DATA_DIR, 'role-chats.json')
+let roleChats = {}
+async function loadRoleChats() { try { roleChats = JSON.parse(await readFile(ROLE_CHATS_FILE, 'utf8')) } catch { roleChats = {} } }
+const saveRoleChats = () => writeFile(ROLE_CHATS_FILE, JSON.stringify(roleChats, null, 2), 'utf8').catch(() => {})
+function roleChatHistory(roleId, max = 12) { return (roleChats[roleId] || []).slice(-max).map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.content || '').slice(0, 3000) })) }
+function roleChatAppend(roleId, role, content) {
+  if (!roleId || !content || !String(content).trim()) return
+  const arr = roleChats[roleId] || (roleChats[roleId] = [])
+  arr.push({ role, content: String(content).slice(0, 4000), t: Date.now() })
+  while (arr.length > 60) arr.shift()
+  saveRoleChats()
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -2295,10 +2322,15 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
       // ★ 单角色对话也支持工具（含 ask_role 联系队友、读写工作区等）：多轮工具循环
       const root = getActiveRoot()
       const autoState = { approvedAll: false }
+      const userMsg = `【与用户的单独对话】${String(b.message || '').slice(0, 4000)}\n你可以调用工具（如用 ask_role 询问其他队友、读写工作区文件等）。请以你的角色身份直接回复用户（简洁、专业）。`
       const messages = [
         { role: 'system', content: roleSystemPrompt(role) },
-        { role: 'user', content: `【与用户的单独对话】${String(b.message || '').slice(0, 4000)}\n你可以调用工具（如用 ask_role 询问其他队友、读写工作区文件等）。请以你的角色身份直接回复用户（简洁、专业）。` },
+        ...roleChatHistory(role.id, 12), // ★ 角色自己的对话记忆（含队友协作询问的记录）
+        { role: 'user', content: userMsg },
       ]
+      // ★ 权限：优先用该角色自己的权限设置，未设置则跟随全局默认
+      const rolePerm = PERMISSIONS.includes(role.permission) ? role.permission : (settings.defaultPermission || 'modify')
+      let lastText = ''
       for (let turn = 0; turn < 6; turn++) {
         const text = await chatComplete(target.provider, target.model, messages, {
           stream: true, temperature: 0.5,
@@ -2307,13 +2339,14 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
           onUsage: (u) => { const cost = calcCost(getPrice(target.provider, target.model), u); statsAdd({ role: role.id, model: target.model, usage: u, cost: cost || 0 }); emit({ usage: u, cost, turn }) },
         })
         if (!text.trim()) break
+        lastText = text
         const calls = extractToolCalls(text)
         if (!calls.length) break
         messages.push({ role: 'assistant', content: text })
         const outs = []
         for (const call of calls) {
           const result = await runToolGuarded(call, {
-            root, permission: settings.defaultPermission || 'modify', session: null, autoState, agentId: role.id, task: '',
+            root, permission: rolePerm, session: null, autoState, agentId: role.id, task: '',
             reportUsage: (a, p, m, u) => { const cost = calcCost(getPrice(p, m), u); statsAdd({ role: a, model: m, usage: u, cost: cost || 0 }) },
             onConfirm: (c) => emit({ confirm: c }),
             onImage: (info) => emit({ image: info }),
@@ -2326,6 +2359,9 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
         }
         messages.push({ role: 'user', content: outs.join('\n\n') + '\n\n请根据工具结果继续；如已完成请给出最终答复（不要再调用工具）。' })
       }
+      // ★ 对话留痕：角色下次（无论用户直聊还是队友提问）都能回忆
+      roleChatAppend(role.id, 'user', String(b.message || '').slice(0, 4000))
+      if (lastText.trim()) roleChatAppend(role.id, 'assistant', lastText)
       emit({ done: true })
     } catch (e) { emit({ error: e.message }) }
     res.end()

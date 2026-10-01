@@ -481,8 +481,9 @@
  <label class="set-row"><span data-i18n="theme">主题</span>
  <select id="set-theme"><option value="dark" data-i18n="themeDark">深色</option><option value="light" data-i18n="themeLight">浅色</option><option value="system" data-i18n="themeSystem">跟随系统</option></select>
  </label>
- <label class="set-row"><span data-i18n="accentColor">强调色</span><input type="color" id="set-accent" /></label>
- <label class="set-row"><span data-i18n="fontSize">字体大小</span><input type="range" id="set-font" min="10" max="35" step="1" /> <span id="set-font-val" class="dim small"></span></label>
+  <label class="set-row"><span data-i18n="accentColor">强调色</span><input type="color" id="set-accent" /></label>
+  <label class="set-row"><span data-i18n="userBubbleColor">我的气泡颜色</span><input type="color" id="set-user-color" /></label>
+  <label class="set-row"><span data-i18n="fontSize">字体大小</span><input type="range" id="set-font" min="10" max="35" step="1" /> <span id="set-font-val" class="dim small"></span></label>
  <label class="set-row"><span data-i18n="uiSpacing">界面间距</span>
  <select id="set-spacing">
  <option value="compact" data-i18n="spCompact">紧凑</option>
@@ -633,9 +634,10 @@
  <div id="mm-list" class="mm-list"></div>
  </div>
  </div>
- <div class="modal-actions">
- <span id="modal-msg" class="modal-msg"></span>
- <button id="btn-modal-test" class="btn ghost" data-i18n="testConn">测试连通性</button>
+  <div class="modal-actions">
+  <span id="modal-msg" class="modal-msg"></span>
+  <span id="test-hint" class="dim small" data-i18n="testHint">保存后才能测试连通性</span>
+  <button id="btn-modal-test" class="btn ghost" data-i18n="testConn">测试连通性</button>
  <button id="btn-modal-cancel" class="btn ghost" data-i18n="cancel">取消</button>
  <button id="btn-modal-save" class="btn primary" data-i18n="save">保存</button>
  </div>
