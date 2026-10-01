@@ -1215,23 +1215,51 @@ async function deleteArtFiles(files, deleteFileToo) {
 }
 
 /* ★ GitHub 下载助手：Windows 上用 PowerShell（系统证书库，避免 UNABLE_TO_VERIFY_LEAF_SIGNATURE），其余平台用 fetch */
-async function ghGetText(u) {
-  if (process.platform === 'win32') {
-    const { stdout } = await execAsync(`powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; (Invoke-WebRequest -Uri '${u}' -UseBasicParsing -Headers @{'User-Agent'='open-agent-team'}).Content"`, { timeout: 60000, maxBuffer: 8 * 1024 * 1024, windowsHide: true })
-    return stdout
-  }
-  const r = await fetch(u, { headers: { 'User-Agent': 'open-agent-team' } })
-  if (!r.ok) throw new Error(`HTTP ${r.status}`)
+// ★ raw.githubusercontent.com 在部分网络（如国内）会超时：自动改走 api.github.com 匿名读取（公开仓库可用）
+function rawToApiUrl(u) {
+  const m = String(u).match(/^https:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/([^/]+)\/(.+?)(\?.*)?$/)
+  if (!m) return null
+  return `https://api.github.com/repos/${m[1]}/${m[2]}/contents/${m[4]}?ref=${encodeURIComponent(m[3])}`
+}
+async function ghFetchTextViaApi(u) {
+  const api = rawToApiUrl(u)
+  if (!api) throw new Error('无法转换为 GitHub API 地址')
+  const r = await fetch(api, { headers: { 'User-Agent': 'open-agent-team', Accept: 'application/vnd.github.raw' }, signal: AbortSignal.timeout(30000) })
+  if (!r.ok) throw new Error(`GitHub API HTTP ${r.status}`)
   return await r.text()
 }
-async function ghDownload(u, file) {
-  if (process.platform === 'win32') {
-    await execAsync(`powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '${u}' -OutFile '${file}' -UseBasicParsing -Headers @{'User-Agent'='open-agent-team'}"`, { timeout: 300000, windowsHide: true })
-    return
+async function ghGetText(u) {
+  try {
+    if (process.platform === 'win32') {
+      const { stdout } = await execAsync(`powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; (Invoke-WebRequest -Uri '${u}' -UseBasicParsing -Headers @{'User-Agent'='open-agent-team'}).Content"`, { timeout: 20000, maxBuffer: 8 * 1024 * 1024, windowsHide: true })
+      return stdout
+    }
+    const r = await fetch(u, { headers: { 'User-Agent': 'open-agent-team' }, signal: AbortSignal.timeout(20000) })
+    if (!r.ok) throw new Error(`HTTP ${r.status}`)
+    return await r.text()
+  } catch (e) {
+    dbg('update.raw_fail', { url: u, error: e.message })
+    return await ghFetchTextViaApi(u)
   }
-  const r = await fetch(u, { headers: { 'User-Agent': 'open-agent-team' }, redirect: 'follow' })
-  if (!r.ok) throw new Error(`HTTP ${r.status}`)
-  await writeFile(file, Buffer.from(await r.arrayBuffer()))
+}
+async function ghDownload(u, file) {
+  try {
+    if (process.platform === 'win32') {
+      await execAsync(`powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '${u}' -OutFile '${file}' -UseBasicParsing -Headers @{'User-Agent'='open-agent-team'}"`, { timeout: 60000, windowsHide: true })
+      return
+    }
+    const r = await fetch(u, { headers: { 'User-Agent': 'open-agent-team' }, redirect: 'follow', signal: AbortSignal.timeout(60000) })
+    if (!r.ok) throw new Error(`HTTP ${r.status}`)
+    await writeFile(file, Buffer.from(await r.arrayBuffer()))
+    return
+  } catch (e) {
+    dbg('update.raw_download_fail', { url: u, error: e.message })
+    const api = rawToApiUrl(u)
+    if (!api) throw e
+    const r = await fetch(api, { headers: { 'User-Agent': 'open-agent-team', Accept: 'application/vnd.github.raw' }, signal: AbortSignal.timeout(60000) })
+    if (!r.ok) throw new Error(`GitHub API HTTP ${r.status}`)
+    await writeFile(file, Buffer.from(await r.arrayBuffer()))
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════
