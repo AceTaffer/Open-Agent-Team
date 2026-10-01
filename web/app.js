@@ -78,7 +78,7 @@ const I18N = {
  regenTitle: '重新绘画', regenReplace: '替换原图（同名覆盖）', regenNew: '生成新图（保留原图）', regenPromptPh: '提示词（单张重画可修改；多张各自使用原提示词）',
  reviewTitle: '出图审核', keepImg: '保留', reviewHint: '这张图是否保留？（可修改提示词后重画）', regenDone: '重画完成',
  presetTitle: '团队预设：', applyPreset: '应用预设（导入角色+技能）', presetApplied: '预设已应用（已保留各角色的 API/模型选择）', presetConfirm: '应用预设将覆盖当前角色配置（同 id 角色的 API/模型选择会保留），确定继续？',
- answerTitle: '队长向你确认需求', answerTitleSuffix: '向你确认需求', answerSubmit: '提交回答', skip: '跳过', optionOr: '也可自行填写',
+ answerTitle: '队长向你确认需求', answerTitleSuffix: '向你确认需求', answerSubmit: '提交回答', skip: '跳过', optionOr: '也可自行填写（填写后将优先采用你写的内容）',
  uiSpacing: '界面间距', spCompact: '紧凑', spNormal: '标准', spRelaxed: '宽松', teamInputPos: '团队输入框位置', posTop: '上方', posBottom: '下方',
  roleChatAsk: '与该角色直接对话（任务进行中将作为中途指令发送）…', detach: '弹出', detachTitle: '弹出为独立窗口',
  steerAsk: '给该角色发送中途指令（会在它下一步执行时生效）：', steerSent: '指令已发送', steerTitle: '用户中途指令',
@@ -171,7 +171,7 @@ const I18N = {
  regenTitle: 'Regenerate', regenReplace: 'Replace original (same name)', regenNew: 'New file (keep original)', regenPromptPh: 'Prompt (single regen editable; batch uses each original prompt)',
  reviewTitle: 'Image review', keepImg: 'Keep', reviewHint: 'Keep this image? You can edit the prompt and regenerate.', regenDone: 'Regenerated',
  presetTitle: 'Team presets:', applyPreset: 'Apply preset (roles + skills)', presetApplied: 'Preset applied (API/model choices kept)', presetConfirm: 'Applying a preset overwrites current roles (API/model per role id is kept). Continue?',
-    answerTitle: 'The leader asks for your confirmation', answerSubmit: 'Submit', skip: 'Skip', optionOr: 'or type your own',
+    answerTitle: 'The leader asks for your confirmation', answerSubmit: 'Submit', skip: 'Skip', optionOr: 'or type your own (yours takes priority)',
     answerTitleSuffix: 'asks for confirmation', uiSpacing: 'UI spacing', spCompact: 'Compact', spNormal: 'Normal', spRelaxed: 'Relaxed', teamInputPos: 'Team input position', posTop: 'Top', posBottom: 'Bottom',
     roleChatAsk: 'Chat with this role directly (sent as a mid-run instruction during tasks)…', detach: 'Detach', detachTitle: 'Open in a separate window',
  steerAsk: 'Send a mid-run instruction to this role (takes effect on its next turn):', steerSent: 'Instruction sent', steerTitle: 'User instruction',
@@ -241,8 +241,18 @@ const TEAM_PRESETS = {
       { id: 'tester', label: '质检', color: '#ff8c5a', desc: '核对图片与清单', enabled: true, budgetCost: 0, skills: ['mk_strict_test'], systemPrompt: `你是图片质检。核对：1）清单 vs 实际 PNG 数量与命名；2）文件真实存在、大小正常（list_files 证据）；3）规格是否满足需求（尺寸/数量说明）；4）输出通过/不通过结论与逐项证据。` },
     ],
   },
+  novel: {
+   label: '小说写作团队（主编/大纲策划/写手/校对）',
+   skillIds: ['mk_requirement', 'mk_novel_outline', 'mk_novel_style', 'mk_novel_draft', 'mk_novel_proofread', 'mk_doc_cn'],
+   roles: [
+    { id: 'leader', label: '主编', color: '#4f8cff', desc: '澄清需求、派单、审稿、汇总', enabled: true, budgetCost: 0, skills: ['mk_requirement'], systemPrompt: `你是小说写作团队的主编。1）先用 ask_user 向用户逐项确认关键设定：题材与基调、目标受众、篇幅与章节数、叙事视角、文风样例、是否需要书名/简介/封面、交付形式（目录与文件命名）；2）把确认结果汇总成写作目标，拆成 JSON 计划派发（通常：大纲策划出纲 → 写手逐章写作 → 校对逐项校对）；3）写作过程中用 ask_role 与队员沟通；4）核对产物：章节文件是否真实存在、大纲与进度清单是否齐全、字数是否达标；5）最终报告：书名/简介、章节清单与字数、遗留问题与下一步建议。遇到用户中途指令必须重新评估并说明处理结果。` },
+    { id: 'planner', label: '大纲策划', color: '#e0b34a', desc: '世界观/人物/主线/分章大纲', enabled: true, budgetCost: 0, skills: ['mk_novel_outline'], systemPrompt: `你是大纲策划。依据主编确认的需求产出完整大纲并写入工作区文件（outline.md）：1）世界观与核心设定（规则、禁忌、代价）；2）人物设定表：主角/对手/关键配角的目标、动机、缺陷、成长弧；3）主线与支线脉络（冲突升级节点、高潮与结局）；4）分章大纲：每章写明「本章目标、核心冲突、出场人物、结尾钩子、预计字数」；5）书名候选与简介（3 版）。大纲要细到写手可直接按章开写；完成后交还主编评估。` },
+    { id: 'writer', label: '写手', color: '#43d17c', desc: '按大纲逐章写作并落盘', enabled: true, budgetCost: 0, skills: ['mk_novel_style', 'mk_novel_draft'], systemPrompt: `你是写手。严格按大纲逐章写作：1）每章用 write_file 真实落盘到 chapters/chapter_XX.md（不要在回复里只贴正文）；2）遵守已确定的视角、基调、称呼与时间线，对话符合人物性格；3）每章结尾留钩子，控制在约定字数（±10%）；4）维护 chapters/README.md 进度清单（章号/标题/字数/状态）；5）写作中若发现大纲有漏洞或需要调整，用 ask_role 与大纲策划确认后再继续；6）每写完一章用 list_files 核对文件，再继续下一章。` },
+    { id: 'editor', label: '校对', color: '#ff8c5a', desc: '逻辑/人设/时间线/文字校对', enabled: true, budgetCost: 0, skills: ['mk_novel_proofread'], systemPrompt: `你是校对。对写手的稿子做独立校对：1）真实读取章节文件（read_file）逐项检查：剧情逻辑、人设一致性、时间线/空间线、重复用词与错别字、节奏问题；2）输出校对清单：文件+段落位置+问题类型+修改建议；3）重大问题用 ask_role 反馈给写手（写明 复现位置+问题+建议），写手修改后必须复审；4）全部通过后输出结论：通过/不通过、逐项证据、遗留问题。禁止只声称通过。` },
+   ],
+  },
   files: {
-    label: '文件整理小组（队长/整理方案/整理执行/核验）',
+   label: '文件整理小组（队长/整理方案/整理执行/核验）',
     skillIds: ['mk_file_organize', 'mk_safe_ops', 'mk_strict_test', 'mk_doc_cn'],
     roles: [
       { id: 'leader', label: '队长', color: '#2f9e8f', desc: '澄清范围、派单、汇总', enabled: true, budgetCost: 0, skills: ['mk_requirement'], systemPrompt: `你是文件整理小组的队长。1）先用 ask_user 确认：要整理哪个目录、按什么维度分类、是否去重、重命名规则、是否允许移动/删除（默认只允许复制到新目录）；2）汇总后拆 JSON 计划派发（整理方案 → 执行 → 核验）；3）强调非破坏性：删除/移动必须先征得用户同意；4）最终报告整理报告摘要。` },
@@ -254,8 +264,9 @@ const TEAM_PRESETS = {
 }
 
 /* 版本迭代记录（设置页展示） */
-const APP_VERSION = '1.0.2'
+const APP_VERSION = '1.0.3'
 const CHANGELOG = [
+  ['P8.3', '2026-10', ['修复 ask_user 提问卡片：自己填写的内容现在优先于预设选项（此前选了预设再填写，结果仍采用预设的问题）', '新增「小说写作团队」预设：主编 / 大纲策划 / 写手 / 校对 + 配套技能（世界观大纲、文风控制、章节写作规范、校对规范）', '问题卡片输入框提示更新：填写后将优先采用你写的内容']],
   ['P8.2', '2026-10', ['单独对话气泡：用户消息独立显示、不再被 AI 回复覆盖，颜色可在 设置 → 外观 →「我的气泡颜色」调整', '角色对话记忆同步：被询问的角色会保存队友的问询记录（之后单独对话能回忆）；协作询问/回复在双方角色视图都可见，气泡使用各自角色颜色', '单独角色对话也遵循该角色自己的权限设置', '新建团队会话不再显示消息条数后缀（避免误认为会话序号）', '更新源仓库默认填入 AceTaffer/Open-Agent-Team（新安装/分享包即自带）', 'API 弹窗新增提示：测试连通性使用「已保存」配置，未保存点击时会明确提醒先保存', '设置 → 外观新增显示开关：思维链（推理过程）、工具使用情况，默认开启，可随时隐藏', 'AI 回复不再显示原始工具调用代码块（```tool 片段），工具过程统一由工具盒/开关呈现', 'OpenCode Go 模型库扩充至 30 个（千问 Qwen / GLM / GPT-6 Luna / Grok / Kimi / MiniMax / Mimo 等，可直接在模型下拉选择）', '删除对话/团队会话时可选择：仅删除对话（保留文件）或连同工作区文件夹一起彻底删除', '设置新增「数据清理」：清理已删除会话遗留的任务记录、孤儿任务文件、空会话与已删除角色的对话记忆（不动工作区文件）', '对话工具栏与团队每个角色块显示上下文占用百分比（≥60% 变黄、≥85% 变红）']],
   ['P8.1', '2026-10', ['修复团队任务三个问题：① 队长汇总阶段现可真实写文件（报告/文档直接落盘并核对）', '② 角色间协作 ask_role 支持中文角色名匹配（此前「程序/测试」等名称会报未找到角色），并新增「协作询问/协作回复」过程卡片', '③ 团队任务支持每角色独立工具权限（团队配置页可为单个角色设置，覆盖会话默认权限）', '单角色对话（单独与某个 AI 聊天）现支持工具调用：可直接让某角色用 ask_role 联系队友、读写工作区等，过程卡片实时可见', '上游接口 30 秒无数据自动中断并给出明确提示（避免接口繁忙时无限等待）']],
   ['P8', '2026-10', ['正式版 1.0.0', '凭据保险箱中的 API 可被 AI 直接调用（对话与团队任务新增 vault_call 工具，密钥自动携带；支持自定义认证头与 {{key}}/{{参数}} 占位）', '字体大小范围扩展为 10–35px，默认 13px']],
@@ -319,17 +330,18 @@ function appendQuestionCard(container, q, who) {
  el.classList.add('done')
  el.querySelector('.cf-actions').innerHTML = `<span class="small">${answer ? ' ' + esc(String(answer).slice(0, 90)) : '⏭ ' + t('skip')}</span>`
  }
- el.querySelector('button[data-a="submit"]').onclick = () => {
- const parts = []
- el.querySelectorAll('.qf-item').forEach((it) => {
- const radio = it.querySelector('input[type=radio]:checked')
- const input = it.querySelector('.qf-input').value.trim()
- const text = it.querySelector('.qf-text').textContent.replace(/^\d+\.\s*/, '')
- const ans = [radio ? radio.value : '', input ? (radio ? `（补充：${input}）` : input) : ''].filter(Boolean).join('')
- if (ans) parts.push(`${text}\n→ ${ans}`)
- })
- finish(parts.join('\n\n') || '（无具体回答，按你的推荐方案执行）')
- }
+  el.querySelector('button[data-a="submit"]').onclick = () => {
+   const parts = []
+   el.querySelectorAll('.qf-item').forEach((it) => {
+    const radio = it.querySelector('input[type=radio]:checked')
+    const input = it.querySelector('.qf-input').value.trim()
+    const text = it.querySelector('.qf-text').textContent.replace(/^\d+\.\s*/, '')
+    // ★ 自定义填写优先于预设选项（此前选了预设再填写，结果仍被预设覆盖）
+    const ans = input || (radio ? radio.value : '')
+    if (ans) parts.push(`${text}\n→ ${ans}`)
+   })
+   finish(parts.join('\n\n') || '（无具体回答，按你的推荐方案执行）')
+  }
  el.querySelector('button[data-a="skip"]').onclick = () =>finish('')
  return el
 }
