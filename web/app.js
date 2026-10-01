@@ -56,7 +56,7 @@ const I18N = {
  notConfigured: '未配置', noKey: '未配置Key', models: '模型', balance: '余额', failure: '失败', none2: '无', savedOk: '已保存', importDone: '导入完成', skillImportDone: '技能导入完成',
  taskBudget: '任务总预算 ¥', concurrentHint: '（支持同时运行多个任务）', running: '运行中', done: '已完成', stopped: '已停止',
  chatTools: '工具', chatToolsTip: '允许 AI 直接读写工作区文件、执行命令（关闭后只聊天）', thinking: '思考中…', thoughtDone: '已思考', clearPanel: '清空面板', collapse: '折叠', expand: '展开',
- tabSettings: '设置', settingsTitle: '设置', appearance: '外观', theme: '主题', themeDark: '深色', themeLight: '浅色', accentColor: '强调色', userBubbleColor: '我的气泡颜色', fontSize: '字体大小',
+ tabSettings: '设置', settingsTitle: '设置', appearance: '外观', theme: '主题', themeDark: '深色', themeLight: '浅色', accentColor: '强调色', userBubbleColor: '我的气泡颜色', showReasoning: '显示思维链（推理过程）', showTools: '显示工具使用情况', fontSize: '字体大小',
  agentPolicy: 'Agent 工作方式 / 权限', defaultPermission: '新会话默认权限',
  permLabel: '权限：', permView: '查看', permModify: '修改', permLimited: '受限', permFullOpt: '完全',
  permDesc: '查看=只读；修改=工作区内读写；受限=工作区外可读、区内可写；完全=允许敏感操作并减少确认步骤。',
@@ -146,7 +146,7 @@ const I18N = {
  notConfigured: 'not set', noKey: 'no key', models: 'models', balance: 'Balance', failure: 'failed', none2: 'none', savedOk: 'Saved', importDone: 'Imported', skillImportDone: 'Skills imported',
  taskBudget: 'Task budget ¥', concurrentHint: '(multiple tasks can run at once)', running: 'running', done: 'done', stopped: 'stopped',
  chatTools: 'Tools', chatToolsTip: 'Let the AI read/write workspace files and run commands (off = plain chat)', thinking: 'Thinking…', thoughtDone: 'Thought', clearPanel: 'Clear panel', collapse: 'Collapse', expand: 'Expand',
- tabSettings: 'Settings', settingsTitle: 'Settings', appearance: 'Appearance', theme: 'Theme', themeDark: 'Dark', themeLight: 'Light', accentColor: 'Accent color', userBubbleColor: 'My bubble color', fontSize: 'Font size',
+ tabSettings: 'Settings', settingsTitle: 'Settings', appearance: 'Appearance', theme: 'Theme', themeDark: 'Dark', themeLight: 'Light', accentColor: 'Accent color', userBubbleColor: 'My bubble color', showReasoning: 'Show reasoning chain', showTools: 'Show tool activity', fontSize: 'Font size',
  agentPolicy: 'Agent Policy / Permissions', defaultPermission: 'Default permission (new sessions)',
  permLabel: 'Permission:', permView: 'View', permModify: 'Modify', permLimited: 'Limited', permFullOpt: 'Full',
  permDesc: 'View=read only; Modify=read/write inside workspace; Limited=read outside + write inside; Full=sensitive ops allowed with fewer confirmations.',
@@ -250,7 +250,7 @@ const TEAM_PRESETS = {
 /* 版本迭代记录（设置页展示） */
 const APP_VERSION = '1.0.2'
 const CHANGELOG = [
-  ['P8.2', '2026-10', ['单独对话气泡：用户消息独立显示、不再被 AI 回复覆盖，颜色可在 设置 → 外观 →「我的气泡颜色」调整', '角色对话记忆同步：被询问的角色会保存队友的问询记录（之后单独对话能回忆）；协作询问/回复在双方角色视图都可见，气泡使用各自角色颜色', '单独角色对话也遵循该角色自己的权限设置', '新建团队会话不再显示消息条数后缀（避免误认为会话序号）', '更新源仓库默认填入 AceTaffer/Open-Agent-Team（新安装/分享包即自带）', 'API 弹窗新增提示：测试连通性使用「已保存」配置，未保存点击时会明确提醒先保存']],
+  ['P8.2', '2026-10', ['单独对话气泡：用户消息独立显示、不再被 AI 回复覆盖，颜色可在 设置 → 外观 →「我的气泡颜色」调整', '角色对话记忆同步：被询问的角色会保存队友的问询记录（之后单独对话能回忆）；协作询问/回复在双方角色视图都可见，气泡使用各自角色颜色', '单独角色对话也遵循该角色自己的权限设置', '新建团队会话不再显示消息条数后缀（避免误认为会话序号）', '更新源仓库默认填入 AceTaffer/Open-Agent-Team（新安装/分享包即自带）', 'API 弹窗新增提示：测试连通性使用「已保存」配置，未保存点击时会明确提醒先保存', '设置 → 外观新增显示开关：思维链（推理过程）、工具使用情况，默认开启，可随时隐藏', 'AI 回复不再显示原始工具调用代码块（```tool 片段），工具过程统一由工具盒/开关呈现', 'OpenCode Go 模型库扩充至 30 个（千问 Qwen / GLM / GPT-6 Luna / Grok / Kimi / MiniMax / Mimo 等，可直接在模型下拉选择）']],
   ['P8.1', '2026-10', ['修复团队任务三个问题：① 队长汇总阶段现可真实写文件（报告/文档直接落盘并核对）', '② 角色间协作 ask_role 支持中文角色名匹配（此前「程序/测试」等名称会报未找到角色），并新增「协作询问/协作回复」过程卡片', '③ 团队任务支持每角色独立工具权限（团队配置页可为单个角色设置，覆盖会话默认权限）', '单角色对话（单独与某个 AI 聊天）现支持工具调用：可直接让某角色用 ask_role 联系队友、读写工作区等，过程卡片实时可见', '上游接口 30 秒无数据自动中断并给出明确提示（避免接口繁忙时无限等待）']],
   ['P8', '2026-10', ['正式版 1.0.0', '凭据保险箱中的 API 可被 AI 直接调用（对话与团队任务新增 vault_call 工具，密钥自动携带；支持自定义认证头与 {{key}}/{{参数}} 占位）', '字体大小范围扩展为 10–35px，默认 13px']],
   ['P7.4', '2026-10', ['厂商模板扩充：OpenAI(GPT) / Anthropic(Claude) / 智谱GLM / MiniMax / xAI(Grok) / Gemini + 自定义', '作者声明更新（作者 Acct · AI 协作 deepseek-v4.1-flash · 邮箱 577940959@qq.com）', 'GitHub 仓库已建立并接入热更新（AceTaffer/Open-Agent-Team）']],
@@ -339,6 +339,23 @@ function styleAskBox(el, colorRoleId) {
  if (c) el.style.borderLeft = '4px solid ' + c
  return el
 }
+// ★ 显示层移除工具调用原文（```tool 块）。完整原文仍保存在会话里供模型使用
+function stripToolFences(s) {
+ const str = String(s || '')
+ if (!str.includes('```tool')) return str
+ let out = str.replace(/```tool[\s\S]*?```/g, '')
+ const open = out.lastIndexOf('```tool')
+ if (open !== -1) out = out.slice(0, open)
+ return out.replace(/\n{3,}/g, '\n\n').trim()
+}
+// ★ 流式文本：累计原文，只把去除工具块后的内容显示出来
+const streamRaw = new WeakMap()
+function appendStreamText(el, text) {
+ if (!el) return
+ const raw = (streamRaw.get(el) || '') + text
+ streamRaw.set(el, raw)
+ el.textContent = stripToolFences(raw)
+}
 function steerBox(message, agent) {
  const el = document.createElement('div')
  el.className = 'steer-box'
@@ -348,13 +365,16 @@ function steerBox(message, agent) {
 }
 
 /* ══════════════ UI 外观（主题/强调色/字体） ══════════════ */
-function applyUi() {
- const ui = state.settings.ui || {}
- const theme = ui.theme || 'dark'
- const sysLight = !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches)
- document.body.classList.toggle('theme-light', theme === 'light' || (theme === 'system' && sysLight))
- if (ui.accent) document.documentElement.style.setProperty('--accent', ui.accent)
- document.documentElement.style.setProperty('--user-bubble', ui.userColor || '#3b82f6')
+ function applyUi() {
+  const ui = state.settings.ui || {}
+  const theme = ui.theme || 'dark'
+  const sysLight = !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches)
+  document.body.classList.toggle('theme-light', theme === 'light' || (theme === 'system' && sysLight))
+  // ★ 思维链 / 工具使用情况：可选择显示或隐藏（默认显示）
+  document.body.classList.toggle('hide-reasoning', ui.showReasoning === false)
+  document.body.classList.toggle('hide-tools', ui.showTools === false)
+  if (ui.accent) document.documentElement.style.setProperty('--accent', ui.accent)
+  document.documentElement.style.setProperty('--user-bubble', ui.userColor || '#3b82f6')
  const fs = Math.max(10, Math.min(35, Number(ui.fontSize) || 13))
  document.documentElement.style.setProperty('--font-size', fs + 'px')
  // ★ 界面间距与团队输入框位置（设置页可调）
@@ -366,6 +386,8 @@ function renderSettings() {
  $('set-theme').value = ui.theme || 'dark'
  $('set-accent').value = ui.accent || '#2f9e8f'
  if ($('set-user-color')) $('set-user-color').value = ui.userColor || '#3b82f6'
+ if ($('set-show-reasoning')) $('set-show-reasoning').checked = ui.showReasoning !== false
+ if ($('set-show-tools')) $('set-show-tools').checked = ui.showTools !== false
  $('set-font').value = Number(ui.fontSize) || 13
  $('set-font-val').textContent = (Number(ui.fontSize) || 13) + 'px'
  $('set-default-perm').value = state.settings.defaultPermission || 'modify'
@@ -558,7 +580,8 @@ function renderChatMessages() {
  appendMediaCard(box, m.content)
  continue
  }
- const contentEl = appendMsg(m.role, typeof m.content === 'string' ? m.content : '[image]', m, midx++)
+  const shownText = typeof m.content === 'string' ? (m.role === 'assistant' ? stripToolFences(m.content) : m.content) : '[image]'
+  const contentEl = appendMsg(m.role, shownText, m, midx++)
  // 持久化的思考过程：折叠展示
  if (m.role === 'assistant' && m.reasoning) {
  const el = document.createElement('details')
@@ -812,9 +835,9 @@ async function sendChat() {
  ensureTurn(j)
  flushReason()
  if (thinkBox) { thinkBox.open = false; thinkBox.querySelector('summary').textContent = ` ${t('thoughtDone')}（${thinkBox.querySelector('.reasoning-body').textContent.length}）` }
- target.textContent += j.delta
- scrollIfNearBottom(box)
- }
+  appendStreamText(target, j.delta)
+  scrollIfNearBottom(box)
+  }
  if (j.tool) {
  // 工具调用：插入工具盒，后续回复另起气泡
  const el = document.createElement('div')
@@ -957,8 +980,8 @@ async function renderTeamSession() {
  box.innerHTML = `<b>${t('planLabel')}</b><div class="dim small">${esc(m.summary || '')}</div><ol>${(m.steps || []).map((s) => `<li><b>${esc(roleLabel(s.agent))}</b>：${esc(s.title || '')}</li>`).join('')}</ol>`
  run.body.appendChild(box); continue
  }
- if (m.kind === 'team-step') { runBlock(run, m.agent, roleLabel(m.agent) + (m.title ? ' · ' + m.title : ''), '(history)').textContent = m.content || ''; continue }
- if (m.kind === 'team-final') { runBlock(run, 'leader', roleLabel('leader') + ' · final', '(history)').textContent = m.content || ''; continue }
+  if (m.kind === 'team-step') { runBlock(run, m.agent, roleLabel(m.agent) + (m.title ? ' · ' + m.title : ''), '(history)').textContent = stripToolFences(m.content || ''); continue }
+  if (m.kind === 'team-final') { runBlock(run, 'leader', roleLabel('leader') + ' · final', '(history)').textContent = stripToolFences(m.content || ''); continue }
  if (m.kind === 'team-steer') { run.body.appendChild(steerBox(m.content || '', m.agent)); continue }
  if (m.kind === 'team-meta') { run.foot.textContent = m.content || ''; continue }
  }
@@ -1215,7 +1238,7 @@ async function roleChatSend() {
     const s = line.trim(); if (!s.startsWith('data:')) continue
     try {
      const j = JSON.parse(s.slice(5))
-     if (j.delta) { if (first) { first = false } target.textContent += j.delta; scrollIfNearBottom($('team-stream')) }
+     if (j.delta) { if (first) { first = false } appendStreamText(target, j.delta); scrollIfNearBottom($('team-stream')) }
      if (j.error) target.textContent = t('failure') + ': ' + j.error
      // ★ 单角色对话中的工具与协作事件（ask_role 联系队友等）
      if (j.question) appendQuestionCard(box, j.question, roleId)
@@ -1240,7 +1263,7 @@ async function roleChatSend() {
      }
      if (j.tool && j.tool !== 'ask_role') {
       const el = document.createElement('div')
-      el.className = 'ask-box'
+      el.className = 'ask-box tool-note'
       el.innerHTML = `<b>${t('toolLabel')} · ${esc(j.tool)}</b><div>${esc(String(j.result || '').slice(0, 300))}</div>`
       box.appendChild(el)
      }
@@ -1360,10 +1383,10 @@ function handleTeamEvent(ev, run, ref) {
  flushReason()
  const rEl = target.parentElement.querySelector('.reasoning')
  if (rEl && !rEl.dataset.done) { rEl.dataset.done = '1'; rEl.open = false; rEl.querySelector('summary').textContent = ` ${t('thoughtDone')}（${rEl.querySelector('.reasoning-body').textContent.length}）` }
- target.textContent += ev.text
- scrollIfNearBottom(document.getElementById('team-stream'))
- }
- roleAppend(ev.agent, ev.text)
+  appendStreamText(target, ev.text)
+  scrollIfNearBottom(document.getElementById('team-stream'))
+  }
+  roleAppend(ev.agent, ev.text)
  return
  }
  if (ev.type === 'tool') {
@@ -2433,10 +2456,12 @@ async function main() {
  $('set-theme').onchange = () =>saveUi({ theme: $('set-theme').value })
  $('set-accent').oninput = () =>document.documentElement.style.setProperty('--accent', $('set-accent').value)
  $('set-accent').onchange = () =>saveUi({ accent: $('set-accent').value })
- if ($('set-user-color')) {
-  $('set-user-color').oninput = () => document.documentElement.style.setProperty('--user-bubble', $('set-user-color').value)
-  $('set-user-color').onchange = () => saveUi({ userColor: $('set-user-color').value })
- }
+  if ($('set-user-color')) {
+   $('set-user-color').oninput = () => document.documentElement.style.setProperty('--user-bubble', $('set-user-color').value)
+   $('set-user-color').onchange = () => saveUi({ userColor: $('set-user-color').value })
+  }
+  if ($('set-show-reasoning')) $('set-show-reasoning').onchange = () => saveUi({ showReasoning: $('set-show-reasoning').checked })
+  if ($('set-show-tools')) $('set-show-tools').onchange = () => saveUi({ showTools: $('set-show-tools').checked })
  $('set-font').oninput = () => { $('set-font-val').textContent = $('set-font').value + 'px'; document.documentElement.style.setProperty('--font-size', $('set-font').value + 'px') }
  $('set-font').onchange = () =>saveUi({ fontSize: Number($('set-font').value) })
  $('set-default-perm').onchange = async () => { state.settings.defaultPermission = $('set-default-perm').value; await api('PUT', '/api/settings', { defaultPermission: state.settings.defaultPermission }) }
