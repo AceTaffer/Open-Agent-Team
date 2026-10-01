@@ -1,0 +1,15 @@
+{
+  "name": "open-agent-team",
+  "version": "0.9.8",
+  "private": true,
+  "type": "module",
+  "main": "desktop/main.cjs",
+  "description": "★ Open Agent Team：API 仓库/余额/多智能体团队/技能/插件/统计/GitHub；零第三方运行依赖",
+  "scripts": {
+    "start": "node server.mjs",
+    "desktop": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^44.4.5"
+  }
+}

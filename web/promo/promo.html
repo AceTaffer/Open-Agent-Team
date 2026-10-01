@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Open Agent Team 宣传片</title>
+<style>html,body{margin:0;background:#000}canvas{display:block}</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+const cv = document.getElementById('c')
+const ctx = cv.getContext('2d')
+const W = 1280, H = 720
+const MONO = 'Consolas, "Courier New", monospace'
+window.__duration = 47
+const T = () => (performance.now() - t0) / 1000
+let t0 = performance.now()
+
+/* ── 工具 ── */
+const clamp01 = (x) => Math.max(0, Math.min(1, x))
+const seg = (t, a, b) => clamp01((t - a) / (b - a))
+const ease = (x) => x < .5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2
+const fadeIn = (t, a, d = .6) => ease(seg(t, a, a + d))
+const fadeOut = (t, b, d = .6) => 1 - ease(seg(t, b - d, b))
+const visible = (t, a, b) => Math.min(fadeIn(t, a), fadeOut(t, b))
+function text(s, x, y, { size = 20, color = '#e6e9ef', align = 'left', font = MONO, alpha = 1, bold = false, spacing = null } = {}) {
+  ctx.save()
+  ctx.globalAlpha = alpha
+  ctx.fillStyle = color
+  ctx.font = `${bold ? '700 ' : ''}${size}px ${font}`
+  ctx.textAlign = align; ctx.textBaseline = 'alphabetic'
+  if (spacing) {
+    let total = 0; for (const ch of s) total += ctx.measureText(ch).width + spacing
+    let cx = align === 'center' ? x - total / 2 : align === 'right' ? x - total : x
+    for (const ch of s) { ctx.fillText(ch, cx, y); cx += ctx.measureText(ch).width + spacing }
+  } else ctx.fillText(s, x, y)
+  ctx.restore()
+}
+function roundRect(x, y, w, h, r, fill, stroke, lw = 1) {
+  ctx.beginPath(); ctx.moveTo(x + r, y)
+  ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r)
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath()
+  if (fill) { ctx.fillStyle = fill; ctx.fill() }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke() }
+}
+
+/* ── 背景：字符雨 + 扫描线 ── */
+const cols = Math.floor(W / 24), drops = new Array(cols).fill(0).map(() => Math.random() * H)
+const chars = '01<>{}[]()/\\|+=*#$_abcdefghijklmnopqrstuvwxyzOPENAGENTEAM'
+function bg(t, alpha) {
+  ctx.fillStyle = '#07090b'; ctx.fillRect(0, 0, W, H)
+  ctx.font = '16px ' + MONO
+  for (let i = 0; i < cols; i++) {
+    const x = i * 24 + 8
+    drops[i] = (drops[i] + (i % 3 + 1) * 1.6) % (H + 200)
+    for (let k = 0; k < 6; k++) {
+      const y = drops[i] - k * 26
+      if (y < -30 || y > H + 30) continue
+      ctx.fillStyle = `rgba(47,158,143,${alpha * (k === 0 ? .5 : .14 - k * .02)})`
+      ctx.fillText(chars[Math.floor((t * 8 + i * 5 + k * 3)) % chars.length], x, y)
+    }
+  }
+  // 扫描线
+  ctx.fillStyle = 'rgba(0,0,0,.22)'
+  for (let y = 0; y < H; y += 4) ctx.fillRect(0, y, W, 1)
+  // 四角框线
+  ctx.strokeStyle = 'rgba(47,158,143,.5)'; ctx.lineWidth = 2
+  const m = 22, len = 26
+  ctx.beginPath()
+  ctx.moveTo(m, m + len); ctx.lineTo(m, m); ctx.lineTo(m + len, m)
+  ctx.moveTo(W - m - len, m); ctx.lineTo(W - m, m); ctx.lineTo(W - m, m + len)
+  ctx.moveTo(W - m, H - m - len); ctx.lineTo(W - m, H - m); ctx.lineTo(W - m - len, H - m)
+  ctx.moveTo(m + len, H - m); ctx.lineTo(m, H - m); ctx.lineTo(m, H - m - len)
+  ctx.stroke()
+}
+
+/* ── 场景 0：启动打字 + ASCII LOGO ── */
+function sceneBoot(t) {
+  const boot = "> world.execute('open-agent-team');"
+  const n = Math.floor(seg(t, .3, 2.6) * boot.length)
+  text(boot.slice(0, n), 90, 130, { size: 20, color: '#2f9e8f' })
+  if (n >= boot.length) text('█', 90 + n * 12.1, 130, { size: 20, color: '#2f9e8f', alpha: (Math.floor(t * 3) % 2) ? 1 : 0 })
+  const logo = 'OPEN AGENT TEAM'
+  const a = fadeIn(t, 2.0, .9)
+  if (a > 0) {
+    ctx.save(); ctx.globalAlpha = a
+    const bigX = W / 2, bigY = H / 2 - 10
+    text(logo, bigX, bigY, { size: 64, bold: true, align: 'center', color: '#e6e9ef', spacing: 10 })
+    const sub = '本机 AI 多智能体工作站  ·  v0.9.8'
+    text(sub, bigX, bigY + 52, { size: 18, align: 'center', color: '#8b919d', spacing: 4 })
+    ctx.restore()
+  }
+  // 字符组装效果：前 2 秒随机字符闪烁覆盖
+  if (t < 3.4) {
+    const chaos = 1 - seg(t, 2.0, 3.4)
+    if (chaos > 0) {
+      ctx.save(); ctx.globalAlpha = chaos * .8
+      ctx.font = '46px ' + MONO; ctx.textAlign = 'center'; ctx.fillStyle = '#2f9e8f'
+      for (let i = 0; i < 40; i++) {
+        const x = W / 2 + Math.sin(i * 13.7) * 420, y = H / 2 - 10 + Math.sin(i * 7.3 + t * 9) * 60
+        ctx.fillText(chars[Math.floor(Math.random() * chars.length)], x, y)
+      }
+      ctx.restore()
+    }
+  }
+}
+
+/* ── 场景 1：标题定位（隐含在 boot 之后，直接接 API 场景） ── */
+function sceneApi(t) {
+  const a = visible(t, 0, 7)
+  ctx.save(); ctx.globalAlpha = a
+  text('01 / API 仓库 · 余额中心', 90, 150, { size: 24, bold: true, color: '#e6e9ef' })
+  text('一个面板管理你所有的 AI API，Key 本地加密保存', 90, 186, { size: 15, color: '#8b919d' })
+
+  const cards = [
+    { name: 'DeepSeek', note: '¥ 余额', val: '¥31.54', color: '#43d17c', pct: null },
+    { name: '阿里云百炼', note: '261 个模型', val: '连通正常', color: '#8fd0ff', pct: null },
+    { name: 'OpenCode Go', note: '订阅窗口', val: '滚动 11% · 周 20% · 月 15%', color: '#c9a6ff', pct: [.11, .20, .15] },
+  ]
+  cards.forEach((c, i) => {
+    const p = fadeIn(t, .5 + i * .45, .6)
+    const x = 90 + i * 372, y = 240, w = 340, h = 300
+    ctx.globalAlpha = a * p
+    roundRect(x, y + (1 - p) * 26, w, h, 12, '#14171b', '#262a31', 1.5)
+    const yy = y + (1 - p) * 26
+    text(c.name, x + 22, yy + 46, { size: 21, bold: true, color: '#e6e9ef' })
+    text(c.note, x + 22, yy + 76, { size: 13, color: '#8b919d' })
+    if (c.pct) {
+      c.pct.forEach((v, k) => {
+        const gy = yy + 116 + k * 56
+        text(['滚动(5h)', '每周', '月度'][k], x + 22, gy + 4, { size: 13, color: '#8b919d' })
+        roundRect(x + 100, gy - 6, 200, 12, 6, '#0d0f12', '#262a31')
+        const grow = clamp01(seg(t, 1.2 + i * .45 + k * .25, 2.2 + i * .45 + k * .25))
+        roundRect(x + 100, gy - 6, 200 * v * grow, 12, 6, c.color)
+        text(Math.round(v * grow * 100) + '%', x + 314, gy + 5, { size: 13, color: '#e6e9ef', align: 'right' })
+      })
+    } else {
+      const grow = ease(seg(t, 1.1 + i * .45, 2.0 + i * .45))
+      text(c.val, x + 22, yy + 140, { size: 30, bold: true, color: c.color, alpha: grow })
+    }
+    text('Key 已加密 · 仅本机', x + 22, yy + h - 22, { size: 12, color: '#5b6472' })
+  })
+  ctx.restore()
+}
+
+/* ── 场景 2：对话 + 工具 + 图片 ── */
+function sceneChat(t) {
+  const a = visible(t, 0, 6.5)
+  ctx.save(); ctx.globalAlpha = a
+  text('02 / 单智能体对话 · 能动手的 AI', 90, 150, { size: 24, bold: true })
+  text('让 AI 直接读写工作区文件、执行命令；生成的图片/视频就在对话里展示', 90, 186, { size: 15, color: '#8b919d' })
+  // 用户气泡
+  const ua = fadeIn(t, .3, .5)
+  ctx.globalAlpha = a * ua
+  roundRect(700, 232, 490, 64, 12, '#1b3a36', '#2f9e8f', 1.5)
+  text('帮我做一个贪吃蛇小游戏', 730, 272, { size: 18, color: '#e6e9ef' })
+  // AI 气泡 + 工具
+  const ta = fadeIn(t, 1.1, .6)
+  ctx.globalAlpha = a * ta
+  roundRect(90, 232, 560, 396, 12, '#14171b', '#262a31', 1.5)
+  const lines = ['→ write_file  snake.html   (已写入 12.3 KB)', '→ run_command  语法检查通过', '→ 生成图片 star_icon.png']
+  lines.forEach((l, i) => {
+    const p = fadeIn(t, 1.6 + i * .8, .4)
+    text(l, 118, 290 + i * 40, { size: 15, color: i === 2 ? '#2f9e8f' : '#8b919d', alpha: p })
+  })
+  const ia = fadeIn(t, 4.2, .6)
+  if (ia > 0) {
+    ctx.globalAlpha = a * ia
+    roundRect(118, 420, 180, 180, 10, '#0d0f12', '#262a31')
+    // 像素星星
+    const px = 118 + 24, py = 420 + 30, s = 12
+    const star = ['00100', '01110', '11111', '01110', '11011']
+    for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) if (star[r][c] === '1') { ctx.fillStyle = '#6cb4ff'; ctx.fillRect(px + c * s, py + r * s, s - 2, s - 2) }
+    text('star_icon.png（对话内直接展示）', 320, 470, { size: 13, color: '#8b919d' })
+    text('生成结果无需切窗口，审核后可保留/重画/删除', 320, 500, { size: 13, color: '#5b6472' })
+  }
+  ctx.restore()
+}
+
+/* ── 场景 3：团队协作 ── */
+function sceneTeam(t) {
+  const a = visible(t, 0, 11)
+  ctx.save(); ctx.globalAlpha = a
+  text('03 / 多智能体团队 · 全流程可视化', 90, 150, { size: 24, bold: true })
+  text('队长规划 → 策划拆解 → 美术/程序执行 → 测试验证：可暂停、可中途指令、断线可恢复', 90, 186, { size: 15, color: '#8b919d' })
+  const roles = [
+    { n: '队长', c: '#2f9e8f' }, { n: '策划', c: '#e0b34a' }, { n: '美术', c: '#c86bff' },
+    { n: '程序', c: '#43d17c' }, { n: '测试', c: '#ff8c5a' },
+  ]
+  const x0 = 90, y0 = 240, cw = 212, ch = 190, gap = 16
+  roles.forEach((r, i) => {
+    const x = x0 + i * (cw + gap)
+    const st = t - i * 1.1
+    const status = st < 1 ? '待命' : st < 2.6 ? '思考中' : st < 5.2 ? '执行中' : '完成'
+    const col = status === '完成' ? '#43d17c' : status === '待命' ? '#5b6472' : '#2f9e8f'
+    roundRect(x, y0, cw, ch, 12, '#14171b', status === '执行中' ? '#2f9e8f' : '#262a31', status === '执行中' ? 2 : 1.5)
+    ctx.beginPath(); ctx.arc(x + 22, y0 + 28, 6, 0, 7); ctx.fillStyle = r.c; ctx.fill()
+    text(r.n, x + 38, y0 + 34, { size: 17, bold: true })
+    text(status, x + cw - 16, y0 + 34, { size: 13, color: col, align: 'right' })
+    for (let k = 0; k < 3; k++) {
+      const p = fadeIn(t, 1.4 + i * 1.1 + k * .5, .4)
+      if (p <= 0) continue
+      ctx.globalAlpha = a * p
+      roundRect(x + 16, y0 + 56 + k * 26, cw - 32, 18, 5, '#0d0f12')
+      roundRect(x + 16, y0 + 56 + k * 26, (cw - 32) * (.35 + .25 * k), 18, 5, '#1c2530')
+      ctx.globalAlpha = a
+    }
+    // 数据流
+    if (i < 4 && t > i * 1.1 + 5.4) {
+      const flow = (t * 1.6) % 1
+      ctx.beginPath()
+      ctx.arc(x + cw + gap / 2, y0 + 90, 4, 0, 7)
+      ctx.fillStyle = '#2f9e8f'; ctx.globalAlpha = a * (1 - flow); ctx.fill(); ctx.globalAlpha = a
+    }
+  })
+  // 计划框
+  const pa = fadeIn(t, 5.6, .7)
+  if (pa > 0) {
+    ctx.globalAlpha = a * pa
+    roundRect(90, 470, 1100, 160, 12, '#0f1a16', '#2c4a35', 1.5)
+    text('计划（任务全程记录进会话，可随时回看）', 116, 508, { size: 16, bold: true, color: '#7ee2a8' })
+    const steps = ['1. 策划：拆解需求与验收标准', '2. 美术：素材生成与归档', '3. 程序：实现并自测', '4. 测试：独立验证与回归']
+    steps.forEach((s, i) => {
+      const p = fadeIn(t, 6.2 + i * .5, .4)
+      text(s, 116, 548 + (i % 2) * 34, { size: 14, color: '#b9c2cf', alpha: p })
+      text(s, 596, 548 + (i % 2) * 34, { size: 14, color: '#b9c2cf', alpha: 0 })
+    })
+    steps.forEach((s, i) => { if (i >= 2) text(s, 600, 548 + (i - 2) * 34, { size: 14, color: '#b9c2cf', alpha: fadeIn(t, 6.2 + i * .5, .4) }) })
+  }
+  ctx.restore()
+}
+
+/* ── 场景 4：能力清单 ── */
+function sceneFeatures(t) {
+  const a = visible(t, 0, 6)
+  ctx.save(); ctx.globalAlpha = a
+  text('04 / 更多能力', 90, 150, { size: 24, bold: true })
+  const items = [
+    'AI 出图与视频（百炼 qwen-image / wan 视频）+ 人工审核',
+    '团队预设：游戏开发 / 软件研发 / 视频制作 / 图片处理 / 文件整理',
+    '技能市场 · 角色独立标签页 · 角色单独对话 · 中途指令',
+    '凭据保险箱：本地加密保存任意 API，可设密码保护',
+    'GitHub 热更新：检测新版本一键更新，数据不覆盖',
+    '可拖拽分栏 · 深浅/跟随系统主题 · 界面间距自定义',
+    '支持把图片/文档直接拖进对话与团队任务',
+  ]
+  items.forEach((s, i) => {
+    const p = fadeIn(t, .4 + i * .55, .45)
+    ctx.globalAlpha = a * p
+    text('✓', 96, 210 + i * 52, { size: 20, color: '#43d17c', bold: true })
+    text(s, 130, 210 + i * 52, { size: 17, color: '#e6e9ef' })
+  })
+  ctx.restore()
+}
+
+/* ── 场景 5：作者与致谢 ── */
+function sceneCredits(t) {
+  const a = visible(t, 0, 6)
+  ctx.save(); ctx.globalAlpha = a
+  const logoA = ease(seg(t, .2, 1.2))
+  text('Open Agent Team', W / 2, 250, { size: 54, bold: true, align: 'center', spacing: 8, alpha: logoA })
+  text('本机 AI 多智能体工作站 · v0.9.8', W / 2, 292, { size: 17, align: 'center', color: '#8b919d', alpha: logoA })
+  const rows = [
+    ['作者', 'Acct（ID: Acct）'],
+    ['AI 开发协作', 'OpenCode（deepseek-v4.1-flash）'],
+    ['联系邮箱', '577940959@qq.com'],
+    ['授权', '开源软件 · 保留作者声明'],
+  ]
+  rows.forEach((r, i) => {
+    const p = fadeIn(t, 1.2 + i * .5, .5)
+    text(r[0], W / 2 - 250, 380 + i * 44, { size: 16, color: '#8b919d', align: 'right', alpha: p })
+    text(r[1], W / 2 - 220, 380 + i * 44, { size: 17, color: '#e6e9ef', alpha: p })
+  })
+  const ga = fadeIn(t, 3.4, .8)
+  text('感谢每一位测试与反馈的朋友，遇 Bug 欢迎邮件联系', W / 2, 610, { size: 15, align: 'center', color: '#2f9e8f', alpha: ga })
+  ctx.restore()
+}
+
+/* ── 时间线 ── */
+const TL = [
+  [0, 6.0, sceneBoot], [6.0, 13.0, sceneApi], [13.0, 19.5, sceneChat],
+  [19.5, 30.5, sceneTeam], [30.5, 36.5, sceneFeatures], [36.5, 43.0, sceneCredits],
+]
+function frameOnce() {
+  const t = T()
+  bg(t, 1)
+  for (const [a, b, fn] of TL) if (t >= a && t < b) fn(t - a)
+  if (t >= 43) { // 结尾渐黑
+    ctx.fillStyle = `rgba(0,0,0,${clamp01((t - 43) / 2)})`; ctx.fillRect(0, 0, W, H)
+  }
+  // 底部水印
+  text('Open Agent Team  ·  宣传片', W - 40, H - 40, { size: 13, color: 'rgba(139,145,157,.55)', align: 'right' })
+}
+// ★ 定时器驱动 + 手动帧泵：隐藏/屏外窗口也能稳定出帧（不依赖合成器）
+setInterval(() => {
+  frameOnce()
+  if (window.__track) { try { window.__track.requestFrame() } catch { /* ignore */ } }
+}, 1000 / 30)
+
+/* ── 录制接口（由 Electron 宿主调用） ── */
+window.__recState = 'idle'
+window.__chunks = []
+window.startRecording = () => {
+  const stream = cv.captureStream(0) // 0 = 手动 requestFrame
+  const track = stream.getVideoTracks()[0]
+  window.__track = track
+  const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' : 'video/webm'
+  const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 6000000 })
+  window.__recState = 'recording'
+  window.__t0 = performance.now()
+  t0 = performance.now() // 录制时从 0 开始播放
+  for (let i = 0; i < 3; i++) track.requestFrame()
+  rec.ondataavailable = (e) => { if (e.data && e.data.size) { const fr = new FileReader(); fr.onload = () => window.__chunks.push(String(fr.result).split(',')[1]); fr.readAsDataURL(e.data) } }
+  rec.onstop = () => { window.__recState = 'done' }
+  rec.start(1000)
+  setTimeout(() => { try { rec.stop() } catch {} }, (window.__duration + 1.5) * 1000)
+}
+window.__chunkCount = () => window.__chunks.length
+window.__getChunk = (i) => window.__chunks[i] || ''
+</script>
+</body>
+</html>
