@@ -48,6 +48,8 @@ const I18N = {
  modelList: '模型清单', fetchModels: ' 从接口拉取模型', allChat: '全选对话类', all: '全选', none: '清空', testConn: '测试连通性', cancel: '取消', save: '保存',
  create: '创建', newSession: '新建会话', sessionWorkspace: '工作区（默认当前工作区）', sessionTitle: '会话名称（可空）', noSessions: '（暂无会话）',
  roleName: '角色名称', roleDesc: '角色描述（给队长看的分工说明）', rolePromptPh: '自定义系统提示词（留空用内置）', enabled: '启用', noSkills: '（暂无技能）', budget: '预算¥',
+ rolePerm: '该角色的工具权限（团队任务生效）', permFollow: '跟随会话',
+ askLabel: '协作询问', askReply: '协作回复', asking: '询问中',
  waiting: '等待选择…', workspace: '工作区：', noTasks: '还没有任务记录。', tokens: 'Token', cache: '缓存命中', cost: '费用', toolCalls: '工具调用', context: '上下文',
  input: '输入', output: '输出', addProvider: '添加 API', edit: '编辑', delete: '删除', test: '测试', manageModels: '管理模型', useForChat: '用于对话',
  notConfigured: '未配置', noKey: '未配置Key', models: '模型', balance: '余额', failure: '失败', none2: '无', savedOk: '已保存', importDone: '导入完成', skillImportDone: '技能导入完成',
@@ -135,6 +137,8 @@ const I18N = {
  modelList: 'Models', fetchModels: ' Fetch models', allChat: 'Select chat models', all: 'Select all', none: 'Clear', testConn: 'Test', cancel: 'Cancel', save: 'Save',
  create: 'Create', newSession: 'New Session', sessionWorkspace: 'Workspace (default = current)', sessionTitle: 'Session title (optional)', noSessions: '(no sessions)',
  roleName: 'Role name', roleDesc: 'Role description', rolePromptPh: 'Custom system prompt (blank = built-in)', enabled: 'Enabled', noSkills: '(no skills)', budget: 'Budget ¥',
+ rolePerm: 'Tool permission for this role (team tasks)', permFollow: 'Follow session',
+ askLabel: 'Agent Q&A', askReply: 'Agent reply', asking: 'asking',
  waiting: 'Waiting…', workspace: 'Workspace: ', noTasks: 'No task history yet.', tokens: 'Tokens', cache: 'Cache hit', cost: 'Cost', toolCalls: 'Tool calls', context: 'Context',
  input: 'in', output: 'out', addProvider: 'Add API', edit: 'Edit', delete: 'Delete', test: 'Test', manageModels: 'Models', useForChat: 'Use for chat',
  notConfigured: 'not set', noKey: 'no key', models: 'models', balance: 'Balance', failure: 'failed', none2: 'none', savedOk: 'Saved', importDone: 'Imported', skillImportDone: 'Skills imported',
@@ -242,8 +246,9 @@ const TEAM_PRESETS = {
 }
 
 /* 版本迭代记录（设置页展示） */
-const APP_VERSION = '1.0.0'
+const APP_VERSION = '1.0.1'
 const CHANGELOG = [
+  ['P8.1', '2026-10', ['修复团队任务三个问题：① 队长汇总阶段现可真实写文件（报告/文档直接落盘并核对）', '② 角色间协作 ask_role 支持中文角色名匹配（此前「程序/测试」等名称会报未找到角色），并新增「协作询问/协作回复」过程卡片', '③ 团队任务支持每角色独立工具权限（团队配置页可为单个角色设置，覆盖会话默认权限）', '上游接口 30 秒无数据自动中断并给出明确提示（避免接口繁忙时无限等待）']],
   ['P8', '2026-10', ['正式版 1.0.0', '凭据保险箱中的 API 可被 AI 直接调用（对话与团队任务新增 vault_call 工具，密钥自动携带；支持自定义认证头与 {{key}}/{{参数}} 占位）', '字体大小范围扩展为 10–35px，默认 13px']],
   ['P7.4', '2026-10', ['厂商模板扩充：OpenAI(GPT) / Anthropic(Claude) / 智谱GLM / MiniMax / xAI(Grok) / Gemini + 自定义', '作者声明更新（作者 Acct · AI 协作 deepseek-v4.1-flash · 邮箱 577940959@qq.com）', 'GitHub 仓库已建立并接入热更新（AceTaffer/Open-Agent-Team）']],
   ['P7.3', '2026-10', ['支持把图片/文档直接拖入对话与团队任务（自动存入工作区 uploads/，图片可作为对话附件）', '设置页新增作者声明（作者 Acct · AI 开发协作 · 联系邮箱）', '新增宣传片工程（web/promo：ASCII 终端风格网页动画，可复制再生成视频）', '内置 ffmpeg 视频工具链（tools/ffmpeg.exe，用于动画→MP4 导出）']],
@@ -1232,6 +1237,23 @@ function handleTeamEvent(ev, run, ref) {
  if (ev.type === 'confirm') { appendConfirmCard(run.body, ev.confirm); return }
  if (ev.type === 'question') { appendQuestionCard(run.body, ev, ev.agent); return }
  if (ev.type === 'imagereview') { appendImageReviewCard(run.body, ev); applyTeamFilter(); return }
+ if (ev.type === 'ask') {
+ const box = document.createElement('div')
+ box.className = 'ask-box'
+ box.dataset.agent = ev.to || ev.agent || ''
+ box.innerHTML = `<b>${t('askLabel')}</b> ${esc(roleLabel(ev.from))} → ${esc(roleLabel(ev.to))}<div>${esc(ev.question || '')}</div>`
+ run.body.appendChild(box); applyTeamFilter()
+ if (ev.to) roleSetStatus(ev.to, 'thinking', { sub: `${roleLabel(ev.from)} ${t('asking')}` })
+ return
+ }
+ if (ev.type === 'ask_done') {
+ const box = document.createElement('div')
+ box.className = 'ask-box done'
+ box.dataset.agent = ev.from || ev.agent || ''
+ box.innerHTML = `<b>${t('askReply')}</b> ${esc(roleLabel(ev.to))} → ${esc(roleLabel(ev.from))}<div>${esc(String(ev.answer || '').slice(0, 600))}</div>`
+ run.body.appendChild(box); applyTeamFilter()
+ return
+ }
  if (ev.type === 'image') { setArtCallout({ who: roleLabel(ev.agent), ...ev }); return }
  if (ev.type === 'paused') {
  state.runPaused = ev.paused !== false
@@ -1580,6 +1602,13 @@ function renderRolesEditor() {
  <div class="re-line">
  <select class="re-provider">${state.providers.map((p) => `<option value="${p.id}" ${p.id === r.providerId ? 'selected' : ''}>${esc(p.name)}</option>`).join('') || '<option value="">--</option>'}</select>
  <select class="re-model">${groupedModelSelect(providerById(r.providerId), r.model)}</select>
+ <select class="re-perm" title="${t('rolePerm')}">
+ <option value="" ${!r.permission ? 'selected' : ''}>${t('permFollow')}</option>
+ <option value="view" ${r.permission === 'view' ? 'selected' : ''}>${t('permView')}</option>
+ <option value="modify" ${r.permission === 'modify' ? 'selected' : ''}>${t('permModify')}</option>
+ <option value="limited" ${r.permission === 'limited' ? 'selected' : ''}>${t('permLimited')}</option>
+ <option value="full" ${r.permission === 'full' ? 'selected' : ''}>${t('permFullOpt')}</option>
+ </select>
  </div>
  <textarea class="re-prompt" rows="2" placeholder="${t('rolePromptPh')}">${esc(r.systemPrompt || '')}</textarea>
  <div class="re-skills">${state.skills.length ? state.skills.map((s) => `<label class="chk"><input type="checkbox" class="re-skill" value="${esc(s.id)}" ${(r.skills || []).includes(s.id) ? 'checked' : ''} /> ${esc(s.name)}</label>`).join('') : `<span class="dim small">${t('noSkills')}</span>`}</div>
@@ -1608,6 +1637,7 @@ async function saveRolesEditor() {
  budgetCost: Number(row.querySelector('.re-budget').value) || 0,
  providerId: row.querySelector('.re-provider').value,
  model: row.querySelector('.re-model').value,
+ permission: row.querySelector('.re-perm').value,
  systemPrompt: row.querySelector('.re-prompt').value,
  skills: [...row.querySelectorAll('.re-skill:checked')].map((cb) =>cb.value),
  }

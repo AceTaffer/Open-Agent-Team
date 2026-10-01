@@ -357,6 +357,12 @@ body.theme-light .rc-tool { background: #eef1f6; }
   font-size: 12px; margin: 4px 0;
 }
 .steer-box > div { white-space: pre-wrap; margin-top: 4px; }
+.ask-box {
+  background: #16222b; border: 1px solid #2f6f8f; border-radius: 10px; padding: 8px 12px;
+  font-size: 12px; margin: 4px 0;
+}
+.ask-box.done { border-color: #3f7d5f; background: #16251d; }
+.ask-box > div { white-space: pre-wrap; margin-top: 4px; color: var(--dim); }
 .steer-btn { margin-left: auto; }
 .art-callout {
   border-radius: 10px; padding: 8px 12px; font-size: 12px; margin: 6px 0;

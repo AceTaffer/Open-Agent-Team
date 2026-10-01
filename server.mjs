@@ -166,6 +166,16 @@ const DEFAULT_ROLES = [
   { id: 'tester', label: '测试', color: '#ff8c5a', desc: '运行验证、报告问题', enabled: true, providerId: '', model: '', systemPrompt: '', skills: [] },
 ]
 function roleById(id) { return roles.find((r) => r.id === id) }
+// ★ 宽松角色匹配：兼容模型用"角色名/中文标签/大小写"引用角色（如 ask_role 写「程序」）
+function findRole(key) {
+  if (key == null) return null
+  const k = String(key).trim()
+  if (!k) return null
+  return roles.find((r) => r.id === k) ||
+    roles.find((r) => r.label === k) ||
+    roles.find((r) => r.id.toLowerCase() === k.toLowerCase()) ||
+    roles.find((r) => r.label.includes(k) || r.id.toLowerCase().includes(k.toLowerCase()))
+}
 function rebuildRoleMeta() {
   ROLE_META = {}
   for (const r of roles) ROLE_META[r.id] = { ...r, label: r.label || r.id, color: r.color || '#888', desc: r.desc || '' }
@@ -402,22 +412,40 @@ async function chatComplete(provider, model, messages, opts = {}) {
     return JSON.stringify(b)
   }
   const t0 = Date.now()
-  let r = await fetch(joinUrl(base, 'chat/completions'), { method: 'POST', headers, body: makeBody(stream, withEffort, withJson) })
+  // ★ 上游无数据超时（30 秒）：避免接口繁忙时请求无限挂死（此前 DeepSeek 官方接口曾整段卡住）
+  const IDLE_MS = 30000
+  const idleMsg = () => `上游「${provider.name} / ${model}」${IDLE_MS / 1000} 秒无响应，已自动中断（接口可能繁忙或网络异常，请重试或切换模型/厂商）`
+  const ac = new AbortController()
+  let idleTimer = null
+  const bump = () => { if (idleTimer) clearTimeout(idleTimer); idleTimer = setTimeout(() => ac.abort(), IDLE_MS) }
+  const disarm = () => { if (idleTimer) { clearTimeout(idleTimer); idleTimer = null } }
+  const fetchT = async (url, init) => {
+    bump()
+    try { return await fetch(url, { ...init, signal: ac.signal }) }
+    catch (e) { disarm(); if (ac.signal.aborted) throw new Error(idleMsg()); throw e }
+  }
+  const readT = async (reader) => {
+    // ★ 注意：这里不 bump —— 只有真正解析出内容/思考时才重置倒计时，
+    //   避免上游只发心跳/空角色事件时"看起来有数据"却永远不出字
+    try { return await reader.read() }
+    catch (e) { if (ac.signal.aborted) throw new Error(idleMsg()); throw e }
+  }
+  let r = await fetchT(joinUrl(base, 'chat/completions'), { method: 'POST', headers, body: makeBody(stream, withEffort, withJson) })
   // ★ 瞬时限流/过载（429/5xx）：等待后自动重试（最多 2 次）
   for (let attempt = 0; !r.ok && [429, 500, 502, 503, 504].includes(r.status) && attempt < 2; attempt++) {
     dbg('llm.retry', { provider: provider.name, model, status: r.status, attempt: attempt + 1 })
     await new Promise((res) => setTimeout(res, [5000, 20000][attempt]))
-    r = await fetch(joinUrl(base, 'chat/completions'), { method: 'POST', headers, body: makeBody(stream, withEffort, withJson) })
+    r = await fetchT(joinUrl(base, 'chat/completions'), { method: 'POST', headers, body: makeBody(stream, withEffort, withJson) })
   }
   // ★ 某些中转不支持 stream_options / reasoning_effort / response_format，遇 400/422 时逐项去掉重试
   if (!r.ok && (r.status === 400 || r.status === 422) && stream) {
-    r = await fetch(joinUrl(base, 'chat/completions'), { method: 'POST', headers, body: makeBody(false, withEffort, withJson) })
+    r = await fetchT(joinUrl(base, 'chat/completions'), { method: 'POST', headers, body: makeBody(false, withEffort, withJson) })
   }
   if (!r.ok && (r.status === 400 || r.status === 422) && withEffort) {
-    r = await fetch(joinUrl(base, 'chat/completions'), { method: 'POST', headers, body: makeBody(false, false, withJson) })
+    r = await fetchT(joinUrl(base, 'chat/completions'), { method: 'POST', headers, body: makeBody(false, false, withJson) })
   }
   if (!r.ok && (r.status === 400 || r.status === 422) && withJson) {
-    r = await fetch(joinUrl(base, 'chat/completions'), { method: 'POST', headers, body: makeBody(false, false, false) })
+    r = await fetchT(joinUrl(base, 'chat/completions'), { method: 'POST', headers, body: makeBody(false, false, false) })
   }
   if (!r.ok) {
     const text = await r.text().catch(() => '')
@@ -425,7 +453,9 @@ async function chatComplete(provider, model, messages, opts = {}) {
     throw new Error(`HTTP ${r.status}：${text.slice(0, 400)}`)
   }
   if (!stream) {
-    const j = await r.json()
+    let j
+    try { j = await r.json() } catch (e) { disarm(); if (ac.signal.aborted) throw new Error(idleMsg()); throw e }
+    disarm()
     if (j?.usage && onUsage) onUsage(j.usage)
     dbg('llm.done', { provider: provider.name, model, ms: Date.now() - t0, usage: j?.usage })
     return j?.choices?.[0]?.message?.content || ''
@@ -434,7 +464,7 @@ async function chatComplete(provider, model, messages, opts = {}) {
   const dec = new TextDecoder()
   let buf = '', full = '', usage = null, thinkChars = 0
   while (true) {
-    const { done, value } = await reader.read()
+    const { done, value } = await readT(reader)
     if (done) break
     buf += dec.decode(value, { stream: true })
     const lines = buf.split('\n'); buf = lines.pop() || ''
@@ -447,19 +477,21 @@ async function chatComplete(provider, model, messages, opts = {}) {
         const j = JSON.parse(data)
         const d = j?.choices?.[0]?.delta
         const delta = d?.content
-        if (delta) { full += delta; if (onDelta) onDelta(delta) }
+        if (delta) { full += delta; bump(); if (onDelta) onDelta(delta) }
         // ★ 推理模型（deepseek-reasoner 等）思考过程单独回调，不混入正文
         const think = d?.reasoning_content || d?.reasoning
         if (think) {
+          bump()
           thinkChars += think.length
           if (onReasoning) onReasoning(think)
           // ★ 安全阀：只思考不产出，超过约 2 万 token 等价字符就中止（由调用方关闭思考重试），避免烧掉整段输出预算
-          if (!full && thinkChars > 80000) { dbg('llm.abort_think_only', { provider: provider.name, model, thinkChars }); try { await reader.cancel() } catch { /* ignore */ } return full }
+          if (!full && thinkChars > 80000) { dbg('llm.abort_think_only', { provider: provider.name, model, thinkChars }); try { await reader.cancel() } catch { /* ignore */ } disarm(); return full }
         }
         if (j?.usage) usage = j.usage
       } catch { /* ignore */ }
     }
   }
+  disarm()
   if (usage && onUsage) onUsage(usage)
   dbg('llm.done', { provider: provider.name, model, ms: Date.now() - t0, usage })
   return full
@@ -809,8 +841,8 @@ function resolveRoleTarget(role) {
 
 // ★ 角色间协作：询问另一个角色并拿到它的专业意见
 async function askRoleImpl(call, ctx = {}) {
-  const role = roleById(call.role || call.agent)
-  if (!role) return `未找到角色「${call.role}」，可用角色：${roles.map((r) => r.id).join('、')}`
+  const role = findRole(call.role || call.agent)
+  if (!role) return `未找到角色「${call.role}」，可用角色：${roles.map((r) => `${r.id}（${r.label}）`).join('、')}`
   const target = resolveRoleTarget(role)
   if (!target) return `角色「${role.label}」没有可用的对话模型`
   try {
@@ -869,7 +901,13 @@ async function runToolGuarded(call, ctx = {}) {
   if (call.tool === 'ask_role') {
     // 兼容模型把「问用户」写成 ask_role role=user 的情况
     if (/^(user|用户|玩家)$/i.test(String(call.role || '')) && typeof ctx.onQuestion === 'function') return await toolAskUser({ question: call.question || call.query }, ctx.onQuestion)
-    return await askRoleImpl(call, ctx)
+    // ★ 广播协作询问事件（界面上可见 谁→谁 的交流）
+    const to = findRole(call.role || call.agent)
+    const info = { from: ctx.agentId || '', to: to?.id || String(call.role || ''), question: String(call.question || call.query || '').slice(0, 1000) }
+    ctx.onAsk?.(info)
+    const ans = await askRoleImpl(call, ctx)
+    ctx.onAskDone?.({ ...info, answer: String(ans).slice(0, 1200) })
+    return ans
   }
   const perm = PERMISSIONS.includes(ctx.permission) ? ctx.permission : 'modify'
   const cat = toolCategory(call)
@@ -955,7 +993,9 @@ function normalizePlan(j) {
     const agent = s.agent || s.role || s.who || s.id || s.角色
     const title = s.title || s.name || s.task || s.标题 || '步骤'
     const instruction = s.instruction || s.detail || s.desc || s.description || s.content || s.说明 || s.title || ''
-    return agent && instruction ? { agent: String(agent), title: String(title), instruction: String(instruction) } : null
+    if (!agent || !instruction) return null
+    const matched = findRole(agent) // ★ 把「程序/测试」这类中文角色名映射回角色 id
+    return { agent: matched ? matched.id : String(agent), title: String(title), instruction: String(instruction) }
   }).filter(Boolean).slice(0, 6)
   if (!steps.length) return null
   return { summary: String(j.summary || j.概要 || ''), steps }
@@ -1445,7 +1485,7 @@ async function runTeam(task, opts = {}) {
     if (budgetStopped || run.abort) break
     if (!(await gate('*'))) break
     const step = plan.steps[i]
-    const wanted = roleById(step.agent)
+    const wanted = findRole(step.agent)
     const roleId = wanted && wanted.enabled !== false ? wanted.id : (enabledOthers[0]?.id || roles[0]?.id)
     let agent
     try { agent = getRole(roleId) } catch (e) { await failTask(e.message); return }
@@ -1491,13 +1531,17 @@ async function runTeam(task, opts = {}) {
         const toolResults = []
         for (const call of calls) {
           if (!(await gate(roleId))) break
+          // ★ 角色独立权限：该角色单独设置了权限则覆盖会话权限
+          const rolePerm = PERMISSIONS.includes(agent.role.permission) ? agent.role.permission : permission
           const result = await runToolGuarded(call, {
-            root, permission, session: sess, autoState, task, run, agentId: roleId,
+            root, permission: rolePerm, session: sess, autoState, task, run, agentId: roleId,
             reportUsage: (a, p, m, u) => trackUsage(a, p, m)(u),
             onConfirm: (c) => send({ type: 'confirm', agent: roleId, confirm: c }),
             onImage: (info) => send({ type: 'image', agent: roleId, ...info }),
             onImageReview: (r) => send({ type: 'imagereview', agent: roleId, ...r }),
             onQuestion: (q) => send({ type: 'question', ...q }),
+            onAsk: (info) => send({ type: 'ask', ...info }),
+            onAskDone: (info) => send({ type: 'ask_done', ...info }),
           })
           taskToolCalls++
           send({ type: 'tool', agent: roleId, call: call.tool, detail: call.path || call.command || call.query || call.plugin || call.url || call.path || '', result: result.slice(0, 1500) })
@@ -1531,19 +1575,51 @@ async function runTeam(task, opts = {}) {
     }
   }
 
-  // 3. 队长汇总（★ 预算已停则不汇总，避免超预算继续花钱）
+  // 3. 队长汇总（★ 预算已停则不汇总；★ 汇总阶段带工具循环：队长可真实写报告文件）
   let finalText = ''
   if (!budgetStopped && !run.abort && (await gate('*'))) {
     // ★ 队长也要领取发给它的中途指令（* 也在这里清空）
     for (const s of takeSteers('leader')) send({ type: 'steer', agent: 'leader', message: s.message })
     send({ type: 'agent_start', agent: 'leader', label: leader.role.label, model: `${leader.provider.name} / ${leader.model}`, final: true })
+    // ★ 队长独立权限：单独设置了权限则覆盖会话权限
+    const leaderPerm = PERMISSIONS.includes(leader.role.permission) ? leader.role.permission : permission
     try {
-      const ctx = results.map((r) => `【${roleById(r.agent)?.label || r.agent}·${r.title}】\n${r.result.slice(0, 2500)}`).join('\n\n')
+      const ctxText = results.map((r) => `【${roleById(r.agent)?.label || r.agent}·${r.title}】\n${r.result.slice(0, 2500)}`).join('\n\n')
       const steerText = steersTaken.map((s) => `【${roleById(s.agent)?.label || s.agent}】${s.message}`).join('\n')
-      finalText = await chatComplete(leader.provider, leader.model, [
-        { role: 'system', content: `你是【${leader.role.label}】。请对团队产出做最终汇总：完成了什么、产物在哪（workspace 文件名 / 图片素材路径）、遗留问题、下一步建议。若存在「用户中途指令记录」，必须逐条重新评估其对成果的影响并说明处理结果。简洁分点。` },
-        { role: 'user', content: `总任务：${task}\n\n${steerText ? `用户中途指令记录（需重新评估）：\n${steerText}\n\n` : ''}团队产出：\n${ctx}` },
-      ], { stream: true, temperature: 0.4, onDelta: (d) => send({ type: 'delta', agent: 'leader', text: d, final: true }), onReasoning: (r) => send({ type: 'reasoning', agent: 'leader', text: r, final: true }), onUsage: trackUsage('leader', leader.provider, leader.model) })
+      const messages = [
+        { role: 'system', content: `${roleSystemPrompt(leader.role)}\n\n【最终汇总要求】请对团队产出做汇总：完成了什么、产物在哪（workspace 文件名 / 图片素材路径）、遗留问题、下一步建议。若存在「用户中途指令记录」，必须逐条重新评估其对成果的影响并说明处理结果。简洁分点。\n如任务要求产出报告/文档等文件，你必须用 write_file 把内容真实写入工作区（不要只在回复里贴出全文），写完用 list_files 核对文件存在，并在汇总里给出文件名。` },
+        { role: 'user', content: `总任务：${task}\n\n${steerText ? `用户中途指令记录（需重新评估）：\n${steerText}\n\n` : ''}团队产出：\n${ctxText}` },
+      ]
+      let turn = 0
+      while (turn < 3) {
+        if (budgetStopped || run.abort) break
+        if (!(await gate('*'))) break
+        turn++
+        const text = await chatComplete(leader.provider, leader.model, messages, { stream: true, temperature: 0.4, onDelta: (d) => send({ type: 'delta', agent: 'leader', text: d, final: true }), onReasoning: (r) => send({ type: 'reasoning', agent: 'leader', text: r, final: true }), onUsage: trackUsage('leader', leader.provider, leader.model) })
+        if (!text.trim()) break
+        finalText = text
+        const calls = extractToolCalls(text)
+        if (!calls.length) break
+        messages.push({ role: 'assistant', content: text })
+        const outs = []
+        for (const call of calls) {
+          if (!(await gate('*'))) break
+          const result = await runToolGuarded(call, {
+            root, permission: leaderPerm, session: sess, autoState, task, run, agentId: 'leader',
+            reportUsage: (a, p, m, u) => trackUsage(a, p, m)(u),
+            onConfirm: (c) => send({ type: 'confirm', agent: 'leader', confirm: c }),
+            onImage: (info) => send({ type: 'image', agent: 'leader', ...info }),
+            onImageReview: (r) => send({ type: 'imagereview', agent: 'leader', ...r }),
+            onQuestion: (q) => send({ type: 'question', ...q }),
+            onAsk: (info) => send({ type: 'ask', ...info }),
+            onAskDone: (info) => send({ type: 'ask_done', ...info }),
+          })
+          taskToolCalls++
+          send({ type: 'tool', agent: 'leader', call: call.tool, detail: call.path || call.command || call.query || call.plugin || call.url || '', result: result.slice(0, 1500) })
+          outs.push(`【工具结果】${call.tool} ${call.path || call.command || call.query || call.plugin || call.url || ''}\n${result}`)
+        }
+        messages.push({ role: 'user', content: outs.join('\n\n') + '\n\n请继续：如成果已产出完毕，请给出最终汇总（不要再调用工具）。' })
+      }
     } catch (e) { send({ type: 'error', message: `队长汇总失败：${e.message}` }) }
   }
 
@@ -1786,7 +1862,7 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
   if (pathname === '/api/roles' && method === 'GET') return sendJson(res, 200, { ok: true, roles })
   if (pathname === '/api/roles' && method === 'PUT') {
     const b = await readBody(req)
-    if (Array.isArray(b)) roles = b.map((r) => ({ ...r, id: r.id || crypto.randomUUID(), label: r.label || '未命名角色', color: r.color || '#888', enabled: r.enabled !== false, skills: r.skills || [] }))
+    if (Array.isArray(b)) roles = b.map((r) => ({ ...r, id: r.id || crypto.randomUUID(), label: r.label || '未命名角色', color: r.color || '#888', enabled: r.enabled !== false, skills: r.skills || [], permission: (r.permission === '' || PERMISSIONS.includes(r.permission)) ? (r.permission || '') : '' }))
     else if (b && typeof b === 'object') roles = DEFAULT_ROLES.map((d) => ({ ...d, ...(b[d.id] || {}) }))
     rebuildRoleMeta(); await saveRoles()
     return sendJson(res, 200, { ok: true, roles: ROLE_META })
