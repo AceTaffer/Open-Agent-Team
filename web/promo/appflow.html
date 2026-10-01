@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><title>Open Agent Team 宣传片</title>
+<style>html,body{margin:0;background:#000}canvas{display:block}</style></head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+/* ============ Open Agent Team 完整宣传片（Canvas 模拟界面动画） ============ */
+const cv = document.getElementById('c'), ctx = cv.getContext('2d')
+const W = 1280, H = 720
+const FONT = '"Microsoft YaHei","Segoe UI",sans-serif'
+const MONO = 'Consolas,"Courier New",monospace'
+window.__duration = 176
+let t0 = performance.now()
+const T = () => (performance.now() - t0) / 1000
+const clamp = (x, a, b) => Math.max(a, Math.min(b, x))
+const seg = (t, a, b) => clamp((t - a) / (b - a), 0, 1)
+const ease = (x) => x < .5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2
+const lerp = (a, b, k) => a + (b - a) * k
+const COL = {
+  bg: '#0e1013', soft: '#14161a', card: '#191c21', border: '#262a31', deep: '#101216',
+  text: '#e7e9ee', dim: '#8b919d', accent: '#2f9e8f', accentSoft: '#1b3a36',
+  ok: '#48b97a', warn: '#cfa04a', err: '#d06060', white: '#ffffff',
+}
+const LIGHT = { bg: '#f4f6fa', soft: '#eef1f6', card: '#ffffff', border: '#d7dde8', deep: '#ffffff', text: '#1c2230', dim: '#68738a' }
+let THEME = { ...COL }
+const C = () => THEME
+
+/* ── 基础绘制 ── */
+function rr(x, y, w, h, r, fill, stroke, lw = 1) {
+  ctx.beginPath(); ctx.moveTo(x + r, y)
+  ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r)
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath()
+  if (fill) { ctx.fillStyle = fill; ctx.fill() }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke() }
+}
+function tx(s, x, y, o = {}) {
+  const { size = 14, color = C().text, align = 'left', font = FONT, alpha = 1, bold = false } = o
+  ctx.save(); ctx.globalAlpha *= alpha
+  ctx.fillStyle = color; ctx.font = `${bold ? '700 ' : ''}${size}px ${font}`
+  ctx.textAlign = align; ctx.textBaseline = 'middle'; ctx.fillText(s, x, y); ctx.restore()
+}
+function clipText(s, max) { return s.length > max ? s.slice(0, max) + '…' : s }
+function typeStr(full, t, a, b) { return full.slice(0, Math.floor(seg(t, a, b) * full.length)) }
+window.__seek = (s) => { t0 = performance.now() - s * 1000 }
+
+/* ── 相机（世界→屏幕）── */
+const CAMS = [
+  { t: 0, x: 640, y: 360, s: 1.0 }, { t: 7, x: 640, y: 360, s: 1.0 },
+  { t: 8.5, x: 640, y: 360, s: 1.02 }, { t: 10, x: 190, y: 250, s: 1.7 },
+  { t: 14.5, x: 190, y: 250, s: 1.7 }, { t: 16, x: 640, y: 360, s: 1.15 },
+  { t: 20.5, x: 640, y: 360, s: 1.15 }, { t: 22, x: 190, y: 260, s: 1.7 },
+  { t: 25, x: 190, y: 260, s: 1.7 }, { t: 26.5, x: 640, y: 360, s: 1.15 },
+  { t: 31, x: 640, y: 420, s: 1.25 }, { t: 40, x: 640, y: 420, s: 1.25 },
+  { t: 41.5, x: 640, y: 360, s: 1.0 }, { t: 54, x: 640, y: 360, s: 1.0 },
+  { t: 55.5, x: 640, y: 320, s: 1.05 }, { t: 78, x: 640, y: 320, s: 1.05 },
+  { t: 79.5, x: 640, y: 380, s: 1.05 }, { t: 108, x: 640, y: 380, s: 1.05 },
+  { t: 109.5, x: 640, y: 360, s: 1.0 }, { t: 120, x: 640, y: 360, s: 1.0 },
+  { t: 121.5, x: 640, y: 360, s: 1.0 }, { t: 130, x: 640, y: 360, s: 1.0 },
+  { t: 131.5, x: 640, y: 360, s: 1.0 }, { t: 140, x: 640, y: 360, s: 1.0 },
+  { t: 141.5, x: 640, y: 360, s: 1.05 }, { t: 158, x: 640, y: 360, s: 1.05 },
+  { t: 159.5, x: 640, y: 360, s: 1.0 }, { t: 176, x: 640, y: 360, s: 1.0 },
+]
+function camAt(t) {
+  let i = 0
+  while (i < CAMS.length - 2 && t > CAMS[i + 1].t) i++
+  const a = CAMS[i], b = CAMS[i + 1]
+  const k = ease(seg(t, a.t, b.t))
+  return { x: lerp(a.x, b.x, k), y: lerp(a.y, b.y, k), s: lerp(a.s, b.s, k) }
+}
+function withCam(t, fn) {
+  const c = camAt(t)
+  ctx.save()
+  ctx.translate(W / 2, H / 2); ctx.scale(c.s, c.s); ctx.translate(-c.x, -c.y)
+  fn()
+  ctx.restore()
+}
+/* 世界坐标 = 屏幕坐标（相机围绕中心缩放平移） */
+
+/* ── 鼠标 ── */
+const MOUSE = [
+  { t: 7, x: 1250, y: 700 }, { t: 10, x: 120, y: 258 }, { t: 10.6, x: 120, y: 258, click: true },
+  { t: 14, x: 430, y: 300 }, { t: 16.5, x: 640, y: 470 }, { t: 19, x: 610, y: 520, click: true },
+  { t: 22, x: 120, y: 300, click: true }, { t: 26, x: 430, y: 320 }, { t: 28.5, x: 640, y: 500, click: true },
+  { t: 31.5, x: 640, y: 610 }, { t: 40, x: 900, y: 610 },
+  { t: 42, x: 1150, y: 90, click: true }, { t: 54, x: 900, y: 300 },
+  { t: 56, x: 300, y: 105, click: true }, { t: 62, x: 430, y: 90, click: true }, { t: 70, x: 640, y: 300, click: true },
+  { t: 79, x: 200, y: 105, click: true }, { t: 84, x: 640, y: 470 }, { t: 90, x: 620, y: 620, click: true },
+  { t: 108, x: 640, y: 620 }, { t: 111, x: 1150, y: 105, click: true }, { t: 114, x: 640, y: 500, click: true },
+  { t: 121, x: 1150, y: 75, click: true }, { t: 125, x: 900, y: 300 },
+  { t: 131, x: 1150, y: 105, click: true },
+  { t: 143, x: 500, y: 250, click: true }, { t: 146.5, x: 560, y: 250, click: true }, { t: 150, x: 500, y: 250, click: true }, { t: 154, x: 620, y: 250 },
+  { t: 160, x: 400, y: 300 }, { t: 163.5, x: 400, y: 300, click: true }, { t: 166, x: 660, y: 300, click: true },
+]
+function mouseAt(t) {
+  let i = 0
+  while (i < MOUSE.length - 2 && t > MOUSE[i + 1].t) i++
+  if (t <= MOUSE[0].t) return { x: MOUSE[0].x, y: MOUSE[0].y, click: 0 }
+  const a = MOUSE[i], b = MOUSE[i + 1]
+  const k = ease(seg(t, a.t, b.t))
+  const clickT = MOUSE.filter(m => m.click && t >= m.t && t < m.t + 1).map(m => m.t).pop()
+  return { x: lerp(a.x, b.x, k), y: lerp(a.y, b.y, k), visible: t > MOUSE[0].t, click: clickT ? 1 - (t - clickT) : 0 }
+}
+function drawMouse(m) {
+  if (!m || !m.visible) return
+  if (m.click > 0) { ctx.beginPath(); ctx.arc(m.x, m.y, 26 * (1 - m.click), 0, 7); ctx.strokeStyle = `rgba(47,158,143,${m.click})`; ctx.lineWidth = 2; ctx.stroke() }
+  ctx.save()
+  ctx.fillStyle = '#fff'; ctx.strokeStyle = '#111'; ctx.lineWidth = 1.5
+  ctx.beginPath(); ctx.moveTo(m.x, m.y); ctx.lineTo(m.x, m.y + 18); ctx.lineTo(m.x + 5, m.y + 13); ctx.lineTo(m.x + 11, m.y + 20); ctx.lineTo(m.x + 14, m.y + 17); ctx.lineTo(m.x + 8, m.y + 10); ctx.lineTo(m.x + 14, m.y + 8); ctx.closePath()
+  ctx.fill(); ctx.stroke()
+  ctx.restore()
+}
+
+/* ── 应用窗口绘制 ── */
+const AW = { x: 40, y: 40, w: 1200, h: 640 }
+const TABS = ['对话', '团队任务', 'API 仓库', '团队配置', '插件', '项目', '统计', '设置']
+let appView = 'chat' // 由时间线切换
+function drawAppFrame(t, content) {
+  const c = C()
+  rr(AW.x, AW.y, AW.w, AW.h, 14, c.bg, c.border, 1.5)
+  // 顶栏
+  rr(AW.x, AW.y, AW.w, 46, 14, c.soft)
+  ctx.fillStyle = c.soft; ctx.fillRect(AW.x, AW.y + 30, AW.w, 16)
+  tx('Open Agent Team', AW.x + 58, AW.y + 24, { size: 15, bold: true })
+  rr(AW.x + 14, AW.y + 8, 30, 30, 8, c.accent)
+  tx('AI', AW.x + 29, AW.y + 23, { size: 12, bold: true, color: '#fff', align: 'center' })
+  const tabW = 78
+  TABS.forEach((s, i) => {
+    const x = AW.x + 240 + i * (tabW + 6)
+    const active = s === tabLabel(appView)
+    rr(x, AW.y + 9, tabW, 28, 7, active ? c.card : 'transparent', active ? c.border : 'transparent')
+    tx(s, x + tabW / 2, AW.y + 23, { size: 12, color: active ? c.text : c.dim, align: 'center' })
+  })
+  // 顶栏右侧
+  rr(AW.x + AW.w - 220, AW.y + 10, 130, 26, 7, c.card, c.border)
+  tx('E:\\集合工作站\\workspace', AW.x + AW.w - 155, AW.y + 23, { size: 10, color: c.dim, align: 'center' })
+  rr(AW.x + AW.w - 80, AW.y + 10, 66, 26, 7, c.accent)
+  tx('+ 添加 API', AW.x + AW.w - 47, AW.y + 23, { size: 11, color: '#fff', align: 'center' })
+  // 内容区
+  ctx.save(); ctx.beginPath(); ctx.rect(AW.x, AW.y + 46, AW.w, AW.h - 46); ctx.clip()
+  content()
+  ctx.restore()
+}
+function tabLabel(v) { return { chat: '对话', team: '团队任务', providers: 'API 仓库', teamconfig: '团队配置', plugins: '插件', github: '项目', stats: '统计', settings: '设置' }[v] || '' }
+/* 侧栏（对话/团队视图） */
+function drawSidebar(t, providers) {
+  const c = C()
+  rr(AW.x, AW.y + 46, 240, AW.h - 46, 0, c.soft)
+  tx('已登记 API（' + providers.length + '）', AW.x + 14, AW.y + 72, { size: 12, color: c.dim })
+  providers.forEach((p, i) => {
+    const y = AW.y + 88 + i * 92
+    rr(AW.x + 10, y, 220, 84, 9, i === 0 ? c.accentSoft : c.card, i === 0 ? '#3d6f68' : c.border)
+    tx(p.name, AW.x + 22, y + 20, { size: 13, bold: true })
+    tx(p.url, AW.x + 22, y + 40, { size: 10, color: c.dim })
+    const bw = [42, 30, 38]
+    let bx = AW.x + 22
+    ;['对话', '代码', '模型 ' + p.n].forEach((b, k) => { rr(bx, y + 50, bw[k] + 14, 16, 8, c.deep, c.border); tx(b, bx + (bw[k] + 14) / 2, y + 58, { size: 9, color: c.dim, align: 'center' }); bx += bw[k] + 20 })
+    if (p.bal) tx(p.bal, AW.x + 22, y + 76, { size: 11, color: c.ok, bold: true })
+  })
+  // 添加 API 入口
+  const hy = AW.y + AW.h - 70
+  rr(AW.x + 10, hy, 220, 34, 9, 'transparent', c.border)
+  ctx.setLineDash([5, 4]); ctx.strokeStyle = c.border
+  rr(AW.x + 10, hy, 220, 34, 9, null, c.border); ctx.setLineDash([])
+  tx('＋ 添加 API', AW.x + 120, hy + 17, { size: 12, color: c.dim, align: 'center' })
+}
+/* 主内容：各页面 */
+function drawChatView(t, msgs, typed, replyShown, replyText) {
+  const c = C()
+  const X = AW.x + 250, Y = AW.y + 56, Wd = AW.w - 260, Hd = AW.h - 66
+  rr(X, Y, Wd, 40, 9, c.soft, c.border)
+  tx('使用 API：', X + 12, Y + 20, { size: 11, color: c.dim })
+  rr(X + 70, Y + 8, 130, 24, 6, c.card, c.border); tx('DeepSeek v4.1', X + 80, Y + 20, { size: 11 })
+  tx('模型：', X + 214, Y + 20, { size: 11, color: c.dim })
+  rr(X + 252, Y + 8, 120, 24, 6, c.card, c.border); tx('deepseek-chat', X + 262, Y + 20, { size: 11 })
+  rr(X + Wd - 90, Y + 8, 78, 24, 6, 'transparent', c.border); tx('清空对话', X + Wd - 51, Y + 20, { size: 10, color: c.dim, align: 'center' })
+  // 消息
+  let my = Y + 70
+  msgs.forEach((m) => {
+    if (m.me) {
+      const w = 360
+      rr(X + Wd - w - 20, my, w, 48, 10, c.accentSoft, '#3d6f68')
+      tx(clipText(m.text, 22), X + Wd - w, my + 24, { size: 13 })
+      my += 64
+    } else {
+      const w = 460
+      rr(X + 20, my, w, m.title ? 92 : 64, 10, c.card, c.border)
+      tx('AI' + (m.title ? ' · ' + m.title : ''), X + 34, my + 20, { size: 11, color: c.dim })
+      tx(m.text.slice(0, 30), X + 34, my + 44, { size: 12 })
+      my += m.title ? 108 : 80
+    }
+  })
+  // 输入区
+  const iy = Y + Hd - 66
+  rr(X + 10, iy, Wd - 20, 56, 10, c.card, c.border)
+  tx(typed || '输入指令，/ 查看命令，Enter 发送', X + 26, iy + 28, { size: 12, color: typed ? c.text : '#5b6472' })
+  rr(X + Wd - 96, iy + 8, 76, 40, 9, c.accent)
+  const hot = seg(t, 33.5, 34) * (1 - seg(t, 34.4, 34.8)) > 0 ? .5 : 0
+  tx('发送', X + Wd - 58, iy + 28, { size: 12, color: '#fff', align: 'center', alpha: 1 - hot })
+}
+/* 新增 API 弹窗 */
+function drawApiModal(t, fill) {
+  const c = C()
+  ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(0, 0, W, H)
+  const x = 400, y = 150, w = 480, h = 400
+  rr(x, y, w, h, 14, c.soft, c.border, 1.5)
+  tx('添加 API', x + 24, y + 34, { size: 17, bold: true })
+  const rows = [
+    ['厂商模板', fill.tpl ? 'DeepSeek 官方' : ''],
+    ['显示名称', fill.name],
+    ['Base URL', fill.url],
+    ['API Key', fill.key],
+  ]
+  rows.forEach((r, i) => {
+    const ry = y + 74 + i * 62
+    tx(r[0], x + 24, ry, { size: 11, color: c.dim })
+    rr(x + 24, ry + 12, w - 48, 32, 7, c.card, c.border)
+    const v = r[1]
+    if (v) tx(v, x + 36, ry + 28, { size: 12, color: c.text })
+    if (i === 3 && v) tx('●'.repeat(Math.min(16, v.length)), x + 36, ry + 28, { size: 10, color: c.text })
+  })
+  rr(x + w - 200, y + h - 56, 84, 34, 8, 'transparent', c.border)
+  tx('取消', x + w - 158, y + h - 39, { size: 12, color: c.dim, align: 'center' })
+  const saveHot = seg(t, 19, 19.4) * (1 - seg(t, 19.8, 20.2))
+  rr(x + w - 106, y + h - 56, 84, 34, 8, c.accent)
+  tx('保存', x + w - 64, y + h - 39, { size: 12, color: '#fff', align: 'center', alpha: 1 - saveHot * .6 })
+}
+/* 新建会话弹窗（通用） */
+function drawSessionModal(t, fill, team) {
+  const c = C()
+  ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(0, 0, W, H)
+  const x = 370, y = 140, w = 540, h = 430
+  rr(x, y, w, h, 14, c.soft, c.border, 1.5)
+  tx(team ? '新建团队会话' : '新建会话', x + 24, y + 34, { size: 17, bold: true })
+  tx('会话名称', x + 24, y + 76, { size: 11, color: c.dim })
+  rr(x + 24, y + 88, w - 48, 32, 7, c.card, c.border)
+  if (fill.title) tx(fill.title, x + 36, y + 104, { size: 12 })
+  tx('工作区', x + 24, y + 138, { size: 11, color: c.dim })
+  rr(x + 24, y + 150, w - 48, 32, 7, c.card, c.border)
+  tx('E:\\集合工作站\\workspace', x + 36, y + 166, { size: 12 })
+  if (team) {
+    tx('参与角色', x + 24, y + 200, { size: 11, color: c.dim })
+    const roles = [['队长', '#2f9e8f'], ['策划', '#e0b34a'], ['美术', '#c86bff'], ['程序', '#43d17c'], ['测试', '#ff8c5a']]
+    roles.forEach((r, i) => {
+      const ry = y + 212 + i * 30
+      rr(x + 24, ry, w - 48, 26, 7, c.card, c.border)
+      const on = seg(t, 86 + i * .3, 86.4 + i * .3) > .5
+      rr(x + 36, ry + 6, 14, 14, 4, on ? c.accent : 'transparent', on ? c.accent : c.border)
+      if (on) tx('✓', x + 43, ry + 14, { size: 10, color: '#fff', align: 'center' })
+      tx(r[0], x + 62, ry + 14, { size: 12 })
+    })
+  }
+  rr(x + w - 200, y + h - 56, 84, 34, 8, 'transparent', c.border)
+  tx('取消', x + w - 158, y + h - 39, { size: 12, color: c.dim, align: 'center' })
+  rr(x + w - 106, y + h - 56, 84, 34, 8, c.accent)
+  tx('创建', x + w - 64, y + h - 39, { size: 12, color: '#fff', align: 'center' })
+}
+/* API 仓库页 */
+function drawProviders(t, dash) {
+  const c = C()
+  tx('API 仓库', AW.x + 24, AW.y + 84, { size: 18, bold: true })
+  tx('Key 加密保存 · 余额与订阅实时显示 · 261 个模型自动分类', AW.x + 24, AW.y + 112, { size: 11, color: c.dim })
+  const cards = [
+    { n: 'DeepSeek', lines: ['余额', '¥' + (31.54 * ease(seg(t, 43, 46))).toFixed(2)], bars: null, color: c.ok },
+    { n: '阿里云百炼', lines: ['模型', Math.round(261 * ease(seg(t, 44, 47))) + ' 个 · 自动分类'], bars: null, color: '#8fd0ff' },
+    { n: 'OpenCode Go', lines: ['订阅窗口', '滚动 / 每周 / 月度'], bars: [[.11, '滚动(5h)'], [.20, '每周'], [.15, '月度']], color: '#c9a6ff' },
+  ]
+  cards.forEach((cd, i) => {
+    const x = AW.x + 24 + i * 392, y = AW.y + 136, w = 368, h = 240
+    const glow = seg(t, 43 + i * 2.4, 44.2 + i * 2.4) * (1 - seg(t, 45 + i * 2.4, 46.4 + i * 2.4))
+    rr(x, y, w, h, 12, c.card, glow > 0 ? c.accent : c.border, glow > 0 ? 2 : 1.2)
+    tx(cd.n, x + 20, y + 30, { size: 15, bold: true })
+    cd.lines.forEach((l, k) => tx(l, x + 20, y + 62 + k * 34, { size: k === 0 ? 11 : 20, color: k === 0 ? c.dim : cd.color, bold: k === 1 }))
+    if (cd.bars) {
+      cd.bars.forEach((b, k) => {
+        const by = y + 116 + k * 36
+        tx(b[1], x + 20, by + 4, { size: 10, color: c.dim })
+        rr(x + 86, by - 4, 180, 10, 5, c.deep, c.border)
+        rr(x + 86, by - 4, 180 * b[0] * ease(seg(t, 44 + i * 2 + k, 46 + i * 2 + k)), 10, 5, cd.color)
+        tx(Math.round(b[0] * 100) + '%', x + w - 20, by + 4, { size: 10, align: 'right' })
+      })
+    }
+    rr(x + 20, y + h - 36, 100, 22, 7, 'transparent', c.border)
+    tx('管理模型', x + 70, y + h - 25, { size: 10, color: c.dim, align: 'center' })
+  })
+  // 保险箱小节
+  tx('凭据保险箱（本地加密保存任意 API）', AW.x + 24, AW.y + 410, { size: 13, bold: true })
+  rr(AW.x + 24, AW.y + 428, 340, 32, 7, c.card, c.border); tx('名称：抠图服务', AW.x + 38, AW.y + 444, { size: 11, color: c.dim })
+  rr(AW.x + 380, AW.y + 428, 420, 32, 7, c.card, c.border); tx('https://example.com/matting/v1', AW.x + 394, AW.y + 444, { size: 11, color: c.dim })
+  rr(AW.x + 816, AW.y + 428, 120, 32, 7, c.accent); tx('保存 API', AW.x + 876, AW.y + 444, { size: 11, color: '#fff', align: 'center' })
+}
+/* 团队配置页 */
+function drawTeamConfig(t) {
+  const c = C()
+  tx('团队配置', AW.x + 24, AW.y + 84, { size: 18, bold: true })
+  tx('团队预设', AW.x + 24, AW.y + 122, { size: 12, bold: true })
+  // 预设下拉
+  const dy = AW.y + 136
+  rr(AW.x + 24, dy, 300, 34, 8, c.card, t > 62 && t < 70 ? c.accent : c.border, 1.5)
+  tx('游戏开发团队（队长/策划/美术/程序/测试）', AW.x + 36, dy + 17, { size: 11 })
+  if (t > 62 && t < 70) {
+    const opts = ['游戏开发团队（队长/策划/美术/程序/测试）', '软件研发团队', '视频制作小组', '图片处理小组', '文件整理小组']
+    rr(AW.x + 24, dy + 38, 300, 30 * opts.length + 8, 8, c.soft, c.border)
+    opts.forEach((o, i) => {
+      const oy = dy + 46 + i * 30
+      const hl = i === 0 && seg(t, 62.6, 63.2) > .5
+      if (hl) rr(AW.x + 28, oy - 12, 292, 26, 6, c.accentSoft)
+      tx(o, AW.x + 38, oy, { size: 11, color: hl ? c.text : c.dim })
+    })
+  }
+  rr(AW.x + 336, dy, 120, 34, 8, c.accent)
+  tx('应用预设', AW.x + 396, dy + 17, { size: 11, color: '#fff', align: 'center' })
+  // 角色列表
+  const roles = [['队长', '#2f9e8f'], ['策划', '#e0b34a'], ['美术', '#c86bff'], ['程序', '#43d17c'], ['测试', '#ff8c5a']]
+  roles.forEach((r, i) => {
+    const on = t > 70 + i * .8
+    if (!on) return
+    const y = AW.y + 196 + i * 54
+    rr(AW.x + 24, y, 1080, 46, 9, c.card, i === 0 ? c.border : c.border)
+    ctx.beginPath(); ctx.arc(AW.x + 44, y + 23, 5, 0, 7); ctx.fillStyle = r[1]; ctx.fill()
+    tx(r[0], AW.x + 58, y + 23, { size: 13, bold: true })
+    rr(AW.x + 150, y + 12, 240, 22, 6, c.deep, c.border); tx(r[0] === '策划' || r[0] === '程序' ? 'OpenCode Go / deepseek-v4-flash' : r[0] === '美术' ? '阿里云百炼 / qwen3.8-max' : 'DeepSeek / deepseek-chat', AW.x + 160, y + 23, { size: 10, color: c.dim })
+    // 技能 chips
+    const sk = ['需求澄清', '游戏测试清单', '像素素材规范', '素材归档', '画风控制']
+    sk.slice(0, 3).forEach((s, k) => {
+      const on2 = t > 72 + i * .8 + k * .2
+      if (!on2) return
+      rr(AW.x + 410 + k * 118, y + 12, 108, 22, 11, k === 0 ? c.accentSoft : c.deep, c.border)
+      tx(s, AW.x + 464 + k * 118, y + 23, { size: 9, color: k === 0 ? c.accent : c.dim, align: 'center' })
+    })
+    const on3 = t > 74 + i * .8
+    rr(AW.x + 990, y + 12, 30, 22, 6, on3 ? c.accent : 'transparent', on3 ? c.accent : c.border)
+    if (on3) tx('✓', AW.x + 1005, y + 23, { size: 11, color: '#fff', align: 'center' })
+    tx('启用', AW.x + 1032, y + 23, { size: 10, color: c.dim })
+  })
+  // 技能市场导入
+  if (t > 74) {
+    const y = AW.y + 492
+    rr(AW.x + 24, y, 1080, 74, 10, c.soft, c.border)
+    tx('技能市场（内置，一键导入）', AW.x + 40, y + 22, { size: 12, bold: true })
+    ;['代码审查', '严谨测试', '画风控制', '分镜脚本', '文件整理'].forEach((s, i) => {
+      const on = t > 75.5 + i * .25
+      if (!on) return
+      rr(AW.x + 40 + i * 118, y + 40, 106, 24, 12, c.card, c.accent)
+      tx(s, AW.x + 93 + i * 118, y + 52, { size: 10, color: c.text, align: 'center' })
+    })
+    if (t > 78) tx('✓ 已导入 8 个技能并绑定到角色', AW.x + 700, y + 22, { size: 11, color: c.ok })
+  }
+}
+/* 团队任务页 */
+const TEAM_FLOW = [
+  { at: 78, kind: 'create' },   // 新建团队会话
+  { at: 88, kind: 'typing' },   // 输入任务
+  { at: 91, kind: 'run' },      // 开始任务
+  { at: 92, kind: 'roles' },    // 角色运转
+  { at: 98, kind: 'loop' },     // 协作闭环
+]
+function roleStage(t, i) {
+  // 五个角色的阶段状态
+  const base = 92 + i * 1.6
+  if (t < base) return 0
+  if (t < base + 2) return 1
+  if (t < base + 9 - i) return 2
+  if (t < 104) return i === 4 ? 3 : 4
+  if (i === 3) return t > 99.5 && t < 101.5 ? 3 : t > 101.5 ? 4 : 2 // 程序：问题→重做→完成
+  if (i === 4) return t > 97.5 && t < 99.5 ? 3 : t > 99.5 ? 4 : 2  // 测试：报错→重测→通过
+  return 4
+}
+function drawTeamView(t) {
+  const c = C()
+  // 任务输入行
+  rr(AW.x + 250, AW.y + 56, AW.w - 260, 52, 9, c.soft, c.border)
+  const taskText = '请帮我做一个扫雷游戏！'
+  const typed = t > 88.5 ? typeStr(taskText, t / 1, 88.5, 90.5) : ''
+  tx(typed || '给团队下达任务…', AW.x + 264, AW.y + 82, { size: 12, color: typed ? c.text : '#5b6472' })
+  rr(AW.x + AW.w - 200, AW.y + 62, 90, 40, 9, c.accent)
+  const runHot = seg(t, 90.7, 91) * (1 - seg(t, 91.4, 91.8))
+  tx('开始任务', AW.x + AW.w - 155, AW.y + 82, { size: 12, color: '#fff', align: 'center', alpha: 1 - runHot * .5 })
+  // 活动条 + 角色列
+  const roles = [['队长', '#2f9e8f'], ['策划', '#e0b34a'], ['美术', '#c86bff'], ['程序', '#43d17c'], ['测试', '#ff8c5a']]
+  roles.forEach((r, i) => {
+    const x = AW.x + 254 + i * 194, y = AW.y + 118, w = 180, h = 180
+    const st = roleStage(t, i)
+    const stName = ['待命', '思考中', '执行中', '遇到问题', '已完成'][st]
+    const col = st === 4 ? c.ok : st === 3 ? c.err : st === 0 ? c.dim : c.accent
+    rr(x, y, w, h, 10, c.card, st >= 1 && st <= 3 ? c.accent : c.border, st >= 1 && st <= 3 ? 2 : 1.2)
+    ctx.beginPath(); ctx.arc(x + 18, y + 22, 4, 0, 7); ctx.fillStyle = r[1]; ctx.fill()
+    tx(r[0], x + 30, y + 22, { size: 13, bold: true })
+    tx(stName, x + w - 14, y + 22, { size: 10, color: col, align: 'right' })
+    for (let k = 0; k < 3; k++) {
+      const on = st >= 2 && t > 93 + i * 1.4 + k * .5
+      if (!on) continue
+      rr(x + 14, y + 40 + k * 24, w - 28, 16, 5, c.deep)
+      rr(x + 14, y + 40 + k * 24, (w - 28) * (.4 + .22 * k), 16, 5, '#1c2530')
+    }
+    if (st === 3) tx('⚠ 发现问题：文件名不一致', x + 14, y + h - 18, { size: 9, color: c.err })
+    if (st === 4) tx('✓ 完成', x + w - 14, y + h - 18, { size: 10, color: c.ok, align: 'right' })
+  })
+  // 计划框
+  if (t > 92.5) {
+    const y = AW.y + 312
+    rr(AW.x + 250, y, AW.w - 260, 88, 10, '#0f1a16', '#2c4a35')
+    tx('计划：1 策划拆解 → 2 程序实现 → 3 测试验证（含返工）', AW.x + 264, y + 22, { size: 11, color: '#7ee2a8' })
+    tx('用户中途指令 / 暂停 / 断线恢复均可用 · 任务全程记录进会话', AW.x + 264, y + 48, { size: 10, color: c.dim })
+  }
+  // 协作闭环
+  if (t > 96) {
+    const y = AW.y + 416, x0 = AW.x + 268
+    const nodes = [['程序', '#43d17c', 3], ['测试', '#ff8c5a', 4], ['程序·返工', '#43d17c', 3], ['测试·通过', '#ff8c5a', 4], ['队长验收', '#2f9e8f', 0], ['用户', '#e7e9ee', -1]]
+    nodes.forEach((n, i) => {
+      const nx = x0 + i * 170
+      const on = t > 96.5 + i * .55
+      if (!on) return
+      rr(nx, y, 150, 40, 9, i === 5 ? c.accentSoft : c.card, c.border)
+      ctx.beginPath(); ctx.arc(nx + 16, y + 20, 4, 0, 7); ctx.fillStyle = n[1]; ctx.fill()
+      tx(n[0], nx + 28, y + 20, { size: 11.5, bold: i % 2 === 0 })
+      if (i > 0) {
+        const flow = (t * 2) % 1
+        ctx.beginPath(); ctx.arc(nx - 10, y + 20, 3, 0, 7)
+        ctx.fillStyle = c.accent; ctx.globalAlpha = .4 + .5 * (1 - flow); ctx.fill(); ctx.globalAlpha = 1
+        tx('→', nx - 10, y + 20, { size: 12, color: c.dim, align: 'center', alpha: .7 })
+      }
+    })
+    const done = t > 101
+    tx(done ? '✓ 测试通过 → 队长验收 → 反馈用户：扫雷游戏已完成' : '协作进行中：程序 ⇄ 测试 自动返工闭环…', AW.x + 250, y + 64, { size: 12, color: done ? c.ok : c.dim })
+  }
+  // 新建团队会话弹窗（78-88s）
+  if (t > 78.5 && t < 88) drawSessionModal(t, { title: '扫雷小游戏' }, true)
+}
+/* 插件页 */
+function drawPlugins(t) {
+  const c = C()
+  tx('插件', AW.x + 24, AW.y + 84, { size: 18, bold: true })
+  tx('OAT JS 插件 · 外部 API 插件（智能体可调用）', AW.x + 24, AW.y + 112, { size: 11, color: c.dim })
+  const rows = [['插件名', t > 111.5 ? typeStr('weather', t, 111.5, 112.6) : ''], ['接口地址', t > 112.6 ? typeStr('https://wttr.in/{{city}}?format=3', t, 112.6, 114.2) : ''], ['参数', t > 114.2 ? typeStr('city', t, 114.2, 114.8) : '']]
+  rows.forEach((r, i) => {
+    const y = AW.y + 140 + i * 56
+    tx(r[0], AW.x + 24, y, { size: 11, color: c.dim })
+    rr(AW.x + 110, y - 16, 640, 32, 7, c.card, c.border)
+    if (r[1]) tx(r[1], AW.x + 122, y, { size: 12 })
+  })
+  rr(AW.x + 770, AW.y + 164, 110, 34, 8, c.accent)
+  tx('添加插件', AW.x + 825, AW.y + 181, { size: 11, color: '#fff', align: 'center' })
+  if (t > 115.5) {
+    const on = seg(t, 115.5, 116.3)
+    rr(AW.x + 24, AW.y + 316, 1080, 70 * on, 10, '#0f1a16', '#2c4a35')
+    if (on > .7) {
+      tx('插件 weather 已注册为工具 http_call', AW.x + 40, AW.y + 340, { size: 12, color: '#7ee2a8' })
+      tx('✓ 调用成功：Beijing: +15°C（智能体可在任务中直接调用）', AW.x + 40, AW.y + 366, { size: 11, color: c.ok })
+    }
+  }
+}
+/* 项目页 */
+function drawGithub(t) {
+  const c = C()
+  tx('GitHub 项目', AW.x + 24, AW.y + 84, { size: 18, bold: true })
+  tx('Token 加密保存在本机 · 下载仓库到工作区 · 打包上传工作区项目（纯 REST）', AW.x + 24, AW.y + 112, { size: 11, color: c.dim })
+  rr(AW.x + 24, AW.y + 140, 520, 200, 10, c.card, c.border)
+  tx('AceTaffer / Open-Agent-Team', AW.x + 44, AW.y + 172, { size: 14, bold: true })
+  tx('Open Agent Team 源码仓库（含 version.json）', AW.x + 44, AW.y + 198, { size: 11, color: c.dim })
+  const dl = t > 123 && t < 127
+  rr(AW.x + 44, AW.y + 226, 110, 32, 8, dl ? c.accentSoft : 'transparent', c.accent)
+  tx(dl ? '下载中…' : '下载仓库', AW.x + 99, AW.y + 242, { size: 11, color: c.text, align: 'center' })
+  rr(AW.x + 170, AW.y + 226, 110, 32, 8, 'transparent', c.border)
+  tx('打包上传', AW.x + 225, AW.y + 242, { size: 11, color: c.dim, align: 'center' })
+  if (dl) { rr(AW.x + 44, AW.y + 272, 260, 10, 5, c.deep, c.border); rr(AW.x + 44, AW.y + 272, 260 * seg(t, 123, 126.5), 10, 5, c.accent) }
+  rr(AW.x + 570, AW.y + 140, 534, 200, 10, c.card, c.border)
+  tx('热更新', AW.x + 590, AW.y + 172, { size: 14, bold: true })
+  tx('更新源：AceTaffer/Open-Agent-Team（main）', AW.x + 590, AW.y + 198, { size: 11, color: c.dim })
+  tx('✓ 检查更新：已是最新 v0.9.8 · 更新不覆盖 data / workspace', AW.x + 590, AW.y + 226, { size: 11, color: c.ok })
+  tx('发布新版本 → 用户端自动收到升级提示', AW.x + 590, AW.y + 252, { size: 10, color: c.dim })
+}
+/* 统计页 */
+function drawStats(t) {
+  const c = C()
+  tx('统计', AW.x + 24, AW.y + 84, { size: 18, bold: true })
+  tx('Token / 缓存命中 / 费用 / 工具调用（累计与分角色分模型）', AW.x + 24, AW.y + 112, { size: 11, color: c.dim })
+  const k = ease(seg(t, 131, 134))
+  const cards = [['调用次数', Math.round(486 * k)], ['Token 输入', Math.round(2104387 * k).toLocaleString()], ['Token 输出', Math.round(86320 * k).toLocaleString()], ['缓存命中', Math.round(402160 * k).toLocaleString()], ['费用', '¥' + (12.38 * k).toFixed(2)], ['工具调用', Math.round(129 * k)]]
+  cards.forEach((cd, i) => {
+    const x = AW.x + 24 + (i % 3) * 366, y = AW.y + 136 + Math.floor(i / 3) * 84
+    rr(x, y, 350, 70, 10, c.card, c.border)
+    tx(cd[0], x + 16, y + 20, { size: 10, color: c.dim })
+    tx(String(cd[1]), x + 16, y + 46, { size: 18, bold: true })
+  })
+  // 柱状图
+  const by = AW.y + 316
+  rr(AW.x + 24, by, 1080, 190, 10, c.card, c.border)
+  tx('分模型费用', AW.x + 40, by + 22, { size: 11, color: c.dim })
+  const bars = [['deepseek-chat', .8, '#2f9e8f'], ['deepseek-v4-flash', .55, '#43d17c'], ['qwen3.8-max', .35, '#c86bff'], ['deepseek-reasoner', .22, '#e0b34a'], ['qwen-image', .15, '#8fd0ff']]
+  bars.forEach((b, i) => {
+    const h = 130 * b[1] * ease(seg(t, 133 + i * .4, 134.6 + i * .4))
+    rr(AW.x + 60 + i * 200, by + 160 - h, 60, h, 6, b[2])
+    tx(b[0], AW.x + 90 + i * 200, by + 174, { size: 9, color: c.dim, align: 'center' })
+  })
+}
+/* 设置页 */
+function drawSettings(t, fontScale, swLight) {
+  const c = C()
+  tx('设置', AW.x + 24, AW.y + 84, { size: 18, bold: true })
+  const cards = [
+    { t: '外观', x: 24, w: 460, rows: [
+      ['主题', t > 144 ? (swLight ? '浅色' : '深色') : '深色'],
+      ['强调色', '● #2f9e8f'],
+      ['字体大小', Math.round(14 * fontScale) + 'px'],
+    ] },
+    { t: 'Agent 工作方式 / 权限', x: 500, w: 320, rows: [['新会话默认权限', '修改'], ['推理强度', '低']] },
+    { t: '作者声明', x: 836, w: 268, rows: [['作者', 'Acct'], ['AI 协作', 'deepseek-v4.1-flash'], ['邮箱', '577940959@qq.com']] },
+  ]
+  cards.forEach((cd) => {
+    const x = AW.x + cd.x, y = AW.y + 120, w = cd.w
+    rr(x, y, w, 150, 10, c.card, c.border)
+    tx(cd.t, x + 16, y + 24, { size: 13, bold: true })
+    cd.rows.forEach((r, i) => {
+      const ry = y + 52 + i * 30
+      tx(r[0], x + 16, ry + 12, { size: 11, color: c.dim })
+      rr(x + w - 130, ry, 114, 24, 6, c.deep, c.border)
+      tx(r[1], x + w - 73, ry + 12, { size: 10.5, align: 'center' })
+    })
+  })
+  // 主题下拉展开与选择（143-146.5）与字体滑条
+  if (t > 143 && t < 146.5) {
+    const x = AW.x + 24, y = AW.y + 120
+    rr(x + 330, y + 46, 114, 60, 7, c.soft, c.border)
+    tx('深色', x + 387, y + 62, { size: 10.5, color: c.dim, align: 'center' })
+    const hl = seg(t, 145, 145.6) > .5
+    if (hl) rr(x + 332, y + 72, 110, 24, 6, c.accentSoft)
+    tx('浅色', x + 387, y + 84, { size: 10.5, color: hl ? c.text : c.dim, align: 'center' })
+  }
+  // 字体滑条拖动（147-154）
+  const fy = AW.y + 120 + 52 + 2 * 30 + 12
+  rr(AW.x + 24 + 330, fy - 6, 114, 8, 4, c.deep, c.border)
+  const hx = AW.x + 24 + 330 + 100 * (fontScale - .8) / .55
+  ctx.beginPath(); ctx.arc(hx, fy - 2, 7, 0, 7); ctx.fillStyle = c.accent; ctx.fill()
+  if (t > 147 && t < 154) tx('（实时生效）', AW.x + 24 + 456, fy - 2, { size: 9, color: c.ok })
+  // 大号预览字
+  tx('字体大小预览', AW.x + 24, AW.y + 300, { size: Math.round(14 * fontScale) * 1.8, bold: true })
+}
+/* Windows 文件夹 / 启动包 */
+function drawFolderScene(t) {
+  const c = C()
+  ctx.fillStyle = '#20435c'; ctx.fillRect(0, 0, W, H)
+  // 文件夹窗
+  const x = 140, y = 120, w = 1000, h = 480
+  rr(x, y, w, h, 8, '#1f2733', '#3a4454', 1.5)
+  rr(x, y, w, 40, 8, '#2a3542'); ctx.fillStyle = '#2a3542'; ctx.fillRect(x, y + 28, w, 12)
+  tx('E:\\集合工作站', x + 16, y + 20, { size: 13, color: '#dfe6f0' })
+  const files = [['启动工作站.bat', '启动网页版（自动打开浏览器）'], ['启动桌面版.bat', '启动 Electron 桌面版'], ['server.mjs', '后端服务'], ['web', '前端界面']]
+  files.forEach((f, i) => {
+    const fy = y + 60 + i * 58
+    const hot = (i === 0 && t > 161 && t < 163) || (i === 1 && t > 164.5 && t < 166.2)
+    if (hot) rr(x + 10, fy - 6, w - 20, 50, 6, '#2e4a6b')
+    ctx.fillStyle = f[0].endsWith('.bat') ? '#c9a6ff' : f[0].endsWith('.mjs') ? '#7ee2a8' : '#8fd0ff'
+    rr(x + 24, fy, 28, 30, 5, ctx.fillStyle)
+    tx(f[0], x + 66, fy + 10, { size: 13, color: '#eef2f8' })
+    tx(f[1], x + 66, fy + 28, { size: 10, color: '#93a0b3' })
+  })
+  // 网页端窗口（点击 bat 后出现）
+  if (t > 163) {
+    const k = ease(seg(t, 163, 164.2))
+    const bx = 120 + (1 - k) * 200, bw = 1040, by = 100, bh = 520
+    rr(bx, by, bw, bh, 10, '#0e1115', '#3a4454', 1.5)
+    rr(bx, by, bw, 36, 10, '#222a35'); ctx.fillStyle = '#222a35'; ctx.fillRect(bx, by + 24, bw, 12)
+    rr(bx + 16, by + 8, 60, 20, 6, '#38424f')
+    tx('◀ ▶ ⟳', bx + 46, by + 18, { size: 11, color: '#8b95a5', align: 'center' })
+    rr(bx + 90, by + 8, 300, 20, 6, '#171c23'); tx('127.0.0.1:3410', bx + 100, by + 18, { size: 10, color: '#8fd0ff' })
+    // 迷你应用界面
+    rr(bx + 10, by + 44, bw - 20, bh - 54, 8, '#0e1013', '#262a31')
+    tx('Open Agent Team', bx + 70, by + 68, { size: 14, bold: true, color: '#e7e9ee' })
+    rr(bx + 24, by + 56, 32, 26, 7, '#2f9e8f')
+    for (let i = 0; i < 5; i++) tx(['对话', '团队任务', 'API 仓库', '统计', '设置'][i], bx + 220 + i * 92, by + 68, { size: 11, color: i === 0 ? '#e7e9ee' : '#8b919d', align: 'center' })
+    rr(bx + 24, by + 96, 210, bh - 116, 8, '#14161a')
+    tx('已登记 API', bx + 36, by + 120, { size: 11, color: '#8b919d' })
+    rr(bx + 300, by + 116, bw - 330, bh - 136, 8, '#14161a', '#262a31')
+    tx('网页端已启动 · 对话 / 团队任务就绪', bx + 330, by + 150, { size: 13, color: '#e7e9ee' })
+    tx('浏览器自动打开 http://127.0.0.1:3410', bx + 330, by + 180, { size: 11, color: '#2f9e8f' })
+  }
+  // 桌面版窗口
+  if (t > 166) {
+    const k = ease(seg(t, 166, 167.2))
+    const bx = 260 + (1 - k) * 120, by = 160, bw = 760, bh = 430
+    rr(bx, by, bw, bh, 10, '#161a20', '#3a4454', 1.5)
+    rr(bx, by, bw, 34, 10, '#20262e'); ctx.fillStyle = '#20262e'; ctx.fillRect(bx, by + 22, bw, 12)
+    tx('● ● ●', bx + 34, by + 17, { size: 10, color: '#5b6472', align: 'center' })
+    tx('Open Agent Team — 桌面版', bx + bw / 2, by + 17, { size: 11, color: '#c6cdd8', align: 'center' })
+    tx('Open Agent Team', bx + 70, by + 66, { size: 15, bold: true, color: '#e7e9ee' })
+    rr(bx + 24, by + 52, 34, 28, 8, '#2f9e8f')
+    tx('桌面版已启动 · 与网页端数据互通', bx + 36, by + 120, { size: 12, color: '#8b919d' })
+  }
+}
+/* 结尾 */
+function drawCredits(t) {
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H)
+  const a1 = ease(seg(t, 169, 170.5))
+  tx('Open Agent Team', W / 2, 210, { size: 52, bold: true, align: 'center', alpha: a1 })
+  tx('本机 AI 多智能体工作站', W / 2, 258, { size: 17, color: COL.dim, align: 'center', alpha: ease(seg(t, 170, 171.5)) })
+  const rows = [
+    ['作者', 'Acct'],
+    ['AI 协作', 'deepseek-v4.1-flash'],
+    ['联系邮箱', '577940959@qq.com'],
+    ['授权', '开源软件 · 保留作者声明'],
+  ]
+  rows.forEach((r, i) => {
+    const a = ease(seg(t, 171 + i * .6, 172 + i * .6))
+    tx(r[0], W / 2 - 220, 360 + i * 44, { size: 15, color: COL.dim, align: 'right', alpha: a })
+    tx(r[1], W / 2 - 190, 360 + i * 44, { size: 16, alpha: a })
+  })
+  const fade = seg(t, 174.5, 176)
+  ctx.fillStyle = `rgba(0,0,0,${fade})`; ctx.fillRect(0, 0, W, H)
+}
+
+/* ── 时间线与合成 ── */
+function hash(s) { return s }
+function draw(t) {
+  // 主题（浅色切换在设置段：145.2 扩散 → 150 回深色）
+  const lightOn = t > 145.3 && t < 150.2
+  THEME = lightOn ? LIGHT : COL
+  // 各阶段视图切换
+  appView = t < 40 ? 'chat' : t < 54 ? 'providers' : t < 78 ? 'teamconfig' : t < 108 ? 'team' : t < 120 ? 'plugins' : t < 130 ? 'github' : t < 140 ? 'stats' : t < 158 ? 'settings' : 'chat'
+  ctx.fillStyle = C().bg; ctx.fillRect(0, 0, W, H)
+  if (t >= 158) { drawFolderScene(t); drawMouse(mouseAt(t)); drawScanlines(); return }
+  if (t >= 168) { drawCredits(t); drawScanlines(); return }
+  withCam(t, () => {
+    drawAppFrame(t, () => {
+      if (appView === 'chat') {
+        drawSidebar(t, t < 22
+          ? [{ name: 'OpenCode Go / Zen', url: 'https://opencode.ai/zen/go/v1', n: 1 }]
+          : [
+            { name: 'DeepSeek v4.1', url: 'https://api.deepseek.com', n: 2, bal: '¥31.54' },
+            { name: '阿里云百炼', url: 'https://dashscope.aliyuncs.com/...', n: 261, bal: '连通正常' },
+            { name: 'OpenCode Go / Zen', url: 'https://opencode.ai/zen/go/v1', n: 1, bal: '订阅 11% / 20% / 15%' },
+          ])
+        const msgs = []
+        if (t > 32.5) msgs.push({ me: true, text: '你好，你是什么模型？' })
+        const replyOn = t > 36.5
+        if (replyOn) msgs.push({ title: '工具协议', text: '我是 DeepSeek 模型，可以帮你读写文件、跑命令…' })
+        drawChatView(t, msgs, t > 31.5 && t < 34.2 ? typeStr('你好，你是什么模型？', t, 31.5, 33.6) : '', replyOn, '')
+      }
+      if (appView === 'providers') drawProviders(t)
+      if (appView === 'teamconfig') drawTeamConfig(t)
+      if (appView === 'team') drawTeamView(t)
+      if (appView === 'plugins') drawPlugins(t)
+      if (appView === 'github') drawGithub(t)
+      if (appView === 'stats') drawStats(t)
+      if (appView === 'settings') {
+        const fs2 = 1 + .5 * ease(seg(t, 147.5, 149.8)) - .5 * ease(seg(t, 152.5, 154.5))
+        drawSettings(t, fs2, t > 145.3 && t < 150.2)
+      }
+      // 添加 API / 新建会话弹窗
+      if (t > 14.5 && t < 22) drawApiModal(t, {
+        tpl: t > 15.5, name: t > 16.2 ? typeStr('DeepSeek v4.1', t, 16.2, 17) : '',
+        url: t > 17 ? typeStr('https://api.deepseek.com', t, 17, 18.2) : '',
+        key: t > 18.2 ? typeStr('sk-IVKEWYTYWRTQOGNVXTHONVCTKKNBTVJBLVVPTLKWSSNRA', t, 18.2, 19.6) : '',
+      })
+      if (t > 24 && t < 31) drawSessionModal(t, { title: t > 25 ? typeStr('我的第一个会话', t, 25, 26.2) : '' }, false)
+    })
+    drawMouse(mouseAt(t))
+    // 浅色扩散转场：以中心向外扩散
+    if (t > 144.6 && t < 145.6) {
+      const k = ease(seg(t, 144.6, 145.6))
+      const r = k * Math.hypot(W, H) / 2
+      ctx.fillStyle = 'rgba(244,246,250,.96)'
+      ctx.save(); ctx.beginPath(); ctx.arc(W / 2, H / 2, r, 0, 7); ctx.fill(); ctx.restore()
+    }
+    if (t > 149.6 && t < 150.6) {
+      const k = ease(seg(t, 149.6, 150.6))
+      const r = k * Math.hypot(W, H) / 2
+      ctx.fillStyle = 'rgba(14,16,19,.96)'
+      ctx.save(); ctx.beginPath(); ctx.arc(W / 2, H / 2, r, 0, 7); ctx.fill(); ctx.restore()
+    }
+  })
+  drawScanlines(true)
+}
+function drawScanlines(light) {
+  ctx.fillStyle = light ? 'rgba(0,0,0,.05)' : 'rgba(0,0,0,.12)'
+  for (let y = 0; y < H; y += 4) ctx.fillRect(0, y, W, 1)
+}
+let lastT = -1
+setInterval(() => {
+  const t = T()
+  if (t < 0) return
+  draw(t)
+  lastT = t
+  if (window.__track) { try { window.__track.requestFrame() } catch { /* ignore */ } }
+}, 1000 / 30)
+
+/* ── 录制接口 ── */
+window.__recState = 'idle'; window.__chunks = []
+window.startRecording = () => {
+  const vstream = cv.captureStream(0)
+  window.__track = vstream.getVideoTracks()[0]
+  const rec = new MediaRecorder(vstream, { mimeType: 'video/webm;codecs=vp9', videoBitsPerSecond: 6000000 })
+  window.__recState = 'recording'
+  t0 = performance.now()
+  for (let i = 0; i < 3; i++) window.__track.requestFrame()
+  rec.ondataavailable = (e) => { if (e.data && e.data.size) { const fr = new FileReader(); fr.onload = () => window.__chunks.push(String(fr.result).split(',')[1]); fr.readAsDataURL(e.data) } }
+  rec.onstop = () => { window.__recState = 'done' }
+  rec.start(2000)
+  setTimeout(() => { try { rec.stop() } catch { /* ignore */ } }, (window.__duration + 2) * 1000)
+}
+window.__chunkCount = () => window.__chunks.length
+window.__getChunk = (i) => window.__chunks[i] || ''
+</script>
+</body>
+</html>

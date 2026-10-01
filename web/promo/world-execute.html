@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><title>world.execute(me); — ASCII tribute</title>
+<style>html,body{margin:0;background:#000}canvas{display:block}</style></head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+/* ============ world.execute(me); — ASCII tribute（原创音乐 + 字符动画） ============ */
+const cv = document.getElementById('c'), ctx = cv.getContext('2d')
+const W = 1280, H = 720, MONO = 'Consolas, "Courier New", monospace'
+window.__duration = 212
+let t0 = performance.now()
+const T = () => (performance.now() - t0) / 1000
+const clamp = (x, a, b) => Math.max(a, Math.min(b, x))
+const seg = (t, a, b) => clamp((t - a) / (b - a), 0, 1)
+const ease = (x) => x < .5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2
+const chars = ' .:-=+*#%@ABCDEFGHIJKLMNOPQRSTUVWXYZ<>/\\|[]{}()0123456789;:,'
+
+/* ───────── 音乐（WebAudio 原创合成） ───────── */
+let actx, master, aDest = null, audioStart = 0
+const ENV = { kick: 0, bass: 0, hat: 0, lead: 0, pad: 0 }
+function initAudio() {
+  actx = new (window.AudioContext || window.webkitAudioContext)()
+  master = actx.createGain(); master.gain.value = 0.55
+  aDest = actx.createMediaStreamDestination()
+  master.connect(actx.destination); master.connect(aDest)
+  if (actx.state === 'suspended') actx.resume()
+}
+function kick(t) {
+  const o = actx.createOscillator(), g = actx.createGain()
+  o.frequency.setValueAtTime(150, t); o.frequency.exponentialRampToValueAtTime(46, t + .12)
+  g.gain.setValueAtTime(.9, t); g.gain.exponentialRampToValueAtTime(.001, t + .22)
+  o.connect(g).connect(master); o.start(t); o.stop(t + .25); ENV.kick = 1
+}
+function hat(t, v = .25) {
+  const n = actx.createBufferSource(), buf = actx.createBuffer(1, 2048, actx.sampleRate)
+  const d = buf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1
+  n.buffer = buf
+  const f = actx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 7000
+  const g = actx.createGain(); g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(.001, t + .05)
+  n.connect(f).connect(g).connect(master); n.start(t); n.stop(t + .06); ENV.hat = 1
+}
+function bass(t, f, dur) {
+  const o = actx.createOscillator(), o2 = actx.createOscillator(), g = actx.createGain(), fl = actx.createBiquadFilter()
+  o.type = 'sawtooth'; o2.type = 'square'; o.frequency.value = f; o2.frequency.value = f / 2
+  fl.type = 'lowpass'; fl.frequency.setValueAtTime(900, t); fl.frequency.exponentialRampToValueAtTime(220, t + dur)
+  g.gain.setValueAtTime(.22, t); g.gain.exponentialRampToValueAtTime(.001, t + dur)
+  o.connect(fl); o2.connect(fl); fl.connect(g).connect(master); o.start(t); o2.start(t); o.stop(t + dur); o2.stop(t + dur); ENV.bass = 1
+}
+function lead(t, f, dur, type = 'square', v = .12) {
+  const o = actx.createOscillator(), g = actx.createGain()
+  o.type = type; o.frequency.value = f
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(v, t + .02); g.gain.exponentialRampToValueAtTime(.001, t + dur)
+  o.connect(g).connect(master); o.start(t); o.stop(t + dur + .05); ENV.lead = 1
+}
+function pad(t, freqs, dur) {
+  freqs.forEach((f, i) => {
+    const o = actx.createOscillator(), o2 = actx.createOscillator(), g = actx.createGain(), fl = actx.createBiquadFilter()
+    o.type = 'triangle'; o2.type = 'triangle'; o.frequency.value = f; o2.frequency.value = f * 1.007
+    fl.type = 'lowpass'; fl.frequency.setValueAtTime(500, t); fl.frequency.linearRampToValueAtTime(1600, t + dur * .6); fl.frequency.linearRampToValueAtTime(400, t + dur)
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(.05, t + dur * .3); g.gain.linearRampToValueAtTime(0, t + dur)
+    o.connect(fl); o2.connect(fl); fl.connect(g).connect(master); o.start(t); o.stop(t + dur); o2.start(t); o2.stop(t + dur)
+  })
+  ENV.pad = 1
+}
+const N = (n) => 440 * Math.pow(2, (n - 69) / 12) // MIDI → Hz
+const BPM = 120, BEAT = 60 / BPM, BAR = BEAT * 4
+// 和弦进行（A 小调）：Am - F - C - G
+const CHORDS = [[57, 60, 64], [53, 57, 60], [48, 52, 55], [55, 59, 62]]
+const BASSLINE = [45, 45, 48, 48, 41, 41, 43, 43]
+// 旋律：种子伪随机（固定 seed → 可复现）
+let seed = 20261001
+const rnd = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296
+const SCALE = [57, 59, 60, 62, 64, 65, 67, 69, 71, 72]
+const MELODY = Array.from({ length: 128 }, () => SCALE[Math.floor(rnd() * SCALE.length)])
+function scheduleMusic() {
+  if (!actx) return
+  const now = actx.currentTime
+  const el = now - audioStart
+  while (schedAt < el + 0.25) { emitBeat(schedAt, audioStart + schedAt); schedAt += BEAT }
+}
+function emitBeat(sec, at) {
+  const bar = Math.floor(sec / BAR), beat = sec / BEAT
+    // 段落强度
+    const drumsOn = sec > 20
+    const fullOn = sec > 60, climax = sec > 105 && sec < 185, outro = sec > 200
+    if (outro) return
+    if (drumsOn && Math.abs(beat - Math.round(beat)) < BEAT * .5) {
+      if (Math.round(beat) % 1 === 0) kick(at)
+      if (Math.round(beat) % 2 === 1) hat(at, fullOn ? .3 : .2)
+      if (fullOn) hat(at + BEAT / 2, .12)
+    }
+    const bl = BASSLINE[bar % BASSLINE.length]
+    if (drumsOn) bass(at, N(bl - (climax ? 0 : 0)), BEAT * (fullOn ? .9 : .5))
+    if (bar % 4 === 0 && (sec > 8)) pad(at, CHORDS[bar % 4].map(N), BAR * (outro ? 2 : 1.02))
+    if (fullOn) {
+      const m = MELODY[bar % MELODY.length]
+      lead(at, N(m + (climax ? 12 : 0)), BEAT * .8, climax ? 'sawtooth' : 'square', climax ? .09 : .11)
+      lead(at + BEAT * 2, N(m + 4 + (climax ? 12 : 0)), BEAT * .6, 'triangle', .07)
+    }
+}
+let schedAt = 0
+
+/* ───────── 视觉 ───────── */
+const cols = Math.floor(W / 20)
+const drops = new Array(cols).fill(0).map(() => Math.random() * H)
+function rain(t, alpha, speed = 1) {
+  ctx.font = '16px ' + MONO
+  for (let i = 0; i < cols; i++) {
+    const x = i * 20 + 6
+    drops[i] = (drops[i] + (i % 4 + 1) * 1.4 * speed) % (H + 240)
+    for (let k = 0; k < 8; k++) {
+      const y = drops[i] - k * 22
+      if (y < -24 || y > H + 24) continue
+      const ch = chars[Math.floor((t * 10 + i * 7 + k * 3)) % chars.length]
+      ctx.fillStyle = `rgba(47,158,143,${alpha * (k === 0 ? .75 : Math.max(0, .18 - k * .02))})`
+      ctx.fillText(ch, x, y)
+    }
+  }
+}
+function glitchText(s, x, y, size, t, color = '#e6e9ef', align = 'center') {
+  ctx.save(); ctx.font = `${size}px ${MONO}`; ctx.textAlign = align; ctx.fillStyle = color; ctx.textBaseline = 'middle'
+  const n = s.length
+  for (let i = 0; i < n; i++) {
+    const jitter = (Math.sin(t * 43 + i * 7.7) > .93) ? (Math.random() - .5) * 14 : 0
+    const sub = (Math.sin(t * 61 + i * 3.3) > .97) ? chars[Math.floor(Math.random() * chars.length)] : s[i]
+    ctx.fillText(sub, x - n * size * .3 + i * size * .6, y + jitter)
+  }
+  ctx.restore()
+}
+function asciiWave(t, y0, amp, alpha) {
+  ctx.font = '15px ' + MONO; ctx.fillStyle = `rgba(47,158,143,${alpha})`
+  for (let x = 0; x < W; x += 15) {
+    const k = Math.sin(x * .01 + t * 2.2) + Math.sin(x * .021 - t * 1.4) * .6
+    const y = y0 + k * amp
+    ctx.fillText('~', x, y)
+    ctx.fillText(k > .8 ? '#' : k < -.8 ? '#' : '=', x, y + 16)
+  }
+}
+function particles(t, alpha, mood) {
+  for (let i = 0; i < 90; i++) {
+    const a = i * 2.399 + t * (mood ? .7 : .3)
+    const r = 120 + (i % 9) * 46 + Math.sin(t * 2 + i) * 30
+    const x = W / 2 + Math.cos(a) * r * 1.5, y = H / 2 + Math.sin(a) * r * .8
+    ctx.fillStyle = `rgba(47,158,143,${alpha * (.25 + (i % 5) * .12)})`
+    ctx.font = '14px ' + MONO
+    ctx.fillText(chars[(i * 7 + Math.floor(t * 6)) % chars.length], x, y)
+  }
+}
+
+/* 按段落的文字（原创短语） */
+function overlay(t) {
+  const L = [
+    { a: 2, b: 14, main: 'world.execute(me);', sub: 'ASCII TRIBUTE  ·  Open Agent Team' },
+    { a: 22, b: 34, sub: 'boot sequence  ·  启动序列' },
+    { a: 62, b: 72, sub: 'the machine dreams in characters  ·  机器以字符做梦' },
+    { a: 108, b: 122, main: 'WORLD.EXECUTE', sub: '你写下的每一行，都在运行' },
+    { a: 152, b: 168, main: 'run me, world', sub: 'execute the dream  ·  执行这份心愿' },
+  ]
+  for (const o of L) {
+    const v = Math.min(seg(t, o.a, o.a + 1.2), 1 - seg(t, o.b - 1.2, o.b))
+    if (v <= 0) continue
+    ctx.save(); ctx.globalAlpha = v
+    if (o.main) glitchText(o.main, W / 2, 300, 56, t, '#e6e9ef')
+    if (o.sub) { ctx.font = '20px ' + MONO; ctx.textAlign = 'center'; ctx.fillStyle = '#2f9e8f'; ctx.fillText(o.sub, W / 2, o.main ? 366 : 320) }
+    ctx.restore()
+  }
+}
+function finale(t) {
+  // 185-206 收敛脉冲，206-212 收尾分号
+  if (t > 185 && t < 206) {
+    const k = seg(t, 185, 204)
+    const r = (1 - k) * 900 + 40
+    ctx.save(); ctx.font = '18px ' + MONO; ctx.textAlign = 'center'; ctx.fillStyle = `rgba(47,158,143,${.8 * (1 - k)})`
+    for (let i = 0; i < 40; i++) {
+      const a = i / 40 * Math.PI * 2 + t
+      ctx.fillText(chars[(i * 3 + Math.floor(t * 10)) % chars.length], W / 2 + Math.cos(a) * r, H / 2 + Math.sin(a) * r * .6)
+    }
+    ctx.restore()
+  }
+  if (t > 204) {
+    const v = 1 - seg(t, 208, 212)
+    ctx.save(); ctx.globalAlpha = v
+    glitchText(';', W / 2, H / 2, 120, t * .4, '#e6e9ef')
+    ctx.font = '18px ' + MONO; ctx.textAlign = 'center'; ctx.fillStyle = '#8b919d'
+    ctx.fillText('world.execute(me);  ·  ASCII tribute by Open Agent Team', W / 2, H / 2 + 110)
+    ctx.restore()
+    ctx.fillStyle = `rgba(0,0,0,${seg(t, 208, 212)})`; ctx.fillRect(0, 0, W, H)
+  }
+}
+function frameOnce() {
+  const t = T()
+  ctx.fillStyle = '#06080a'; ctx.fillRect(0, 0, W, H)
+  const intensity = clamp(.25 + ENV.kick * .5 + ENV.bass * .3 + (t > 105 && t < 185 ? .3 : 0), .2, 1)
+  rain(t, .5 * intensity + .2, .8 + intensity)
+  // 字符频谱条（由合成器包络驱动）
+  const bands = [ENV.kick, ENV.bass, ENV.hat, ENV.lead, ENV.pad |
+  0]
+  const bv = [ENV.kick, ENV.bass, ENV.hat, ENV.lead, ENV.pad]
+  const bw = W / bv.length
+  bv.forEach((v, i) => {
+    const h = (0.06 + v * .3) * H * (i === 4 ? .5 : 1)
+    ctx.fillStyle = `rgba(47,158,143,${.10 + v * .25})`
+    ctx.fillRect(i * bw + 8, H - h, bw - 16, h)
+  })
+  if (t > 40 && t < 105) asciiWave(t, H * .72, 40, .25 + ENV.bass * .3)
+  if (t > 60) particles(t, .35 + intensity * .3, t > 105 && t < 185)
+  overlay(t)
+  finale(t)
+  // 扫描线 & 边框
+  ctx.fillStyle = 'rgba(0,0,0,.2)'
+  for (let y = 0; y < H; y += 4) ctx.fillRect(0, y, W, 1)
+  ctx.strokeStyle = 'rgba(47,158,143,.45)'; ctx.lineWidth = 2
+  ctx.strokeRect(16, 16, W - 32, H - 32)
+  // 包络：原曲模式 → 实时频谱；合成器模式 → 自然衰减
+  if (!updateEnvFromAnalyser()) for (const k in ENV) ENV[k] *= .88
+}
+setInterval(() => {
+  frameOnce()
+  if (window.__track) { try { window.__track.requestFrame() } catch { /* ignore */ } }
+}, 1000 / 30)
+
+/* ───────── 原曲载入（out/song.mp3，缺失时回退到内置合成器） ───────── */
+let songBuf = null, analyser = null, songSrc = null, songReady = false
+window.__audioPath = null
+async function loadSong() {
+  try {
+    const r = await fetch('./out/song.mp3')
+    if (!r.ok) throw new Error('HTTP ' + r.status)
+    const ab = await r.arrayBuffer()
+    const tmp = new (window.AudioContext || window.webkitAudioContext)()
+    songBuf = await tmp.decodeAudioData(ab)
+    await tmp.close()
+    window.__duration = Math.round(songBuf.duration * 100) / 100
+    window.__audioPath = 'E:/集合工作站/web/promo/out/song.mp3'
+    songReady = true
+    return true
+  } catch { return false }
+}
+loadSong()
+function updateEnvFromAnalyser() {
+  if (!analyser) return false
+  const n = analyser.frequencyBinCount
+  const d = new Uint8Array(n)
+  analyser.getByteFrequencyData(d)
+  const band = (a, b) => { let s = 0; const A = Math.floor(a * n), B = Math.max(A + 1, Math.floor(b * n)); for (let i = A; i < B; i++) s += d[i]; return s / (B - A) / 255 }
+  ENV.kick = Math.min(1, band(0, .04) * 1.8)
+  ENV.bass = Math.min(1, band(.04, .12) * 1.8)
+  ENV.lead = Math.min(1, band(.12, .35) * 1.6)
+  ENV.hat = Math.min(1, band(.35, .7) * 2.0)
+  ENV.pad = Math.min(1, band(0, 1) * 1.4)
+  return true
+}
+
+/* ───────── 录制接口 ───────── */
+window.__recState = 'idle'; window.__chunks = []
+window.startRecording = () => {
+  if (songReady) {
+    // ★ 原曲播放（静音输出）→ Analyser 驱动视觉，画面与原曲同步
+    initAudio()
+    songSrc = actx.createBufferSource()
+    songSrc.buffer = songBuf
+    analyser = actx.createAnalyser()
+    analyser.fftSize = 1024
+    const mute = actx.createGain(); mute.gain.value = 0.00001
+    songSrc.connect(analyser); analyser.connect(mute); mute.connect(actx.destination)
+    audioStart = actx.currentTime; schedAt = 0
+    t0 = performance.now()
+    songSrc.start()
+  } else {
+    // 回退：内置合成器（驱动 ENV）
+    initAudio()
+    audioStart = actx.currentTime; schedAt = 0
+    setInterval(scheduleMusic, 100)
+  }
+  // ★ 视频仅画面采集（手动帧泵，已验证稳定）；音频走离线渲染 + ffmpeg 合成
+  const vstream = cv.captureStream(0)
+  window.__track = vstream.getVideoTracks()[0]
+  const rec = new MediaRecorder(vstream, { mimeType: 'video/webm;codecs=vp9', videoBitsPerSecond: 5000000 })
+  rec.onerror = (e) => { window.__recError = String(e.error || e.message || e) }
+  window.__recState = 'recording'
+  t0 = performance.now()
+  for (let i = 0; i < 3; i++) window.__track.requestFrame()
+  rec.ondataavailable = (e) => { if (e.data && e.data.size) { const fr = new FileReader(); fr.onload = () => window.__chunks.push(String(fr.result).split(',')[1]); fr.readAsDataURL(e.data) } }
+  rec.onstop = () => { window.__recState = 'done' }
+  rec.start(2000)
+  setTimeout(() => { try { rec.stop() } catch { /* ignore */ } }, (window.__duration + 2) * 1000)
+}
+window.__chunkCount = () => window.__chunks.length
+window.__getChunk = (i) => window.__chunks[i] || ''
+/* ───────── 离线渲染整段音乐 → WAV（用于最终与画面合成） ───────── */
+window.__wavChunks = []
+window.renderAudioWav = async () => {
+  const sr = 44100, dur = window.__duration + 2
+  const octx = new OfflineAudioContext(2, Math.floor(sr * dur), sr)
+  const om = octx.createGain(); om.gain.value = 0.55; om.connect(octx.destination)
+  const sc = actx, sm = master
+  actx = octx; master = om
+  let s = 0
+  while (s < dur) { emitBeat(s, s); s += BEAT }
+  const buf = await octx.startRendering()
+  actx = sc; master = sm
+  const len = buf.length, ch = 2
+  const ab = new ArrayBuffer(44 + len * ch * 2)
+  const v = new DataView(ab)
+  const w = (o, str) => { for (let i = 0; i < str.length; i++) v.setUint8(o + i, str.charCodeAt(i)) }
+  w(0, 'RIFF'); v.setUint32(4, ab.byteLength - 8, true); w(8, 'WAVE'); w(12, 'fmt ')
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, ch, true); v.setUint32(24, sr, true)
+  v.setUint32(28, sr * ch * 2, true); v.setUint16(32, ch * 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, len * ch * 2, true)
+  const L = buf.getChannelData(0), R = buf.numberOfChannels > 1 ? buf.getChannelData(1) : L
+  const c16 = (x) => { const y = Math.max(-1, Math.min(1, x)); return y < 0 ? y * 32768 : y * 32767 }
+  let o = 44
+  for (let i = 0; i < len; i++) { v.setInt16(o, c16(L[i]), true); o += 2; v.setInt16(o, c16(R[i]), true); o += 2 }
+  const bytes = new Uint8Array(ab)
+  const CH = 1500000
+  window.__wavChunks = []
+  for (let i = 0; i < bytes.length; i += CH) {
+    const sub = bytes.subarray(i, i + CH)
+    let str = ''
+    for (let j = 0; j < sub.length; j++) str += String.fromCharCode(sub[j])
+    window.__wavChunks.push(btoa(str))
+  }
+  return window.__wavChunks.length
+}
+window.__wavCount = () => window.__wavChunks.length
+window.__getWavChunk = (i) => window.__wavChunks[i] || ''
+</script>
+</body>
+</html>
