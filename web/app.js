@@ -242,8 +242,9 @@ const TEAM_PRESETS = {
 }
 
 /* 版本迭代记录（设置页展示） */
-const APP_VERSION = '0.9.9'
+const APP_VERSION = '1.0.0'
 const CHANGELOG = [
+  ['P8', '2026-10', ['正式版 1.0.0', '凭据保险箱中的 API 可被 AI 直接调用（对话与团队任务新增 vault_call 工具，密钥自动携带；支持自定义认证头与 {{key}}/{{参数}} 占位）', '字体大小范围扩展为 10–35px，默认 13px']],
   ['P7.4', '2026-10', ['厂商模板扩充：OpenAI(GPT) / Anthropic(Claude) / 智谱GLM / MiniMax / xAI(Grok) / Gemini + 自定义', '作者声明更新（作者 Acct · AI 协作 deepseek-v4.1-flash · 邮箱 577940959@qq.com）', 'GitHub 仓库已建立并接入热更新（AceTaffer/Open-Agent-Team）']],
   ['P7.3', '2026-10', ['支持把图片/文档直接拖入对话与团队任务（自动存入工作区 uploads/，图片可作为对话附件）', '设置页新增作者声明（作者 Acct · AI 开发协作 · 联系邮箱）', '新增宣传片工程（web/promo：ASCII 终端风格网页动画，可复制再生成视频）', '内置 ffmpeg 视频工具链（tools/ffmpeg.exe，用于动画→MP4 导出）']],
   ['P7.2', '2026-10', ['新增团队预设：视频制作小组 / 图片处理小组 / 文件整理小组（含配套技能）', '新增 GitHub 热更新：自动检测新版本并提醒，一键下载更新（只覆盖程序文件，data/workspace 数据完全保留），更新后自动重启']],
@@ -339,7 +340,7 @@ function applyUi() {
  const sysLight = !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches)
  document.body.classList.toggle('theme-light', theme === 'light' || (theme === 'system' && sysLight))
  if (ui.accent) document.documentElement.style.setProperty('--accent', ui.accent)
- const fs = Number(ui.fontSize) || 14
+ const fs = Math.max(10, Math.min(35, Number(ui.fontSize) || 13))
  document.documentElement.style.setProperty('--font-size', fs + 'px')
  // ★ 界面间距与团队输入框位置（设置页可调）
  document.body.dataset.spacing = ui.spacing || 'normal'
@@ -349,8 +350,8 @@ function renderSettings() {
  const ui = state.settings.ui || {}
  $('set-theme').value = ui.theme || 'dark'
  $('set-accent').value = ui.accent || '#2f9e8f'
- $('set-font').value = Number(ui.fontSize) || 14
- $('set-font-val').textContent = (Number(ui.fontSize) || 14) + 'px'
+ $('set-font').value = Number(ui.fontSize) || 13
+ $('set-font-val').textContent = (Number(ui.fontSize) || 13) + 'px'
  $('set-default-perm').value = state.settings.defaultPermission || 'modify'
  $('set-effort').value = state.settings.reasoningEffort || 'low'
  $('set-spacing').value = ui.spacing || 'normal'
@@ -2281,8 +2282,8 @@ async function main() {
   }
   // 凭据保险箱
   $('btn-vault-save').onclick = async () => {
-    const r = await api('POST', '/api/vault', { name: $('vk-name').value.trim(), baseUrl: $('vk-url').value.trim(), key: $('vk-key').value.trim(), note: $('vk-note').value.trim() })
-    if (r.ok) { $('vk-msg').textContent = t('vaultSaved'); $('vk-name').value = ''; $('vk-url').value = ''; $('vk-key').value = ''; $('vk-note').value = ''; refreshVault() }
+    const r = await api('POST', '/api/vault', { name: $('vk-name').value.trim(), baseUrl: $('vk-url').value.trim(), key: $('vk-key').value.trim(), note: $('vk-note').value.trim(), method: $('vk-method').value, authHeader: $('vk-auth').value.trim() })
+    if (r.ok) { $('vk-msg').textContent = t('vaultSaved'); $('vk-name').value = ''; $('vk-url').value = ''; $('vk-key').value = ''; $('vk-note').value = ''; $('vk-auth').value = ''; refreshVault() }
     else $('vk-msg').textContent = r.error || 'failed'
   }
   $('btn-vault-pass').onclick = () => { $('vp-old').value = ''; $('vp-new').value = ''; $('vp-msg').textContent = ''; $('vault-pass-modal').classList.remove('hidden') }

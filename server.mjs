@@ -136,7 +136,7 @@ let roles = []          // ★ 角色为数组，可增删改（Open Agent Team�
 let plugins = []        // HTTP API 插件
 let skills = []         // ★ Agent 技能预设 [{id,name,description,prompt}]
 let sessions = []       // ★ 会话：每个 API 下可多个独立会话（含消息、工作区、模型）
-let settings = { developerMode: false, exeEnabled: false, exeAllowlist: [], githubLogin: '', workspaces: [], activeWorkspace: '', language: '', taskBudgetCost: 0, chatTools: true, defaultPermission: 'modify', reasoningEffort: 'low', artProvider: '', artModel: '', videoProvider: '', videoModel: '', updateRepo: '', updateBranch: 'main', ui: { theme: 'dark', accent: '#2f9e8f', fontSize: 14, spacing: 'normal', teamInputPos: 'bottom' } }
+let settings = { developerMode: false, exeEnabled: false, exeAllowlist: [], githubLogin: '', workspaces: [], activeWorkspace: '', language: '', taskBudgetCost: 0, chatTools: true, defaultPermission: 'modify', reasoningEffort: 'low', artProvider: '', artModel: '', videoProvider: '', videoModel: '', updateRepo: '', updateBranch: 'main', ui: { theme: 'dark', accent: '#2f9e8f', fontSize: 13, spacing: 'normal', teamInputPos: 'bottom' } }
 
 // ★ 技能市场：内置技能（可一键导入到技能库）
 const BUILTIN_SKILLS = [
@@ -505,18 +505,23 @@ function pluginToolDoc() {
   const lines = plugins.map((p) => `- ${p.name}：${p.description || '外部 API'}　调用示例：{"tool":"http_call","plugin":"${p.name}","args":{${(p.params || []).map((x) => `"${x}":"..."`).join(',')}}}`)
   return `\n【外部 API 插件】可以用 http_call 调用以下自定义接口：\n${lines.join('\n')}`
 }
+function vaultToolDoc() {
+  if (!vault.length) return ''
+  const lines = vault.map((v) => `- ${v.name}${v.note ? `（${v.note}）` : ''}：${(v.method || 'GET')} ${(v.baseUrl || '').replace(/\{\{\s*key\s*\}\}/g, '{{key}}')}${(v.baseUrl || '').includes('{{') ? '（URL 中 {{xxx}} 由参数填入）' : ''}`)
+  return `\n【凭据保险箱 API】可用 vault_call 调用用户已保存的接口（密钥自动携带，不用你操心）：\n${lines.join('\n')}\n调用示例：{"tool":"vault_call","vault":"服务名称","args":{"参数名":"值"}}`
+}
 function skillTextFor(role) {
   // ★ 角色绑定的技能预设（Agent Skills）会追加到系统提示词
   return (role.skills || []).map((sid) => skills.find((s) => s.id === sid)).filter(Boolean).map((s) => `【技能：${s.name}】\n${s.prompt}`).join('\n\n')
 }
 function withSkillsAndTools(role, base) {
-  return [base, skillTextFor(role), BASE_TOOL_PROTOCOL + pluginToolDoc() + jsToolDoc()].filter(Boolean).join('\n\n')
+  return [base, skillTextFor(role), BASE_TOOL_PROTOCOL + pluginToolDoc() + vaultToolDoc() + jsToolDoc()].filter(Boolean).join('\n\n')
 }
 function chatSystemPrompt(root = getActiveRoot()) {
   // ★ 单智能体对话：允许直接操作工作区（写文件/跑命令），避免只返回文本
   return `你是 Open Agent Team 的单智能体助手，直接为用户服务。当前工作区目录：${root}
 【重要】涉及代码或文件的任务，不要只把代码贴在回复里：必须用 write_file 把完整文件写入工作区（需要时修改已有文件），并用 run_command 运行验证，最后用简洁的话告诉用户文件路径与使用方法。
-${BASE_TOOL_PROTOCOL}${pluginToolDoc()}${jsToolDoc()}`
+${BASE_TOOL_PROTOCOL}${pluginToolDoc()}${vaultToolDoc()}${jsToolDoc()}`
 }
 function defaultPromptFor(role) {
   const id = role.id
@@ -663,6 +668,36 @@ async function toolHttpCall({ plugin, args = {} }) {
     return `插件「${p.name}」返回 HTTP ${r.status}：\n${text.slice(0, 6000)}`
   } catch (e) { return `插件「${p.name}」调用失败：${e.message}` }
 }
+// ★ 凭据保险箱 API 调用：密钥自动附带（默认 Authorization: Bearer，可自定义认证头或 URL 里用 {{key}}）
+async function toolVaultCall({ vault: key, args = {}, method, body: rawBody }) {
+  const v = vault.find((x) => x.name === key || x.id === key)
+  if (!v) return `保险箱中没有名为「${key}」的 API，请先在「API 仓库 → 凭据保险箱」保存，或核对名称。`
+  let secret = ''
+  try { secret = decryptText(v.keyCipher, await vaultGetKey()) || '' } catch { /* ignore */ }
+  const enc = (s) => encodeURIComponent(String(s ?? ''))
+  const sub = (s, encode = true) => String(s || '').replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k) => (k === 'key' ? (encode ? enc(secret) : secret) : (encode ? enc(args[k] ?? '') : String(args[k] ?? ''))))
+  try {
+    const url = sub(v.baseUrl || '')
+    if (!url) return '该保险箱条目没有填写接口地址。'
+    const m = String(method || v.method || 'GET').toUpperCase()
+    const headers = {}
+    if (secret) {
+      const auth = String(v.authHeader || '').trim() || 'Authorization: Bearer {{key}}'
+      const idx = auth.indexOf(':')
+      if (idx > 0) headers[auth.slice(0, idx).trim()] = sub(auth.slice(idx + 1).trim(), false)
+      else headers.Authorization = `Bearer ${secret}`
+    }
+    let payload = null
+    if (m !== 'GET' && m !== 'HEAD') {
+      payload = rawBody != null ? String(rawBody) : JSON.stringify(args)
+      if (!headers['Content-Type'] && !headers['content-type']) headers['Content-Type'] = 'application/json'
+    }
+    const r = await fetch(url, { method: m, headers, body: payload })
+    const text = await r.text()
+    dbg('vault.call', { name: v.name, status: r.status })
+    return `保险箱「${v.name}」返回 HTTP ${r.status}：\n${text.slice(0, 6000)}`
+  } catch (e) { return `保险箱「${v.name}」调用失败：${e.message}` }
+}
 async function toolRunExe({ path: exePath, args = [], cwd = '', timeoutMs = 120000 }) {
   if (!settings.exeEnabled) return '本地程序调用未启用（请到「调试」页开启「允许调用本地程序」）。'
   const norm = path.resolve(exePath)
@@ -715,6 +750,7 @@ async function runTool(call, opts = {}) {
     if (call.tool === 'web_search') return await toolWebSearch(call)
     if (call.tool === 'web_fetch') return await toolWebFetch(call)
     if (call.tool === 'http_call') return await toolHttpCall(call)
+    if (call.tool === 'vault_call') return await toolVaultCall(call)
     if (call.tool === 'run_exe') return await toolRunExe(call)
     if (call.tool === 'generate_image') {
       const target = resolveArtTarget(call)
@@ -2245,10 +2281,12 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
     if (exist) {
       exist.name = String(b.name); exist.type = b.type || exist.type; exist.baseUrl = String(b.baseUrl || '')
       exist.note = note
+      if (b.method != null) exist.method = String(b.method || 'GET').toUpperCase()
+      if (b.authHeader != null) exist.authHeader = String(b.authHeader || '')
       if (String(b.key || '').trim()) exist.keyCipher = encryptText(String(b.key).trim(), kb)
       exist.t = Date.now()
     } else {
-      vault.unshift({ id: crypto.randomUUID(), name: String(b.name), type: b.type || 'custom', baseUrl: String(b.baseUrl || ''), note, keyCipher: encryptText(String(b.key || '').trim(), kb), t: Date.now() })
+      vault.unshift({ id: crypto.randomUUID(), name: String(b.name), type: b.type || 'custom', baseUrl: String(b.baseUrl || ''), method: String(b.method || 'GET').toUpperCase(), authHeader: String(b.authHeader || ''), note, keyCipher: encryptText(String(b.key || '').trim(), kb), t: Date.now() })
     }
     await saveVault()
     return sendJson(res, 200, { ok: true })

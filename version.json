@@ -1,5 +1,5 @@
 {
-  "version": "0.9.9",
+  "version": "1.0.0",
   "date": "2026-10-02",
-  "notes": "P7.4: 新增 OpenAI/Claude/智谱/MiniMax/xAI/Gemini 与自定义厂商模板；作者声明更新；GitHub 热更新源接入；产出两支宣传视频。"
+  "notes": "P8 正式版：凭据保险箱 API 可被 AI 直接调用（vault_call）；字体 10-35px（默认13）；1.0.0 正式发布。"
 }

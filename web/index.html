@@ -248,8 +248,10 @@
  <p class="dim small" data-i18n="vaultDesc">本地加密保存任意 API（不限于 AI：抠图 / OCR / 翻译 / 自建服务等），可写备注（留空自动识别）。查看完整内容需要保险箱密码（未设置则直接显示）。</p>
  <div class="gh-row" style="margin-top:10px">
  <input id="vk-name" placeholder="名称（如：抠图服务）" style="max-width:200px" />
- <input id="vk-url" placeholder="接口地址 https://..." />
+ <input id="vk-url" placeholder="接口地址 https://...（可用 {{参数}} / {{key}} 占位）" />
  <input id="vk-key" placeholder="Key / Token（可空）" style="max-width:220px" />
+ <select id="vk-method" style="max-width:90px"><option>GET</option><option>POST</option></select>
+ <input id="vk-auth" placeholder="认证头（可选，默认 Authorization: Bearer {{key}}）" style="max-width:280px" />
  <input id="vk-note" placeholder="备注（留空自动识别）" style="max-width:220px" />
  <button id="btn-vault-save" class="btn primary" data-i18n="vaultSave">保存 API</button>
  <button id="btn-vault-pass" class="btn ghost" data-i18n="vaultPassBtn">设置/修改密码</button>
@@ -480,7 +482,7 @@
  <select id="set-theme"><option value="dark" data-i18n="themeDark">深色</option><option value="light" data-i18n="themeLight">浅色</option><option value="system" data-i18n="themeSystem">跟随系统</option></select>
  </label>
  <label class="set-row"><span data-i18n="accentColor">强调色</span><input type="color" id="set-accent" /></label>
- <label class="set-row"><span data-i18n="fontSize">字体大小</span><input type="range" id="set-font" min="12" max="18" step="1" /> <span id="set-font-val" class="dim small"></span></label>
+ <label class="set-row"><span data-i18n="fontSize">字体大小</span><input type="range" id="set-font" min="10" max="35" step="1" /> <span id="set-font-val" class="dim small"></span></label>
  <label class="set-row"><span data-i18n="uiSpacing">界面间距</span>
  <select id="set-spacing">
  <option value="compact" data-i18n="spCompact">紧凑</option>
