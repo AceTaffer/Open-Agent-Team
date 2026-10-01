@@ -248,7 +248,7 @@ const TEAM_PRESETS = {
 /* 版本迭代记录（设置页展示） */
 const APP_VERSION = '1.0.1'
 const CHANGELOG = [
-  ['P8.1', '2026-10', ['修复团队任务三个问题：① 队长汇总阶段现可真实写文件（报告/文档直接落盘并核对）', '② 角色间协作 ask_role 支持中文角色名匹配（此前「程序/测试」等名称会报未找到角色），并新增「协作询问/协作回复」过程卡片', '③ 团队任务支持每角色独立工具权限（团队配置页可为单个角色设置，覆盖会话默认权限）', '上游接口 30 秒无数据自动中断并给出明确提示（避免接口繁忙时无限等待）']],
+  ['P8.1', '2026-10', ['修复团队任务三个问题：① 队长汇总阶段现可真实写文件（报告/文档直接落盘并核对）', '② 角色间协作 ask_role 支持中文角色名匹配（此前「程序/测试」等名称会报未找到角色），并新增「协作询问/协作回复」过程卡片', '③ 团队任务支持每角色独立工具权限（团队配置页可为单个角色设置，覆盖会话默认权限）', '单角色对话（单独与某个 AI 聊天）现支持工具调用：可直接让某角色用 ask_role 联系队友、读写工作区等，过程卡片实时可见', '上游接口 30 秒无数据自动中断并给出明确提示（避免接口繁忙时无限等待）']],
   ['P8', '2026-10', ['正式版 1.0.0', '凭据保险箱中的 API 可被 AI 直接调用（对话与团队任务新增 vault_call 工具，密钥自动携带；支持自定义认证头与 {{key}}/{{参数}} 占位）', '字体大小范围扩展为 10–35px，默认 13px']],
   ['P7.4', '2026-10', ['厂商模板扩充：OpenAI(GPT) / Anthropic(Claude) / 智谱GLM / MiniMax / xAI(Grok) / Gemini + 自定义', '作者声明更新（作者 Acct · AI 协作 deepseek-v4.1-flash · 邮箱 577940959@qq.com）', 'GitHub 仓库已建立并接入热更新（AceTaffer/Open-Agent-Team）']],
   ['P7.3', '2026-10', ['支持把图片/文档直接拖入对话与团队任务（自动存入工作区 uploads/，图片可作为对话附件）', '设置页新增作者声明（作者 Acct · AI 开发协作 · 联系邮箱）', '新增宣传片工程（web/promo：ASCII 终端风格网页动画，可复制再生成视频）', '内置 ffmpeg 视频工具链（tools/ffmpeg.exe，用于动画→MP4 导出）']],
@@ -1202,6 +1202,29 @@ async function roleChatSend() {
      const j = JSON.parse(s.slice(5))
      if (j.delta) { if (first) { target.textContent = ''; first = false } target.textContent += j.delta; scrollIfNearBottom($('team-stream')) }
      if (j.error) target.textContent = t('failure') + ': ' + j.error
+     // ★ 单角色对话中的工具与协作事件（ask_role 联系队友等）
+     if (j.question) appendQuestionCard(box, j.question, roleId)
+     if (j.confirm) appendConfirmCard(box, j.confirm)
+     if (j.ask) {
+      const el = document.createElement('div')
+      el.className = 'ask-box'
+      el.innerHTML = `<b>${t('askLabel')}</b> ${esc(roleLabel(j.ask.from))} → ${esc(roleLabel(j.ask.to))}<div>${esc(j.ask.question || '')}</div>`
+      box.appendChild(el)
+      if (j.ask.to) roleSetStatus(j.ask.to, 'thinking', { sub: `${roleLabel(j.ask.from)} ${t('asking')}` })
+     }
+     if (j.ask_done) {
+      const el = document.createElement('div')
+      el.className = 'ask-box done'
+      el.innerHTML = `<b>${t('askReply')}</b> ${esc(roleLabel(j.ask_done.to))} → ${esc(roleLabel(j.ask_done.from))}<div>${esc(String(j.ask_done.answer || '').slice(0, 400))}</div>`
+      box.appendChild(el)
+     }
+     if (j.tool && j.tool !== 'ask_role') {
+      const el = document.createElement('div')
+      el.className = 'ask-box'
+      el.innerHTML = `<b>${t('toolLabel')} · ${esc(j.tool)}</b><div>${esc(String(j.result || '').slice(0, 300))}</div>`
+      box.appendChild(el)
+     }
+     if (j.question || j.confirm || j.ask || j.ask_done || j.tool) scrollIfNearBottom($('team-stream'))
     } catch { /* ignore */ }
    }
   }

@@ -2292,16 +2292,41 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
     res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' })
     const emit = (o) => { try { res.write(`data: ${JSON.stringify(o)}\n\n`) } catch { /* ignore */ } }
     try {
-      const text = await chatComplete(target.provider, target.model, [
+      // ★ 单角色对话也支持工具（含 ask_role 联系队友、读写工作区等）：多轮工具循环
+      const root = getActiveRoot()
+      const autoState = { approvedAll: false }
+      const messages = [
         { role: 'system', content: roleSystemPrompt(role) },
-        { role: 'user', content: `【与用户的单独对话】${String(b.message || '').slice(0, 4000)}\n请以你的角色身份直接回复用户（简洁、专业）。` },
-      ], {
-        stream: true, temperature: 0.5,
-        onDelta: (d) => emit({ delta: d }),
-        onReasoning: (r) => emit({ reasoning: r }),
-        onUsage: (u) => { const cost = calcCost(getPrice(target.provider, target.model), u); statsAdd({ role: role.id, model: target.model, usage: u, cost: cost || 0 }); emit({ usage: u, cost }) },
-      })
-      emit({ done: true, text })
+        { role: 'user', content: `【与用户的单独对话】${String(b.message || '').slice(0, 4000)}\n你可以调用工具（如用 ask_role 询问其他队友、读写工作区文件等）。请以你的角色身份直接回复用户（简洁、专业）。` },
+      ]
+      for (let turn = 0; turn < 6; turn++) {
+        const text = await chatComplete(target.provider, target.model, messages, {
+          stream: true, temperature: 0.5,
+          onDelta: (d) => emit({ delta: d, turn }),
+          onReasoning: (r) => emit({ reasoning: r, turn }),
+          onUsage: (u) => { const cost = calcCost(getPrice(target.provider, target.model), u); statsAdd({ role: role.id, model: target.model, usage: u, cost: cost || 0 }); emit({ usage: u, cost, turn }) },
+        })
+        if (!text.trim()) break
+        const calls = extractToolCalls(text)
+        if (!calls.length) break
+        messages.push({ role: 'assistant', content: text })
+        const outs = []
+        for (const call of calls) {
+          const result = await runToolGuarded(call, {
+            root, permission: settings.defaultPermission || 'modify', session: null, autoState, agentId: role.id, task: '',
+            reportUsage: (a, p, m, u) => { const cost = calcCost(getPrice(p, m), u); statsAdd({ role: a, model: m, usage: u, cost: cost || 0 }) },
+            onConfirm: (c) => emit({ confirm: c }),
+            onImage: (info) => emit({ image: info }),
+            onQuestion: (q) => emit({ question: q }),
+            onAsk: (info) => emit({ ask: info }),
+            onAskDone: (info) => emit({ ask_done: info }),
+          })
+          emit({ tool: call.tool, detail: call.path || call.command || call.query || call.plugin || call.url || '', result: result.slice(0, 3000) })
+          outs.push(`【工具结果】${call.tool} ${call.path || call.command || call.query || call.plugin || call.url || ''}\n${result}`)
+        }
+        messages.push({ role: 'user', content: outs.join('\n\n') + '\n\n请根据工具结果继续；如已完成请给出最终答复（不要再调用工具）。' })
+      }
+      emit({ done: true })
     } catch (e) { emit({ error: e.message }) }
     res.end()
     return
