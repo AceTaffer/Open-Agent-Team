@@ -220,13 +220,26 @@ body.theme-light .steer-box { background: #fdf3df; border-color: #d9b95a; }
 /* ★ 显示开关（设置 → 外观）：隐藏思维链 / 工具使用情况（内容仍保留在会话中） */
 body.hide-reasoning .reasoning { display: none !important; }
 body.hide-tools .tool-box, body.hide-tools .tool-note { display: none !important; }
-/* ★ 上下文占用百分比徽章 */
-.ctx-badge {
-  font-size: 11px; padding: 1px 7px; border-radius: 9px; border: 1px solid var(--border);
-  color: var(--text-dim); margin-left: 8px; vertical-align: middle; white-space: nowrap;
+/* ★ 上下文占用环形指示器（悬停卡片：成本/使用率/Token）
+   用于：对话消息元信息行、团队每个角色块头部、单角色对话 */
+.ctx-ring { position: relative; display: inline-block; width: 18px; height: 18px; vertical-align: -4px; cursor: default; }
+.agent-head .ctx-ring { margin-left: 8px; }
+.msg-meta .ctx-ring { margin-right: 2px; }
+.ctx-ring svg { width: 18px; height: 18px; transform: rotate(-90deg); }
+.ctx-ring .ring-bg { fill: none; stroke: var(--border); stroke-width: 3.8; }
+.ctx-ring .ring-fg { fill: none; stroke: var(--accent); stroke-width: 3.8; stroke-linecap: round; transition: stroke-dashoffset .3s, stroke .3s; }
+.ctx-ring.warn .ring-fg { stroke: #e0a63c; }
+.ctx-ring.hot .ring-fg { stroke: #e05656; }
+.ctx-tip {
+  position: absolute; bottom: calc(100% + 8px); right: -4px; display: none; z-index: 60;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
+  padding: 8px 12px; min-width: 168px; box-shadow: 0 8px 22px rgba(0,0,0,.35);
+  font-size: 12px; white-space: nowrap;
 }
-.ctx-badge.warn { color: #e0a63c; border-color: #e0a63c; }
-.ctx-badge.hot { color: #e05656; border-color: #e05656; }
+.ctx-ring:hover .ctx-tip { display: block; }
+.ctx-tip-row { display: flex; justify-content: space-between; gap: 18px; line-height: 1.8; }
+.ctx-tip-row i { font-style: normal; color: var(--text-dim); }
+.ctx-tip-row b { color: var(--text); }
 body.theme-light .ask-box { background: #e8f4fa; border-color: #7fb3cf; }
 body.theme-light .ask-box.done { background: #e9f6ee; border-color: #86bfa0; }
 body.theme-light .question-box { background: var(--info-bg); }

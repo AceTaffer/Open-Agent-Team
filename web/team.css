@@ -447,6 +447,7 @@ body[data-spacing="relaxed"] .provider-cards, body[data-spacing="relaxed"] .sett
 .cl-head { display: flex; gap: 8px; align-items: baseline; }
 .cl-block ul { margin: 4px 0 0; padding-left: 18px; }
 .cl-block li { font-size: 12px; color: var(--text-dim); }
+.team-budget #team-budget-left.over { color: #e05656; }
 .team-budget input {
   background: var(--bg-card); color: var(--text); border: 1px solid var(--border);
   border-radius: 8px; padding: 4px 8px; font-size: 12px;

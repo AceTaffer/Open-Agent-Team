@@ -2097,7 +2097,7 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
           break
         }
         if (session && text) {
-          session.messages.push({ role: 'assistant', content: text, reasoning: turnReasoning || undefined, t: Date.now(), usage: usage || null, cost: cost || null, turn: tIdx })
+          session.messages.push({ role: 'assistant', content: text, reasoning: turnReasoning || undefined, t: Date.now(), usage: usage || null, cost: cost || null, contextLimit: getContextLimit(provider, modelId), turn: tIdx })
           session.tokens = (session.tokens || 0) + (usage?.prompt_tokens || 0) + (usage?.completion_tokens || 0)
           session.cost = Number(((session.cost || 0) + (cost || 0)).toFixed(6))
           session.updatedAt = Date.now()

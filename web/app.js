@@ -49,7 +49,7 @@ const I18N = {
  testHint: '测试使用「已保存」的配置：修改后请先保存，再测试连通性', testNeedSave: '请先点击「保存」保存配置，然后再点「测试连通性」',
  delSessionTitle: '删除会话', delChatOnly: '仅删除对话（保留文件）', delWithFolder: '对话与文件夹一起删除', delPurgeHint: '「连文件夹一起删除」会清空该会话工作区内的所有文件（不可恢复），请确认后再操作。',
  cleanupTitle: '数据清理', cleanupBtn: '清理残留数据', cleanupDesc: '清理残留数据：已删除会话遗留的任务记录、孤儿任务文件、从未产生消息的空会话，以及已删除角色的对话记忆。不会删除工作区里的文件。',
- cleanupSessions: '会话', cleanupTasks: '任务记录', cleanupMemories: '角色记忆', ctxLabel: '上下文',
+ cleanupSessions: '会话', cleanupTasks: '任务记录', cleanupMemories: '角色记忆', ctxLabel: '上下文', usageRate: '使用率',
  create: '创建', newSession: '新建会话', sessionWorkspace: '工作区（默认当前工作区）', sessionTitle: '会话名称（可空）', noSessions: '（暂无会话）',
  roleName: '角色名称', roleDesc: '角色描述（给队长看的分工说明）', rolePromptPh: '自定义系统提示词（留空用内置）', enabled: '启用', noSkills: '（暂无技能）', budget: '预算¥',
  rolePerm: '该角色的工具权限（团队任务生效）', permFollow: '跟随会话',
@@ -58,6 +58,7 @@ const I18N = {
  input: '输入', output: '输出', addProvider: '添加 API', edit: '编辑', delete: '删除', test: '测试', manageModels: '管理模型', useForChat: '用于对话',
  notConfigured: '未配置', noKey: '未配置Key', models: '模型', balance: '余额', failure: '失败', none2: '无', savedOk: '已保存', importDone: '导入完成', skillImportDone: '技能导入完成',
  taskBudget: '任务总预算 ¥', concurrentHint: '（支持同时运行多个任务）', running: '运行中', done: '已完成', stopped: '已停止',
+ budgetSpent: '本次已花', budgetLeft: '剩余', budgetNoLimit: '（不限预算）',
  chatTools: '工具', chatToolsTip: '允许 AI 直接读写工作区文件、执行命令（关闭后只聊天）', thinking: '思考中…', thoughtDone: '已思考', clearPanel: '清空面板', collapse: '折叠', expand: '展开',
  tabSettings: '设置', settingsTitle: '设置', appearance: '外观', theme: '主题', themeDark: '深色', themeLight: '浅色', accentColor: '强调色', userBubbleColor: '我的气泡颜色', showReasoning: '显示思维链（推理过程）', showTools: '显示工具使用情况', fontSize: '字体大小',
  agentPolicy: 'Agent 工作方式 / 权限', defaultPermission: '新会话默认权限',
@@ -142,7 +143,7 @@ const I18N = {
  testHint: 'Testing uses the SAVED config: save your changes first, then test', testNeedSave: 'Click "Save" first, then "Test connectivity"',
  delSessionTitle: 'Delete session', delChatOnly: 'Delete chat only (keep files)', delWithFolder: 'Delete chat AND folder', delPurgeHint: '"Delete chat AND folder" wipes all files inside this session workspace (irreversible).',
  cleanupTitle: 'Data cleanup', cleanupBtn: 'Clean leftover data', cleanupDesc: 'Removes leftover data: task records of deleted sessions, orphan task files, empty sessions, and memories of deleted roles. Workspace files are not touched.',
- cleanupSessions: 'sessions', cleanupTasks: 'tasks', cleanupMemories: 'memories', ctxLabel: 'ctx',
+ cleanupSessions: 'sessions', cleanupTasks: 'tasks', cleanupMemories: 'memories', ctxLabel: 'ctx', usageRate: 'Usage rate',
  create: 'Create', newSession: 'New Session', sessionWorkspace: 'Workspace (default = current)', sessionTitle: 'Session title (optional)', noSessions: '(no sessions)',
  roleName: 'Role name', roleDesc: 'Role description', rolePromptPh: 'Custom system prompt (blank = built-in)', enabled: 'Enabled', noSkills: '(no skills)', budget: 'Budget ¥',
  rolePerm: 'Tool permission for this role (team tasks)', permFollow: 'Follow session',
@@ -151,6 +152,7 @@ const I18N = {
  input: 'in', output: 'out', addProvider: 'Add API', edit: 'Edit', delete: 'Delete', test: 'Test', manageModels: 'Models', useForChat: 'Use for chat',
  notConfigured: 'not set', noKey: 'no key', models: 'models', balance: 'Balance', failure: 'failed', none2: 'none', savedOk: 'Saved', importDone: 'Imported', skillImportDone: 'Skills imported',
  taskBudget: 'Task budget ¥', concurrentHint: '(multiple tasks can run at once)', running: 'running', done: 'done', stopped: 'stopped',
+ budgetSpent: 'spent', budgetLeft: 'left', budgetNoLimit: '(no limit)',
  chatTools: 'Tools', chatToolsTip: 'Let the AI read/write workspace files and run commands (off = plain chat)', thinking: 'Thinking…', thoughtDone: 'Thought', clearPanel: 'Clear panel', collapse: 'Collapse', expand: 'Expand',
  tabSettings: 'Settings', settingsTitle: 'Settings', appearance: 'Appearance', theme: 'Theme', themeDark: 'Dark', themeLight: 'Light', accentColor: 'Accent color', userBubbleColor: 'My bubble color', showReasoning: 'Show reasoning chain', showTools: 'Show tool activity', fontSize: 'Font size',
  agentPolicy: 'Agent Policy / Permissions', defaultPermission: 'Default permission (new sessions)',
@@ -264,8 +266,9 @@ const TEAM_PRESETS = {
 }
 
 /* 版本迭代记录（设置页展示） */
-const APP_VERSION = '1.0.3'
+const APP_VERSION = '1.0.4'
 const CHANGELOG = [
+  ['P8.4', '2026-10', ['团队预算栏新增实时显示：本次任务已花费 + 预算剩余（修改预算数字即时预览，超支变红；切换会话自动恢复上次花费）', '上下文占用升级为环形进度指示器：直接显示在对话消息内与团队每个角色块头部，悬停弹出「成本 / 使用率 / Token」卡片，≥60% 变黄、≥85% 变红', '修复环形指示器在消息重绘（发送完成/刷新）后消失的问题：会话现在持久化上下文上限，历史消息同样显示环形占用']],
   ['P8.3', '2026-10', ['修复 ask_user 提问卡片：自己填写的内容现在优先于预设选项（此前选了预设再填写，结果仍采用预设的问题）', '新增「小说写作团队」预设：主编 / 大纲策划 / 写手 / 校对 + 配套技能（世界观大纲、文风控制、章节写作规范、校对规范）', '问题卡片输入框提示更新：填写后将优先采用你写的内容']],
   ['P8.2', '2026-10', ['单独对话气泡：用户消息独立显示、不再被 AI 回复覆盖，颜色可在 设置 → 外观 →「我的气泡颜色」调整', '角色对话记忆同步：被询问的角色会保存队友的问询记录（之后单独对话能回忆）；协作询问/回复在双方角色视图都可见，气泡使用各自角色颜色', '单独角色对话也遵循该角色自己的权限设置', '新建团队会话不再显示消息条数后缀（避免误认为会话序号）', '更新源仓库默认填入 AceTaffer/Open-Agent-Team（新安装/分享包即自带）', 'API 弹窗新增提示：测试连通性使用「已保存」配置，未保存点击时会明确提醒先保存', '设置 → 外观新增显示开关：思维链（推理过程）、工具使用情况，默认开启，可随时隐藏', 'AI 回复不再显示原始工具调用代码块（```tool 片段），工具过程统一由工具盒/开关呈现', 'OpenCode Go 模型库扩充至 30 个（千问 Qwen / GLM / GPT-6 Luna / Grok / Kimi / MiniMax / Mimo 等，可直接在模型下拉选择）', '删除对话/团队会话时可选择：仅删除对话（保留文件）或连同工作区文件夹一起彻底删除', '设置新增「数据清理」：清理已删除会话遗留的任务记录、孤儿任务文件、空会话与已删除角色的对话记忆（不动工作区文件）', '对话工具栏与团队每个角色块显示上下文占用百分比（≥60% 变黄、≥85% 变红）']],
   ['P8.1', '2026-10', ['修复团队任务三个问题：① 队长汇总阶段现可真实写文件（报告/文档直接落盘并核对）', '② 角色间协作 ask_role 支持中文角色名匹配（此前「程序/测试」等名称会报未找到角色），并新增「协作询问/协作回复」过程卡片', '③ 团队任务支持每角色独立工具权限（团队配置页可为单个角色设置，覆盖会话默认权限）', '单角色对话（单独与某个 AI 聊天）现支持工具调用：可直接让某角色用 ask_role 联系队友、读写工作区等，过程卡片实时可见', '上游接口 30 秒无数据自动中断并给出明确提示（避免接口繁忙时无限等待）']],
@@ -293,7 +296,7 @@ const state = {
  sessions: [], activeSession: null, expanded: new Set(), showArchived: false,
  balances: {}, workspaces: [], activeWorkspace: '',
  chatImage: null, lastUsage: null, runs: [],
- teamSessions: [], teamSessionId: '', roleLive: {}, teamLoaded: false, teamFocus: '', currentTeamTaskId: '',
+ teamSessions: [], teamSessionId: '', roleLive: {}, teamLoaded: false, teamFocus: '', currentTeamTaskId: '', teamTaskCost: 0,
  runPaused: false, agentPaused: new Set(),
  artItems: [], artSel: new Set(), artMulti: false, viewerItem: null, delTargets: [], regenTargets: [],
  vault: { hasPassword: false, items: [] }, vaultPending: null,
@@ -357,15 +360,17 @@ function styleAskBox(el, colorRoleId) {
  if (c) el.style.borderLeft = '4px solid ' + c
  return el
 }
-// ★ 上下文占用百分比徽章（对话 / 团队角色块 / 单角色对话）
-function setCtxBadge(host, pct) {
+// ★ 上下文占用环形指示器（悬停显示 成本/使用率/Token），用于对话消息与团队角色块
+function setCtxBadge(host, pct, cost, tokens) {
  if (!host) return
  const head = host.querySelector('.agent-head') || host
- let el = head.querySelector('.ctx-badge')
- if (!el) { el = document.createElement('span'); el.className = 'ctx-badge'; head.appendChild(el) }
- el.textContent = `${t('ctxLabel')} ${pct}%`
- el.classList.toggle('warn', pct >= 60 && pct < 85)
- el.classList.toggle('hot', pct >= 85)
+ let el = head.querySelector('.ctx-ring')
+ if (!el) { el = document.createElement('span'); head.appendChild(el) }
+ const cls = pct >= 85 ? 'hot' : pct >= 60 ? 'warn' : ''
+ el.className = 'ctx-ring ' + cls
+ const off = Math.max(0, 100 - Math.min(100, Number(pct) || 0))
+ el.innerHTML = `<svg viewBox="0 0 36 36"><circle class="ring-bg" cx="18" cy="18" r="15.9155"></circle><circle class="ring-fg" cx="18" cy="18" r="15.9155" stroke-dasharray="100" stroke-dashoffset="${off}"></circle></svg>
+ <span class="ctx-tip"><span class="ctx-tip-row"><i>${t('cost')}</i><b>${fmtCost(cost)}</b></span><span class="ctx-tip-row"><i>${t('usageRate')}</i><b>${pct}%</b></span><span class="ctx-tip-row"><i>Token</i><b>${fmtNum(tokens)}</b></span></span>`
 }
 // ★ 删除会话弹窗：返回 'cancel' | 'chat' | 'purge'
 function askDeleteSession(title, workspace) {
@@ -756,8 +761,14 @@ function appendMsg(role, content, meta, idx) {
  el.innerHTML = `<div class="who">${role === 'user' ? 'You' : role === 'assistant' ? 'AI' : 'SYS'}</div><span class="content"></span>`
  el.querySelector('.content').textContent = content
  if (meta?.usage) {
- const hit = meta.usage.prompt_cache_hit_tokens || 0
- el.insertAdjacentHTML('beforeend', `<div class="dim small"> ${t('tokens')} ${fmtNum(meta.usage.prompt_tokens)}/${fmtNum(meta.usage.completion_tokens)} · ${t('cache')} ${fmtNum(hit)} · ${t('cost')} ${fmtCost(meta.cost)}</div>`)
+  const hit = meta.usage.prompt_cache_hit_tokens || 0
+  // ★ 历史消息同样显示环形占用指示器（悬停：成本/使用率/Token）
+  const metaEl = document.createElement('div')
+  metaEl.className = 'msg-meta dim small'
+  const pct = meta.contextLimit ? Math.min(999, Math.round((meta.usage.prompt_tokens || 0) / meta.contextLimit * 100)) : null
+  if (pct != null) setCtxBadge(metaEl, pct, meta.cost, (meta.usage.prompt_tokens || 0) + (meta.usage.completion_tokens || 0))
+  metaEl.insertAdjacentHTML('beforeend', ` <span>${t('tokens')} ${fmtNum(meta.usage.prompt_tokens)}/${fmtNum(meta.usage.completion_tokens)} · ${t('cache')} ${fmtNum(hit)} · ${t('cost')} ${fmtCost(meta.cost)}</span>`)
+  el.appendChild(metaEl)
  }
  box.appendChild(el); box.scrollTop = box.scrollHeight
  return el.querySelector('.content')
@@ -898,10 +909,15 @@ async function sendChat() {
   if (j.usage) {
    ensureTurn(j)
    state.lastUsage = { prompt: j.usage.prompt_tokens || 0, limit: j.contextLimit || 0 }
-   const pctTxt = j.contextLimit ? ` (${Math.min(999, Math.round((j.usage.prompt_tokens || 0) / j.contextLimit * 100))}%)` : ''
-   $('chat-context').textContent = `${t('context')}: ${fmtNum(state.lastUsage.prompt)}/${fmtNum(state.lastUsage.limit)}${pctTxt}`
- target.parentElement.insertAdjacentHTML('beforeend', `<div class="dim small"> ${t('tokens')} ${fmtNum(j.usage.prompt_tokens)}/${fmtNum(j.usage.completion_tokens)} · ${t('cache')} ${fmtNum(j.cacheHit)} · ${t('cost')} ${fmtCost(j.cost)}</div>`)
- }
+   const pctNum = j.contextLimit ? Math.min(999, Math.round((j.usage.prompt_tokens || 0) / j.contextLimit * 100)) : null
+   $('chat-context').textContent = `${t('context')}: ${fmtNum(state.lastUsage.prompt)}/${fmtNum(state.lastUsage.limit)}${pctNum != null ? ` (${pctNum}%)` : ''}`
+   // ★ 消息内环形占用指示器（悬停显示 成本/使用率/Token 卡片）
+   let meta = target.parentElement.querySelector('.msg-meta')
+   if (!meta) { meta = document.createElement('div'); meta.className = 'msg-meta dim small'; target.parentElement.appendChild(meta) }
+   meta.innerHTML = ''
+   if (pctNum != null) setCtxBadge(meta, pctNum, j.cost, (j.usage.prompt_tokens || 0) + (j.usage.completion_tokens || 0))
+   meta.insertAdjacentHTML('beforeend', ` <span>${t('tokens')} ${fmtNum(j.usage.prompt_tokens)}/${fmtNum(j.usage.completion_tokens)} · ${t('cache')} ${fmtNum(j.cacheHit)} · ${t('cost')} ${fmtCost(j.cost)}</span>`)
+  }
  } catch {}
  }
  }
@@ -1008,6 +1024,21 @@ async function refreshTeamSessions(selectId) {
  const cur = state.teamSessions.find((s) =>s.id === state.teamSessionId)
  $('team-session-ws').textContent = cur?.workspace ? ` ${cur.workspace}` : ''
 }
+// ★ 预算实时显示：本次任务已花费 + 剩余额度（修改预算数字即时预览）
+function renderTeamBudget() {
+ const el = $('team-budget-left')
+ if (!el) return
+ const budget = Number($('team-budget')?.value) || 0
+ const spent = Number(state.teamTaskCost) || 0
+ if (!budget) {
+  el.textContent = spent > 0 ? `${t('budgetSpent')} ${fmtCost(spent)}${t('budgetNoLimit')}` : ''
+  el.classList.remove('over')
+  return
+ }
+ const left = Math.max(0, budget - spent)
+ el.textContent = `${t('budgetSpent')} ${fmtCost(spent)} · ${t('budgetLeft')} ${fmtCost(left)}`
+ el.classList.toggle('over', left <= 0)
+}
 async function renderTeamSession() {
  const stream = $('team-stream')
  if (!stream) return
@@ -1030,10 +1061,16 @@ async function renderTeamSession() {
   if (m.kind === 'team-step') { runBlock(run, m.agent, roleLabel(m.agent) + (m.title ? ' · ' + m.title : ''), '(history)').textContent = stripToolFences(m.content || ''); continue }
   if (m.kind === 'team-final') { runBlock(run, 'leader', roleLabel('leader') + ' · final', '(history)').textContent = stripToolFences(m.content || ''); continue }
  if (m.kind === 'team-steer') { run.body.appendChild(steerBox(m.content || '', m.agent)); continue }
- if (m.kind === 'team-meta') { run.foot.textContent = m.content || ''; continue }
+  if (m.kind === 'team-meta') {
+   run.foot.textContent = m.content || ''
+   const cm = /费用 ¥([\d.]+)/.exec(m.content || '') // ★ 从历史记录恢复"本次已花"用于预算显示
+   if (cm) state.teamTaskCost = Number(cm[1]) || 0
+   continue
+  }
  }
  if (!(r.session.messages || []).length) stream.innerHTML = `<div class="empty-tip">${t('teamEmpty')}</div>`
  stream.scrollTop = stream.scrollHeight
+ renderTeamBudget()
  applyTeamFilter()
 }
 
@@ -1314,7 +1351,7 @@ async function roleChatSend() {
       el.innerHTML = `<b>${t('toolLabel')} · ${esc(j.tool)}</b><div>${esc(String(j.result || '').slice(0, 300))}</div>`
       box.appendChild(el)
      }
-     if (j.usage && j.contextLimit) setCtxBadge(box, Math.round((j.usage.prompt_tokens || 0) / j.contextLimit * 100))
+     if (j.usage && j.contextLimit) setCtxBadge(box, Math.round((j.usage.prompt_tokens || 0) / j.contextLimit * 100), j.cost, (j.usage.prompt_tokens || 0) + (j.usage.completion_tokens || 0))
      if (j.question || j.confirm || j.ask || j.ask_done || j.tool) scrollIfNearBottom($('team-stream'))
     } catch { /* ignore */ }
    }
@@ -1347,7 +1384,7 @@ async function runTeam() {
  finally { refreshWorkspace(); refreshArtGallery(); refreshTasks(); refreshStats(); await refreshTeamSessions(state.teamSessionId) }
 }
 function handleTeamEvent(ev, run, ref) {
- if (ev.type === 'session') { ref.id = ev.taskId; state.currentTeamTaskId = ev.taskId; updatePauseUI(); return }
+ if (ev.type === 'session') { ref.id = ev.taskId; state.currentTeamTaskId = ev.taskId; state.teamTaskCost = 0; renderTeamBudget(); updatePauseUI(); return }
  if (ev.type === 'confirm') { appendConfirmCard(run.body, ev.confirm); return }
  if (ev.type === 'question') { appendQuestionCard(run.body, ev, ev.agent); return }
  if (ev.type === 'imagereview') { appendImageReviewCard(run.body, ev); applyTeamFilter(); return }
@@ -1449,13 +1486,15 @@ function handleTeamEvent(ev, run, ref) {
  }
   if (ev.type === 'usage') {
    if (ev.cost) { run.cost += ev.cost; run.foot.textContent = ` ${fmtCost(run.cost)} · ${t('tokens')} ${fmtNum(ev.usage?.prompt_tokens)}/${fmtNum(ev.usage?.completion_tokens)} · ${t('cache')} ${fmtNum(ev.cacheHit)}` }
+   state.teamTaskCost = ev.totalCost != null ? Number(ev.totalCost) : (Number(state.teamTaskCost) || 0) + (Number(ev.cost) || 0)
+   renderTeamBudget()
    const last = Object.values(ref.stepBoxes).filter((s) =>s.agent === ev.agent).pop()
    if (last?.body) last.body.parentElement.insertAdjacentHTML('beforeend', `<div class="dim small"> ${fmtNum(ev.usage?.prompt_tokens)}/${fmtNum(ev.usage?.completion_tokens)} · ${t('cache')} ${fmtNum(ev.cacheHit)} · ${fmtCost(ev.cost)}</div>`)
-   // ★ 每个角色块的上下文占用百分比
+   // ★ 每个角色块的上下文占用环形指示器
    if (ev.usage && ev.contextLimit) {
     const pct = Math.min(999, Math.round((ev.usage.prompt_tokens || 0) / ev.contextLimit * 100))
     const host = last?.body ? last.body.parentElement : (ev.agent === 'leader' && ref.finalBox ? ref.finalBox.parentElement : null)
-    setCtxBadge(host, pct)
+    setCtxBadge(host, pct, ev.cost, (ev.usage.prompt_tokens || 0) + (ev.usage.completion_tokens || 0))
    }
    return
   }
@@ -1489,7 +1528,8 @@ function handleTeamEvent(ev, run, ref) {
  run.body.appendChild(box); applyTeamFilter(); return
  }
  if (ev.type === 'done') {
- run.status.textContent = ev.budgetStopped || ev.aborted ? t('stopped') : `${t('done')} · ${t('toolCalls')} ${ev.toolCalls || 0}`
+  if (ev.cost != null) { state.teamTaskCost = Number(ev.cost) || 0; renderTeamBudget() }
+  run.status.textContent = ev.budgetStopped || ev.aborted ? t('stopped') : `${t('done')} · ${t('toolCalls')} ${ev.toolCalls || 0}`
  run.foot.textContent = ` ${fmtCost(ev.cost)} · ${t('tokens')} ${fmtNum((ev.usage?.prompt_tokens || 0) + (ev.usage?.completion_tokens || 0))} · ${t('cache')} ${fmtNum(ev.cacheHitTokens)}`
  if (!ev.budgetStopped && !ev.aborted) roleSetStatus('leader', 'done')
  if (state.currentTeamTaskId === ev.taskId) { state.currentTeamTaskId = ''; state.runPaused = false; state.agentPaused = new Set(); updatePauseUI() }
@@ -2274,6 +2314,7 @@ async function loadState() {
  renderChatToolbar(); renderProviderCards(); renderRoleSummary(); renderArtSelectors(); renderPlugins(); renderJsPlugins(); renderDebugSettings()
  $('balance-summary').textContent = `${state.providers.length} APIs`
  $('team-budget').value = state.settings.taskBudgetCost || ''
+ renderTeamBudget()
  await refreshWorkspaces()
  applyUi(); renderSettings()
  // 自动恢复上次打开的会话（对话历史不丢）
@@ -2548,10 +2589,12 @@ async function main() {
  $('set-effort').onchange = async () => { state.settings.reasoningEffort = $('set-effort').value; await api('PUT', '/api/settings', { reasoningEffort: state.settings.reasoningEffort }) }
  $('btn-open-roles').onclick = () =>switchView('teamconfig')
  $('btn-open-roles2').onclick = () =>switchView('teamconfig')
+ $('team-budget').oninput = renderTeamBudget
  $('btn-team-budget-save').onclick = async () => {
- await api('PUT', '/api/settings', { taskBudgetCost: Number($('team-budget').value) || 0 })
- $('team-budget-msg').textContent = t('savedOk')
- setTimeout(() => ($('team-budget-msg').textContent = ''), 1500)
+  await api('PUT', '/api/settings', { taskBudgetCost: Number($('team-budget').value) || 0 })
+  $('team-budget-msg').textContent = t('savedOk')
+  renderTeamBudget()
+  setTimeout(() => ($('team-budget-msg').textContent = ''), 1500)
  }
  $('btn-art-gen').onclick = btnArtGen
  $('btn-code-refresh').onclick = refreshWorkspace

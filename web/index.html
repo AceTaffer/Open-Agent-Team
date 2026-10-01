@@ -5,8 +5,8 @@
  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
  <title>Open Agent Team</title>
  <link rel="icon" href="/oat.png" />
- <link rel="stylesheet" href="/style.css" />
- <link rel="stylesheet" href="/team.css" />
+ <link rel="stylesheet" href="/style.css?v=1.0.4" />
+ <link rel="stylesheet" href="/team.css?v=1.0.4" />
 </head>
 <body>
  <!-- ═══ 顶栏 ═══ -->
@@ -144,9 +144,10 @@
  <div class="team-budget">
  <span data-i18n="taskBudget">任务总预算 ¥</span>
  <input id="team-budget" type="number" min="0" step="0.5" style="width:90px" placeholder="0=不限" />
- <button id="btn-team-budget-save" class="btn ghost tiny" data-i18n="save">保存</button>
- <span id="team-budget-msg" class="dim small"></span>
- <span class="dim small" data-i18n="concurrentHint">（支持同时运行多个任务）</span>
+  <button id="btn-team-budget-save" class="btn ghost tiny" data-i18n="save">保存</button>
+  <span id="team-budget-msg" class="dim small"></span>
+  <span id="team-budget-left" class="dim small"></span>
+  <span class="dim small" data-i18n="concurrentHint">（支持同时运行多个任务）</span>
  <button id="btn-team-clear" class="btn ghost tiny" data-i18n="clearPanel" style="margin-left:auto">清空面板</button>
  </div>
  <div id="team-resume-banner" class="team-resume hidden"></div>
@@ -776,6 +777,6 @@
  </div>
  </div>
 
- <script src="/app.js"></script>
+ <script src="/app.js?v=1.0.4"></script>
 </body>
 </html>
