@@ -244,7 +244,7 @@ const TEAM_PRESETS = {
 /* 版本迭代记录（设置页展示） */
 const APP_VERSION = '0.9.9'
 const CHANGELOG = [
-  ['P7.4', '2026-10', ['厂商模板扩充：OpenAI(GPT) / Anthropic(Claude) / 智谱GLM / MiniMax / xAI(Grok) / Gemini + 自定义', '作者声明更新（作者 Acct · AI 协作 deepseek-v4.1-flash · 邮箱 577940959@qq.com）', 'GitHub 仓库已建立并接入热更新（AceTaffer/Open-Agent-Team）', '产出两支视频：world.execute(me) ASCII MV（3分32秒·原曲）与完整应用宣传片（约3分钟）']],
+  ['P7.4', '2026-10', ['厂商模板扩充：OpenAI(GPT) / Anthropic(Claude) / 智谱GLM / MiniMax / xAI(Grok) / Gemini + 自定义', '作者声明更新（作者 Acct · AI 协作 deepseek-v4.1-flash · 邮箱 577940959@qq.com）', 'GitHub 仓库已建立并接入热更新（AceTaffer/Open-Agent-Team）']],
   ['P7.3', '2026-10', ['支持把图片/文档直接拖入对话与团队任务（自动存入工作区 uploads/，图片可作为对话附件）', '设置页新增作者声明（作者 Acct · AI 开发协作 · 联系邮箱）', '新增宣传片工程（web/promo：ASCII 终端风格网页动画，可复制再生成视频）', '内置 ffmpeg 视频工具链（tools/ffmpeg.exe，用于动画→MP4 导出）']],
   ['P7.2', '2026-10', ['新增团队预设：视频制作小组 / 图片处理小组 / 文件整理小组（含配套技能）', '新增 GitHub 热更新：自动检测新版本并提醒，一键下载更新（只覆盖程序文件，data/workspace 数据完全保留），更新后自动重启']],
   ['P7.1', '2026-09', ['移除"弹出独立窗口"功能（存在同步问题），保留角色标签页与单独对话栏']],
