@@ -521,10 +521,18 @@
  <option value="default" data-i18n="effDefault">默认（不发送）</option>
  </select>
  </label>
- <p class="dim small" data-i18n="effortDesc">对 DeepSeek V4 系列等推理模型生效：思考过长会耗尽输出预算，导致「只思考不回答」并大量消耗 token，推荐「低」。</p>
- </div>
- <div class="set-card">
- <h3>作者声明</h3>
+  <p class="dim small" data-i18n="effortDesc">对 DeepSeek V4 系列等推理模型生效：思考过长会耗尽输出预算，导致「只思考不回答」并大量消耗 token，推荐「低」。</p>
+  </div>
+  <div class="set-card">
+  <h3 data-i18n="cleanupTitle">数据清理</h3>
+  <p class="dim small" data-i18n="cleanupDesc">清理残留数据：已删除会话遗留的任务记录、孤儿任务文件、从未产生消息的空会话，以及已删除角色的对话记忆。不会删除工作区里的文件。</p>
+  <div class="gh-row">
+  <button id="btn-cleanup" class="btn ghost" data-i18n="cleanupBtn">清理残留数据</button>
+  <span id="cleanup-msg" class="dim small"></span>
+  </div>
+  </div>
+  <div class="set-card">
+  <h3>作者声明</h3>
  <div class="author-block">
  <p><b>作者：</b>Acct</p>
  <p><b>AI 开发协作：</b>deepseek-v4.1-flash</p>
@@ -646,8 +654,22 @@
  </div>
  </div>
 
- <!-- 新建会话 -->
- <div id="session-modal" class="modal hidden">
+  <!-- 删除会话：仅删对话 / 连文件夹彻底删除 -->
+  <div id="del-modal" class="modal hidden">
+  <div class="modal-box" style="width:560px">
+  <h2 data-i18n="delSessionTitle">删除会话</h2>
+  <div id="del-modal-info" class="dim small" style="margin:10px 0; white-space:pre-wrap; word-break:break-all"></div>
+  <div class="dim small" style="margin-bottom:8px" data-i18n="delPurgeHint">「连文件夹一起删除」会清空该会话工作区内的所有文件（不可恢复），请确认后再操作。</div>
+  <div class="modal-actions">
+  <button id="btn-del-cancel" class="btn ghost" data-i18n="cancel">取消</button>
+  <button id="btn-del-chat" class="btn ghost" data-i18n="delChatOnly">仅删除对话（保留文件）</button>
+  <button id="btn-del-purge" class="btn danger" data-i18n="delWithFolder">对话与文件夹一起删除</button>
+  </div>
+  </div>
+  </div>
+
+  <!-- 新建会话 -->
+  <div id="session-modal" class="modal hidden">
  <div class="modal-box" style="width:480px">
  <h2 data-i18n="newSession">新建会话</h2>
  <div class="form">

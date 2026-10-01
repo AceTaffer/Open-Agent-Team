@@ -220,6 +220,13 @@ body.theme-light .steer-box { background: #fdf3df; border-color: #d9b95a; }
 /* ★ 显示开关（设置 → 外观）：隐藏思维链 / 工具使用情况（内容仍保留在会话中） */
 body.hide-reasoning .reasoning { display: none !important; }
 body.hide-tools .tool-box, body.hide-tools .tool-note { display: none !important; }
+/* ★ 上下文占用百分比徽章 */
+.ctx-badge {
+  font-size: 11px; padding: 1px 7px; border-radius: 9px; border: 1px solid var(--border);
+  color: var(--text-dim); margin-left: 8px; vertical-align: middle; white-space: nowrap;
+}
+.ctx-badge.warn { color: #e0a63c; border-color: #e0a63c; }
+.ctx-badge.hot { color: #e05656; border-color: #e05656; }
 body.theme-light .ask-box { background: #e8f4fa; border-color: #7fb3cf; }
 body.theme-light .ask-box.done { background: #e9f6ee; border-color: #86bfa0; }
 body.theme-light .question-box { background: var(--info-bg); }

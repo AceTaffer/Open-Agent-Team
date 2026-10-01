@@ -47,6 +47,9 @@ const I18N = {
  template: '厂商模板', displayName: '显示名称', apiKey: 'API Key（留空 = 不修改）', capabilities: '能力标签（逗号分隔）', note: '备注', defaultPrice: '默认单价（¥/百万token，可选）',
  modelList: '模型清单', fetchModels: ' 从接口拉取模型', allChat: '全选对话类', all: '全选', none: '清空', testConn: '测试连通性', cancel: '取消', save: '保存',
  testHint: '测试使用「已保存」的配置：修改后请先保存，再测试连通性', testNeedSave: '请先点击「保存」保存配置，然后再点「测试连通性」',
+ delSessionTitle: '删除会话', delChatOnly: '仅删除对话（保留文件）', delWithFolder: '对话与文件夹一起删除', delPurgeHint: '「连文件夹一起删除」会清空该会话工作区内的所有文件（不可恢复），请确认后再操作。',
+ cleanupTitle: '数据清理', cleanupBtn: '清理残留数据', cleanupDesc: '清理残留数据：已删除会话遗留的任务记录、孤儿任务文件、从未产生消息的空会话，以及已删除角色的对话记忆。不会删除工作区里的文件。',
+ cleanupSessions: '会话', cleanupTasks: '任务记录', cleanupMemories: '角色记忆', ctxLabel: '上下文',
  create: '创建', newSession: '新建会话', sessionWorkspace: '工作区（默认当前工作区）', sessionTitle: '会话名称（可空）', noSessions: '（暂无会话）',
  roleName: '角色名称', roleDesc: '角色描述（给队长看的分工说明）', rolePromptPh: '自定义系统提示词（留空用内置）', enabled: '启用', noSkills: '（暂无技能）', budget: '预算¥',
  rolePerm: '该角色的工具权限（团队任务生效）', permFollow: '跟随会话',
@@ -137,6 +140,9 @@ const I18N = {
  template: 'Template', displayName: 'Display name', apiKey: 'API Key (blank = keep)', capabilities: 'Capabilities (comma separated)', note: 'Note', defaultPrice: 'Default price (¥/M tokens, optional)',
  modelList: 'Models', fetchModels: ' Fetch models', allChat: 'Select chat models', all: 'Select all', none: 'Clear', testConn: 'Test', cancel: 'Cancel', save: 'Save',
  testHint: 'Testing uses the SAVED config: save your changes first, then test', testNeedSave: 'Click "Save" first, then "Test connectivity"',
+ delSessionTitle: 'Delete session', delChatOnly: 'Delete chat only (keep files)', delWithFolder: 'Delete chat AND folder', delPurgeHint: '"Delete chat AND folder" wipes all files inside this session workspace (irreversible).',
+ cleanupTitle: 'Data cleanup', cleanupBtn: 'Clean leftover data', cleanupDesc: 'Removes leftover data: task records of deleted sessions, orphan task files, empty sessions, and memories of deleted roles. Workspace files are not touched.',
+ cleanupSessions: 'sessions', cleanupTasks: 'tasks', cleanupMemories: 'memories', ctxLabel: 'ctx',
  create: 'Create', newSession: 'New Session', sessionWorkspace: 'Workspace (default = current)', sessionTitle: 'Session title (optional)', noSessions: '(no sessions)',
  roleName: 'Role name', roleDesc: 'Role description', rolePromptPh: 'Custom system prompt (blank = built-in)', enabled: 'Enabled', noSkills: '(no skills)', budget: 'Budget ¥',
  rolePerm: 'Tool permission for this role (team tasks)', permFollow: 'Follow session',
@@ -250,7 +256,7 @@ const TEAM_PRESETS = {
 /* 版本迭代记录（设置页展示） */
 const APP_VERSION = '1.0.2'
 const CHANGELOG = [
-  ['P8.2', '2026-10', ['单独对话气泡：用户消息独立显示、不再被 AI 回复覆盖，颜色可在 设置 → 外观 →「我的气泡颜色」调整', '角色对话记忆同步：被询问的角色会保存队友的问询记录（之后单独对话能回忆）；协作询问/回复在双方角色视图都可见，气泡使用各自角色颜色', '单独角色对话也遵循该角色自己的权限设置', '新建团队会话不再显示消息条数后缀（避免误认为会话序号）', '更新源仓库默认填入 AceTaffer/Open-Agent-Team（新安装/分享包即自带）', 'API 弹窗新增提示：测试连通性使用「已保存」配置，未保存点击时会明确提醒先保存', '设置 → 外观新增显示开关：思维链（推理过程）、工具使用情况，默认开启，可随时隐藏', 'AI 回复不再显示原始工具调用代码块（```tool 片段），工具过程统一由工具盒/开关呈现', 'OpenCode Go 模型库扩充至 30 个（千问 Qwen / GLM / GPT-6 Luna / Grok / Kimi / MiniMax / Mimo 等，可直接在模型下拉选择）']],
+  ['P8.2', '2026-10', ['单独对话气泡：用户消息独立显示、不再被 AI 回复覆盖，颜色可在 设置 → 外观 →「我的气泡颜色」调整', '角色对话记忆同步：被询问的角色会保存队友的问询记录（之后单独对话能回忆）；协作询问/回复在双方角色视图都可见，气泡使用各自角色颜色', '单独角色对话也遵循该角色自己的权限设置', '新建团队会话不再显示消息条数后缀（避免误认为会话序号）', '更新源仓库默认填入 AceTaffer/Open-Agent-Team（新安装/分享包即自带）', 'API 弹窗新增提示：测试连通性使用「已保存」配置，未保存点击时会明确提醒先保存', '设置 → 外观新增显示开关：思维链（推理过程）、工具使用情况，默认开启，可随时隐藏', 'AI 回复不再显示原始工具调用代码块（```tool 片段），工具过程统一由工具盒/开关呈现', 'OpenCode Go 模型库扩充至 30 个（千问 Qwen / GLM / GPT-6 Luna / Grok / Kimi / MiniMax / Mimo 等，可直接在模型下拉选择）', '删除对话/团队会话时可选择：仅删除对话（保留文件）或连同工作区文件夹一起彻底删除', '设置新增「数据清理」：清理已删除会话遗留的任务记录、孤儿任务文件、空会话与已删除角色的对话记忆（不动工作区文件）', '对话工具栏与团队每个角色块显示上下文占用百分比（≥60% 变黄、≥85% 变红）']],
   ['P8.1', '2026-10', ['修复团队任务三个问题：① 队长汇总阶段现可真实写文件（报告/文档直接落盘并核对）', '② 角色间协作 ask_role 支持中文角色名匹配（此前「程序/测试」等名称会报未找到角色），并新增「协作询问/协作回复」过程卡片', '③ 团队任务支持每角色独立工具权限（团队配置页可为单个角色设置，覆盖会话默认权限）', '单角色对话（单独与某个 AI 聊天）现支持工具调用：可直接让某角色用 ask_role 联系队友、读写工作区等，过程卡片实时可见', '上游接口 30 秒无数据自动中断并给出明确提示（避免接口繁忙时无限等待）']],
   ['P8', '2026-10', ['正式版 1.0.0', '凭据保险箱中的 API 可被 AI 直接调用（对话与团队任务新增 vault_call 工具，密钥自动携带；支持自定义认证头与 {{key}}/{{参数}} 占位）', '字体大小范围扩展为 10–35px，默认 13px']],
   ['P7.4', '2026-10', ['厂商模板扩充：OpenAI(GPT) / Anthropic(Claude) / 智谱GLM / MiniMax / xAI(Grok) / Gemini + 自定义', '作者声明更新（作者 Acct · AI 协作 deepseek-v4.1-flash · 邮箱 577940959@qq.com）', 'GitHub 仓库已建立并接入热更新（AceTaffer/Open-Agent-Team）']],
@@ -338,6 +344,28 @@ function styleAskBox(el, colorRoleId) {
  const c = roleColor(colorRoleId)
  if (c) el.style.borderLeft = '4px solid ' + c
  return el
+}
+// ★ 上下文占用百分比徽章（对话 / 团队角色块 / 单角色对话）
+function setCtxBadge(host, pct) {
+ if (!host) return
+ const head = host.querySelector('.agent-head') || host
+ let el = head.querySelector('.ctx-badge')
+ if (!el) { el = document.createElement('span'); el.className = 'ctx-badge'; head.appendChild(el) }
+ el.textContent = `${t('ctxLabel')} ${pct}%`
+ el.classList.toggle('warn', pct >= 60 && pct < 85)
+ el.classList.toggle('hot', pct >= 85)
+}
+// ★ 删除会话弹窗：返回 'cancel' | 'chat' | 'purge'
+function askDeleteSession(title, workspace) {
+ return new Promise((resolve) => {
+  const info = $('del-modal-info')
+  info.textContent = `${t('delete')}：${title || '(untitled)'}${workspace ? `\n${t('workspace')}${workspace}` : ''}`
+  $('del-modal').classList.remove('hidden')
+  const done = (v) => { $('del-modal').classList.add('hidden'); resolve(v) }
+  $('btn-del-cancel').onclick = () => done('cancel')
+  $('btn-del-chat').onclick = () => done('chat')
+  $('btn-del-purge').onclick = () => done('purge')
+ })
 }
 // ★ 显示层移除工具调用原文（```tool 块）。完整原文仍保存在会话里供模型使用
 function stripToolFences(s) {
@@ -539,8 +567,14 @@ function renderSidebar() {
  if (act === 'rename') { const s = state.sessions.find((x) =>x.id === sid); const v = prompt('Title', s?.title || ''); if (v != null) await api('PUT', `/api/sessions/${sid}`, { title: v }) }
  else if (act === 'archive') { const s = state.sessions.find((x) =>x.id === sid); await api('PUT', `/api/sessions/${sid}`, { archived: !s?.archived }) }
  else if (act === 'export') { window.open(`/api/sessions/${sid}/export`, '_blank') ; return }
- else if (act === 'del') { if (!confirm(t('delete'))) return; await api('DELETE', `/api/sessions/${sid}`); if (state.activeSession?.id === sid) { state.activeSession = null; localStorage.removeItem('oat-last-session'); renderChatMessages() } }
- await refreshSessions()
+  else if (act === 'del') {
+   const sDel = state.sessions.find((x) => x.id === sid)
+   const choice = await askDeleteSession(sDel?.title, sDel?.workspace)
+   if (choice === 'cancel') return
+   await api('DELETE', `/api/sessions/${sid}${choice === 'purge' ? '?purge=1' : ''}`)
+   if (state.activeSession?.id === sid) { state.activeSession = null; localStorage.removeItem('oat-last-session'); renderChatMessages() }
+  }
+  await refreshSessions()
  }
  })
  })
@@ -849,10 +883,11 @@ async function sendChat() {
  scrollIfNearBottom(box)
  }
  if (j.error) { ensureTurn(j); target.parentElement.className = 'msg error'; target.textContent = j.error }
- if (j.usage) {
- ensureTurn(j)
- state.lastUsage = { prompt: j.usage.prompt_tokens || 0, limit: j.contextLimit || 0 }
- $('chat-context').textContent = `${t('context')}: ${fmtNum(state.lastUsage.prompt)}/${fmtNum(state.lastUsage.limit)}`
+  if (j.usage) {
+   ensureTurn(j)
+   state.lastUsage = { prompt: j.usage.prompt_tokens || 0, limit: j.contextLimit || 0 }
+   const pctTxt = j.contextLimit ? ` (${Math.min(999, Math.round((j.usage.prompt_tokens || 0) / j.contextLimit * 100))}%)` : ''
+   $('chat-context').textContent = `${t('context')}: ${fmtNum(state.lastUsage.prompt)}/${fmtNum(state.lastUsage.limit)}${pctTxt}`
  target.parentElement.insertAdjacentHTML('beforeend', `<div class="dim small"> ${t('tokens')} ${fmtNum(j.usage.prompt_tokens)}/${fmtNum(j.usage.completion_tokens)} · ${t('cache')} ${fmtNum(j.cacheHit)} · ${t('cost')} ${fmtCost(j.cost)}</div>`)
  }
  } catch {}
@@ -1267,6 +1302,7 @@ async function roleChatSend() {
       el.innerHTML = `<b>${t('toolLabel')} · ${esc(j.tool)}</b><div>${esc(String(j.result || '').slice(0, 300))}</div>`
       box.appendChild(el)
      }
+     if (j.usage && j.contextLimit) setCtxBadge(box, Math.round((j.usage.prompt_tokens || 0) / j.contextLimit * 100))
      if (j.question || j.confirm || j.ask || j.ask_done || j.tool) scrollIfNearBottom($('team-stream'))
     } catch { /* ignore */ }
    }
@@ -1399,12 +1435,18 @@ function handleTeamEvent(ev, run, ref) {
  if (ev.call === 'generate_image' || ev.call === 'generate_video') appendMediaCard(run.body, ev.result)
  applyTeamFilter(); return
  }
- if (ev.type === 'usage') {
- if (ev.cost) { run.cost += ev.cost; run.foot.textContent = ` ${fmtCost(run.cost)} · ${t('tokens')} ${fmtNum(ev.usage?.prompt_tokens)}/${fmtNum(ev.usage?.completion_tokens)} · ${t('cache')} ${fmtNum(ev.cacheHit)}` }
- const last = Object.values(ref.stepBoxes).filter((s) =>s.agent === ev.agent).pop()
- if (last?.body) last.body.parentElement.insertAdjacentHTML('beforeend', `<div class="dim small"> ${fmtNum(ev.usage?.prompt_tokens)}/${fmtNum(ev.usage?.completion_tokens)} · ${t('cache')} ${fmtNum(ev.cacheHit)} · ${fmtCost(ev.cost)}</div>`)
- return
- }
+  if (ev.type === 'usage') {
+   if (ev.cost) { run.cost += ev.cost; run.foot.textContent = ` ${fmtCost(run.cost)} · ${t('tokens')} ${fmtNum(ev.usage?.prompt_tokens)}/${fmtNum(ev.usage?.completion_tokens)} · ${t('cache')} ${fmtNum(ev.cacheHit)}` }
+   const last = Object.values(ref.stepBoxes).filter((s) =>s.agent === ev.agent).pop()
+   if (last?.body) last.body.parentElement.insertAdjacentHTML('beforeend', `<div class="dim small"> ${fmtNum(ev.usage?.prompt_tokens)}/${fmtNum(ev.usage?.completion_tokens)} · ${t('cache')} ${fmtNum(ev.cacheHit)} · ${fmtCost(ev.cost)}</div>`)
+   // ★ 每个角色块的上下文占用百分比
+   if (ev.usage && ev.contextLimit) {
+    const pct = Math.min(999, Math.round((ev.usage.prompt_tokens || 0) / ev.contextLimit * 100))
+    const host = last?.body ? last.body.parentElement : (ev.agent === 'leader' && ref.finalBox ? ref.finalBox.parentElement : null)
+    setCtxBadge(host, pct)
+   }
+   return
+  }
  if (ev.type === 'limit') {
  if (ev.agent) roleSetStatus(ev.agent, 'failed', { sub: ev.message })
  const box = document.createElement('div')
@@ -2442,13 +2484,15 @@ async function main() {
  }
  $('btn-team-session-export').onclick = () => { if (state.teamSessionId) window.open(`/api/sessions/${state.teamSessionId}/export`, '_blank') }
  $('btn-team-session-del').onclick = async () => {
- if (!state.teamSessionId) return
- if (!confirm(`${t('delete')} ${state.teamSessions.find((s) =>s.id === state.teamSessionId)?.title || ''}?`)) return
- await api('DELETE', `/api/sessions/${state.teamSessionId}`)
- state.teamSessionId = ''
- await refreshTeamSessions()
- renderTeamSession()
- }
+  if (!state.teamSessionId) return
+  const cur = state.teamSessions.find((s) => s.id === state.teamSessionId)
+  const choice = await askDeleteSession(cur?.title, cur?.workspace)
+  if (choice === 'cancel') return
+  await api('DELETE', `/api/sessions/${state.teamSessionId}${choice === 'purge' ? '?purge=1' : ''}`)
+  state.teamSessionId = ''
+  await refreshTeamSessions()
+  renderTeamSession()
+  }
  // 团队预设
  renderPresetSelect()
  $('btn-apply-preset').onclick = applyTeamPreset
@@ -2476,6 +2520,19 @@ async function main() {
  }
  $('btn-update-check').onclick = () => doUpdateCheck(true)
  $('btn-update-apply').onclick = doUpdateApply
+ // ★ 清理残留数据
+ if ($('btn-cleanup')) $('btn-cleanup').onclick = async () => {
+  $('cleanup-msg').textContent = '…'
+  const r = await api('POST', '/api/cleanup').catch(() => ({ ok: false }))
+  if (!r.ok) { $('cleanup-msg').textContent = t('failure'); return }
+  $('cleanup-msg').textContent = `✓ ${t('cleanupSessions')} ${r.sessions} · ${t('cleanupTasks')} ${(r.tasks || 0) + (r.taskFiles || 0)} · ${t('cleanupMemories')} ${r.roleChats || 0}`
+  await loadState()
+  if (state.activeSession && !state.sessions.some((s) => s.id === state.activeSession.id)) {
+   state.activeSession = null
+   localStorage.removeItem('oat-last-session')
+   renderChatMessages()
+  }
+ }
  $('set-effort').onchange = async () => { state.settings.reasoningEffort = $('set-effort').value; await api('PUT', '/api/settings', { reasoningEffort: state.settings.reasoningEffort }) }
  $('btn-open-roles').onclick = () =>switchView('teamconfig')
  $('btn-open-roles2').onclick = () =>switchView('teamconfig')

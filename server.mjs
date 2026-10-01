@@ -1381,7 +1381,7 @@ async function runTeam(task, opts = {}) {
   const idxFile = path.join(TASKS_DIR, 'index.json')
   const readTaskIndex = async () => { try { return existsSync(idxFile) ? JSON.parse(await readFile(idxFile, 'utf8')) : [] } catch { return [] } }
   const writeTaskIndex = async (list) => { await writeFile(idxFile, JSON.stringify(list.slice(0, 200), null, 2), 'utf8') }
-  await writeTaskIndex([{ id: taskId, task, summary: '', steps: 0, startedAt, status: 'running' }, ...(await readTaskIndex()).filter((x) => x.id !== taskId)])
+  await writeTaskIndex([{ id: taskId, task, sessionId: sess?.id || '', summary: '', steps: 0, startedAt, status: 'running' }, ...(await readTaskIndex()).filter((x) => x.id !== taskId)])
   let totalCost = 0
   let taskToolCalls = 0
   let budgetStopped = false
@@ -1399,7 +1399,7 @@ async function runTeam(task, opts = {}) {
   const failTask = async (message) => {
     send({ type: 'error', message })
     try {
-      const entry = { id: taskId, task, summary: message, steps: 0, startedAt, finishedAt: Date.now(), status: 'failed', cost: Number(totalCost.toFixed(6)), tokens: totalUsage.prompt_tokens + totalUsage.completion_tokens, cacheHitTokens: totalUsage.prompt_cache_hit_tokens, toolCalls: taskToolCalls }
+      const entry = { id: taskId, task, sessionId: sess?.id || '', summary: message, steps: 0, startedAt, finishedAt: Date.now(), status: 'failed', cost: Number(totalCost.toFixed(6)), tokens: totalUsage.prompt_tokens + totalUsage.completion_tokens, cacheHitTokens: totalUsage.prompt_cache_hit_tokens, toolCalls: taskToolCalls }
       await writeTaskIndex([entry, ...(await readTaskIndex()).filter((x) => x.id !== taskId)])
     } catch { /* ignore */ }
   }
@@ -1692,10 +1692,10 @@ async function runTeam(task, opts = {}) {
   }
   // 5. 落盘（含各角色用量/费用/工具调用统计）
   const stoppedNow = budgetStopped || run.abort
-  const record = { id: taskId, task, plan, results, finalText, startedAt, finishedAt: Date.now(), usage: totalUsage, cost: Number(totalCost.toFixed(6)), roleUsage, toolCalls: taskToolCalls, cacheHitTokens: totalUsage.prompt_cache_hit_tokens, budgetStopped, aborted: run.abort }
+  const record = { id: taskId, task, sessionId: sess?.id || '', plan, results, finalText, startedAt, finishedAt: Date.now(), usage: totalUsage, cost: Number(totalCost.toFixed(6)), roleUsage, toolCalls: taskToolCalls, cacheHitTokens: totalUsage.prompt_cache_hit_tokens, budgetStopped, aborted: run.abort }
   try {
     await writeFile(path.join(TASKS_DIR, `${taskId}.json`), JSON.stringify(record, null, 2), 'utf8')
-    const entry = { id: taskId, task, summary: plan.summary, steps: plan.steps.length, startedAt, finishedAt: Date.now(), status: stoppedNow ? 'stopped' : 'done', cost: record.cost, tokens: totalUsage.prompt_tokens + totalUsage.completion_tokens, cacheHitTokens: totalUsage.prompt_cache_hit_tokens, toolCalls: taskToolCalls }
+    const entry = { id: taskId, task, sessionId: sess?.id || '', summary: plan.summary, steps: plan.steps.length, startedAt, finishedAt: Date.now(), status: stoppedNow ? 'stopped' : 'done', cost: record.cost, tokens: totalUsage.prompt_tokens + totalUsage.completion_tokens, cacheHitTokens: totalUsage.prompt_cache_hit_tokens, toolCalls: taskToolCalls }
     await writeTaskIndex([entry, ...(await readTaskIndex()).filter((x) => x.id !== taskId)])
   } catch { /* ignore */ }
   send({ type: 'done', taskId, cost: Number(totalCost.toFixed(6)), usage: totalUsage, cacheHitTokens: totalUsage.prompt_cache_hit_tokens, toolCalls: taskToolCalls, budgetStopped, aborted: run.abort })
@@ -2180,7 +2180,35 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
       s.updatedAt = Date.now(); await saveSessions()
       return sendJson(res, 200, { ok: true, session: s })
     }
-    if (method === 'DELETE') { sessions = sessions.filter((x) => x.id !== s.id); await saveSessions(); return sendJson(res, 200, { ok: true }) }
+    if (method === 'DELETE') {
+      // ★ purge=1：连同该会话的工作区文件夹与任务记录一起彻底删除
+      const purge = url.searchParams.get('purge') === '1'
+      sessions = sessions.filter((x) => x.id !== s.id); await saveSessions()
+      let purged = '', purgeError = ''
+      if (purge && s.workspace) {
+        try {
+          await rm(s.workspace, { recursive: true, force: true })
+          if (s.workspace === WORKSPACE_DIR) await mkdir(s.workspace, { recursive: true })
+          if (settings.activeWorkspace === s.workspace) { settings.activeWorkspace = WORKSPACE_DIR; await saveSettings() }
+          purged = s.workspace
+        } catch (e) { purgeError = e.message }
+      }
+      if (purge) {
+        // 同时清掉该会话遗留的任务记录（新记录带 sessionId）
+        try {
+          const idxFile = path.join(TASKS_DIR, 'index.json')
+          let list = []
+          try { list = JSON.parse(await readFile(idxFile, 'utf8')) } catch { list = [] }
+          const keep = []
+          for (const t of list) {
+            if (t.sessionId && t.sessionId === s.id) { try { await rm(path.join(TASKS_DIR, `${t.id}.json`), { force: true }) } catch { /* ignore */ } }
+            else keep.push(t)
+          }
+          if (keep.length !== list.length) await writeFile(idxFile, JSON.stringify(keep, null, 2), 'utf8')
+        } catch { /* ignore */ }
+      }
+      return sendJson(res, 200, { ok: true, purged, purgeError })
+    }
   }
   const msc = pathname.match(/^\/api\/sessions\/([^/]+)\/(compact|export|clear|undo|truncate)$/)
   if (msc) {
@@ -2336,7 +2364,7 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
           stream: true, temperature: 0.5,
           onDelta: (d) => emit({ delta: d, turn }),
           onReasoning: (r) => emit({ reasoning: r, turn }),
-          onUsage: (u) => { const cost = calcCost(getPrice(target.provider, target.model), u); statsAdd({ role: role.id, model: target.model, usage: u, cost: cost || 0 }); emit({ usage: u, cost, turn }) },
+          onUsage: (u) => { const cost = calcCost(getPrice(target.provider, target.model), u); statsAdd({ role: role.id, model: target.model, usage: u, cost: cost || 0 }); emit({ usage: u, cost, contextLimit: getContextLimit(target.provider, target.model), turn }) },
         })
         if (!text.trim()) break
         lastText = text
@@ -2401,6 +2429,43 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
       await recordArt(urls, { prompt, model: target.model, provider: target.provider.name, role: '重画' })
       return sendJson(res, 200, { ok: true, urls })
     } catch (e) { return sendJson(res, 200, { ok: false, error: e.message }) }
+  }
+  // ★ 清理残留数据：孤儿任务记录 / 引用已删除会话的任务 / 空会话 / 已删除角色的对话记忆
+  if (pathname === '/api/cleanup' && method === 'POST') {
+    const result = { sessions: 0, tasks: 0, taskFiles: 0, roleChats: 0 }
+    try {
+      const sessIds = new Set(sessions.map((s) => s.id))
+      const idxFile = path.join(TASKS_DIR, 'index.json')
+      let list = []
+      try { list = JSON.parse(await readFile(idxFile, 'utf8')) } catch { list = [] }
+      const keep = []
+      for (const t of list) {
+        if (t.sessionId && !sessIds.has(t.sessionId)) {
+          try { await rm(path.join(TASKS_DIR, `${t.id}.json`), { force: true }) } catch { /* ignore */ }
+          result.tasks++
+        } else keep.push(t)
+      }
+      if (keep.length !== list.length) await writeFile(idxFile, JSON.stringify(keep, null, 2), 'utf8')
+      // 不在索引里的任务明细文件（历史残留）
+      const files = await readdir(TASKS_DIR).catch(() => [])
+      for (const f of files) {
+        if (f === 'index.json' || !f.endsWith('.json')) continue
+        const id = f.replace(/\.json$/, '')
+        if (!keep.some((t) => t.id === id)) { try { await rm(path.join(TASKS_DIR, f), { force: true }); result.taskFiles++ } catch { /* ignore */ } }
+      }
+      // 空会话（从未产生任何消息）
+      const before = sessions.length
+      sessions = sessions.filter((s) => (s.messages || []).length > 0)
+      result.sessions = before - sessions.length
+      if (result.sessions) await saveSessions()
+      // 已删除角色的对话记忆
+      const roleIds = new Set(roles.map((r) => r.id))
+      for (const rid of Object.keys(roleChats)) {
+        if (!roleIds.has(rid)) { delete roleChats[rid]; result.roleChats++ }
+      }
+      if (result.roleChats) saveRoleChats()
+    } catch (e) { dbg('cleanup.fail', { error: e.message }) }
+    return sendJson(res, 200, { ok: true, ...result })
   }
   // 任务
   if (pathname === '/api/tasks' && method === 'GET') { const f = path.join(TASKS_DIR, 'index.json'); return sendJson(res, 200, { ok: true, tasks: existsSync(f) ? (await readFile(f, 'utf8').then(JSON.parse).catch(() => [])) : [] }) }
