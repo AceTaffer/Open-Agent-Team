@@ -5,8 +5,8 @@
  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
  <title>Open Agent Team</title>
  <link rel="icon" href="/oat.png" />
- <link rel="stylesheet" href="/style.css?v=1.0.7" />
- <link rel="stylesheet" href="/team.css?v=1.0.7" />
+ <link rel="stylesheet" href="/style.css?v=1.0.8" />
+ <link rel="stylesheet" href="/team.css?v=1.0.8" />
 </head>
 <body>
  <!-- ═══ 顶栏 ═══ -->
@@ -84,13 +84,21 @@
  <span id="chat-model-tags" class="tags-inline"></span>
  <label class="chk" title="允许 AI 直接读写工作区文件、执行命令（关闭后只聊天）"><input type="checkbox" id="chat-tools" checked /> <span data-i18n="chatTools">工具</span></label>
  <label data-i18n="permLabel">权限：</label>
- <select id="chat-perm" title="当前对话的 AI 权限">
- <option value="view">查看</option>
- <option value="modify" selected>修改</option>
- <option value="limited">受限</option>
- <option value="full">完全</option>
- </select>
- <span id="chat-ws" class="dim small"></span>
+  <select id="chat-perm" title="当前对话的 AI 权限">
+  <option value="view">查看</option>
+  <option value="modify" selected>修改</option>
+  <option value="limited">受限</option>
+  <option value="full">完全</option>
+  </select>
+  <div class="effort-ctl" id="chat-effort" title="推理等级（拖动调节，越长越强）">
+  <div class="ec-track">
+  <div class="ec-fill"></div>
+  <div class="ec-knob"></div>
+  <span class="ec-spark"></span><span class="ec-spark"></span><span class="ec-spark"></span>
+  </div>
+  <span class="ec-label">默认</span>
+  </div>
+  <span id="chat-ws" class="dim small"></span>
  <span id="chat-context" class="dim small"></span>
  <button id="btn-rail-toggle" class="btn ghost" title="显示/隐藏历史栏"><span data-i18n="chatHistory">历史对话</span></button>
  <button id="btn-clear-chat" class="btn ghost" data-i18n="clearChat">清空对话</button>
@@ -148,6 +156,14 @@
   <button id="btn-team-budget-save" class="btn ghost tiny" data-i18n="save">保存</button>
   <span id="team-budget-msg" class="dim small"></span>
   <span id="team-budget-left" class="dim small"></span>
+  <div class="effort-ctl" id="team-effort" title="推理等级（拖动调节，越长越强）">
+  <div class="ec-track">
+  <div class="ec-fill"></div>
+  <div class="ec-knob"></div>
+  <span class="ec-spark"></span><span class="ec-spark"></span><span class="ec-spark"></span>
+  </div>
+  <span class="ec-label">默认</span>
+  </div>
   <span class="dim small" data-i18n="concurrentHint">（支持同时运行多个任务）</span>
  <button id="btn-team-clear" class="btn ghost tiny" data-i18n="clearPanel" style="margin-left:auto">清空面板</button>
  </div>
@@ -798,6 +814,6 @@
  </div>
  </div>
 
- <script src="/app.js?v=1.0.7"></script>
+ <script src="/app.js?v=1.0.8"></script>
 </body>
 </html>

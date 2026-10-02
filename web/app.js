@@ -278,8 +278,9 @@ const TEAM_PRESETS = {
 }
 
 /* 版本迭代记录（设置页展示） */
-const APP_VERSION = '1.0.7'
+const APP_VERSION = '1.0.8'
 const CHANGELOG = [
+  ['P8.8', '2026-10', ['重大修复：角色长期记忆——团队任务现在会写入每个角色的记忆（队长记录任务/规划/最终汇总，各角色记录自己完成的步骤），角色单独对话自动附带「团队会话档案 + 工作区快照」，做完任务后不再失忆', '上下文复用优化（参考 DeepSeek Harness 缓存复用思路）：角色记忆改为完整历史+稳定前缀（利于上游 prompt cache 命中，降低成本与等待）；消息内自动附加工作区快照，减少反复 list_files/read_file 造成的 token 消耗', '团队角色卡片新增指标：费用 / 使用率 / Token / 缓存命中', '环形占用提示卡与会话列表悬停卡新增「缓存命中」显示；会话项悬停可看：费用/使用率/Token/缓存命中', '推理等级滑块：对话与团队任务工具栏均可拖动调节（关闭/低/默认/高/最大），等级越高动画越炫（流光+脉冲+火花+光晕）；写入会话级设置，团队任务全流程生效']],
   ['P8.7', '2026-10', ['新增工具调用次数限制（设置 → 工具调用限制）：对话 / 团队任务 / 团队角色单独对话三处独立设置，可选「无限（默认）/ 禁止 / 自定义次数」；角色栏可为单个角色单独设置（角色优先）', '权限不足时 AI 主动申请：弹出「允许一次 / 本任务全部允许 / 拒绝」按钮卡片，不再静默卡住', '团队角色卡片状态标记：✓ 已完成（绿）、! 需授权（棕）、✗ 失败（红）；等待授权时对应角色卡片显示棕色感叹号', '审核/校对判定不通过时自动「返工 → 复审」循环（最多 2 轮）：AI 之间自动对接协作，不再坐等用户转达', '团队角色单独对话：思考过程与工具调用改为可折叠独立框（与对话页一致）；达到次数上限/被禁用时明确提示', '放宽工具轮次上限：默认无限（此前团队每步最多 5 轮、对话 6 轮，导致写长文写到一半停止）']],
   ['P8.6', '2026-10', ['团队会话里的角色单独对话与「协作询问/协作回复」现在会持久化保存，刷新后完整回放（不再只剩记忆）', '对话与团队任务新增「回到底部」浮动按钮：不在底部时自动出现，一键滚到最新内容', '角色单独对话支持拖入图片/文件：聚焦某角色后拖入即发给该角色（文件存入工作区 uploads/ 并附带路径），未聚焦时仍发给团队任务']],
   ['P8.5', '2026-10', ['修复工具执行可靠性：对话与单角色对话新增「工具块 JSON 解析失败自动重发」（此前失败块被静默丢弃，AI 会误报「读取结果未回传」）', '工具协议补充运行环境：Windows 下 run_command 用 cmd（dir/type/findstr），禁止 cat/ls 等 Linux 命令；误用时直接返回替代方案（read_file/list_files/type/dir）', '单角色对话工具循环轮数 6 → 8（为重发与补读留出余量）', '修复团队配置：点「添加角色」不再清空未保存的编辑内容（先收集当前输入再追加）', '团队预设支持自定义：可把当前角色配置保存为自定义预设（持久化），支持套用与删除；新建团队会话弹窗新增预设下拉，选中即带出对应角色', '套用内置预设时，新增角色自动继承队长的 API/模型配置（修复写手/校对等新角色无模型可用）', '团队任务与单角色对话新增状态标签：思考中（闪烁）→ 回答中 → 已完成/失败；点击状态可折叠/展开思考过程', '协作规则：队友间的问题优先用 ask_role 直接沟通（对方立即自动回复），仅重大决策/无法判断时才交给用户']],
@@ -395,7 +396,7 @@ function setMsgStatus(bodyEl, st) {
  el.textContent = st === 'done' ? t('stDone') : st === 'failed' ? t('stFailed') : st === 'answering' ? t('stAnswering') + '…' : t('stThinking') + '…'
 }
 // ★ 上下文占用环形指示器（悬停显示 成本/使用率/Token），用于对话消息与团队角色块
-function setCtxBadge(host, pct, cost, tokens) {
+function setCtxBadge(host, pct, cost, tokens, cacheHit) {
  if (!host) return
  const head = host.querySelector('.agent-head') || host
  let el = head.querySelector('.ctx-ring')
@@ -404,7 +405,7 @@ function setCtxBadge(host, pct, cost, tokens) {
  el.className = 'ctx-ring ' + cls
  const off = Math.max(0, 100 - Math.min(100, Number(pct) || 0))
  el.innerHTML = `<svg viewBox="0 0 36 36"><circle class="ring-bg" cx="18" cy="18" r="15.9155"></circle><circle class="ring-fg" cx="18" cy="18" r="15.9155" stroke-dasharray="100" stroke-dashoffset="${off}"></circle></svg>
- <span class="ctx-tip"><span class="ctx-tip-row"><i>${t('cost')}</i><b>${fmtCost(cost)}</b></span><span class="ctx-tip-row"><i>${t('usageRate')}</i><b>${pct}%</b></span><span class="ctx-tip-row"><i>Token</i><b>${fmtNum(tokens)}</b></span></span>`
+ <span class="ctx-tip"><span class="ctx-tip-row"><i>${t('cost')}</i><b>${fmtCost(cost)}</b></span><span class="ctx-tip-row"><i>${t('usageRate')}</i><b>${pct}%</b></span><span class="ctx-tip-row"><i>Token</i><b>${fmtNum(tokens)}</b></span><span class="ctx-tip-row"><i>${t('cache')}</i><b>${fmtNum(cacheHit)}</b></span></span>`
 }
 // ★ 删除会话弹窗：返回 'cancel' | 'chat' | 'purge'
 function askDeleteSession(title, workspace) {
@@ -434,6 +435,42 @@ function appendStreamText(el, text) {
  const raw = (streamRaw.get(el) || '') + text
  streamRaw.set(el, raw)
  el.textContent = stripToolFences(raw)
+}
+// ★ 推理等级滑块（拖动调节；等级越高动画越炫）
+const EFFORT_LEVELS = [['none', '关闭'], ['low', '低'], ['default', '默认'], ['high', '高'], ['max', '最大']]
+function effortIdxOf(v) { const i = EFFORT_LEVELS.findIndex(([x]) => x === v); return i >= 0 ? i : 1 }
+function setEffortVisual(id, value) {
+ const el = $(id)
+ if (!el) return
+ const i = effortIdxOf(value)
+ const pct = (i / (EFFORT_LEVELS.length - 1)) * 100
+ el.dataset.lv = String(i)
+ el.style.setProperty('--ec-x', pct + '%')
+ el.querySelector('.ec-fill').style.width = pct + '%'
+ el.querySelector('.ec-knob').style.left = pct + '%'
+ el.querySelector('.ec-label').textContent = EFFORT_LEVELS[i][1]
+}
+function setupEffortControl(id, getValue, onPick) {
+ const el = $(id)
+ if (!el) return
+ setEffortVisual(id, getValue())
+ const pick = (clientX) => {
+  const r = el.querySelector('.ec-track').getBoundingClientRect()
+  const pct = Math.max(0, Math.min(1, (clientX - r.left) / r.width))
+  const i = Math.round(pct * (EFFORT_LEVELS.length - 1))
+  setEffortVisual(id, EFFORT_LEVELS[i][0])
+  return EFFORT_LEVELS[i][0]
+ }
+ let dragging = false
+ el.addEventListener('pointerdown', (e) => { dragging = true; try { el.setPointerCapture(e.pointerId) } catch { /* ignore */ } pick(e.clientX) })
+ el.addEventListener('pointermove', (e) => { if (dragging) pick(e.clientX) })
+ el.addEventListener('pointerup', async (e) => {
+  if (!dragging) return
+  dragging = false
+  const v = pick(e.clientX)
+  try { await onPick(v) } catch { /* ignore */ }
+ })
+ el.addEventListener('pointercancel', () => { dragging = false })
 }
 // ★ 一键到底：滚动容器 + 浮动按钮（有内容且不在底部时显示）
 function setupToBottom(streamId, btnId) {
@@ -648,6 +685,12 @@ function renderSidebar() {
  ${list2.map((s) => `<div class="session-item ${s.id === state.activeSession?.id ? 'active' : ''} ${s.archived ? 'archived' : ''}" data-sid="${s.id}">
  <div class="s-title">${esc(s.title || '(untitled)')}</div>
  <div class="s-meta dim small">${new Date(s.updatedAt).toLocaleDateString()} · ${s.messageCount} · ${fmtCost(s.cost)}</div>
+ <span class="sess-tip ctx-tip">
+ <span class="ctx-tip-row"><i>${t('cost')}</i><b>${fmtCost(s.cost)}</b></span>
+ <span class="ctx-tip-row"><i>${t('usageRate')}</i><b>${s.contextLimit ? Math.min(999, Math.round((s.lastPrompt || 0) / s.contextLimit * 100)) + '%' : '--'}</b></span>
+ <span class="ctx-tip-row"><i>Token</i><b>${fmtNum(s.lastPrompt)}${s.contextLimit ? '/' + fmtNum(s.contextLimit) : ''}</b></span>
+ <span class="ctx-tip-row"><i>${t('cache')}</i><b>${fmtNum(s.cacheHitTokens)}</b></span>
+ </span>
  <span class="s-actions">
  <button class="mini" data-act="rename" data-sid="${s.id}" title="rename">✎</button>
   <button class="mini" data-act="archive" data-sid="${s.id}" title="archive">${s.archived ? '↩' : '▣'}</button>
@@ -713,8 +756,9 @@ function renderChatToolbar() {
  if ($('chat-tools')) $('chat-tools').checked = state.settings.chatTools !== false
  if ($('chat-ws')) $('chat-ws').textContent = state.activeWorkspace ? ` ${state.activeWorkspace}` : ''
  // 会话权限显示
- if ($('chat-perm')) $('chat-perm').value = sess?.permission || state.settings.defaultPermission || 'modify'
- ps.onchange = async () => { state.selectedId = ps.value; if (sess) { await api('PUT', `/api/sessions/${sess.id}`, { providerId: ps.value }); await refreshSessions() } renderChatToolbar() }
+  if ($('chat-perm')) $('chat-perm').value = sess?.permission || state.settings.defaultPermission || 'modify'
+  setEffortVisual('chat-effort', sess?.effort || state.settings.reasoningEffort || 'default')
+  ps.onchange = async () => { state.selectedId = ps.value; if (sess) { await api('PUT', `/api/sessions/${sess.id}`, { providerId: ps.value }); await refreshSessions() } renderChatToolbar() }
  $('chat-model').onchange = async () => { upd(); if (sess) { await api('PUT', `/api/sessions/${sess.id}`, { model: $('chat-model').value }); await refreshSessions() } }
 }
 function renderChatMessages() {
@@ -869,7 +913,7 @@ function appendMsg(role, content, meta, idx) {
   const metaEl = document.createElement('div')
   metaEl.className = 'msg-meta dim small'
   const pct = meta.contextLimit ? Math.min(999, Math.round((meta.usage.prompt_tokens || 0) / meta.contextLimit * 100)) : null
-  if (pct != null) setCtxBadge(metaEl, pct, meta.cost, (meta.usage.prompt_tokens || 0) + (meta.usage.completion_tokens || 0))
+  if (pct != null) setCtxBadge(metaEl, pct, meta.cost, (meta.usage.prompt_tokens || 0) + (meta.usage.completion_tokens || 0), hit)
   metaEl.insertAdjacentHTML('beforeend', ` <span>${t('tokens')} ${fmtNum(meta.usage.prompt_tokens)}/${fmtNum(meta.usage.completion_tokens)} · ${t('cache')} ${fmtNum(hit)} · ${t('cost')} ${fmtCost(meta.cost)}</span>`)
   el.appendChild(metaEl)
  }
@@ -1022,7 +1066,7 @@ async function sendChat() {
    let meta = target.parentElement.querySelector('.msg-meta')
    if (!meta) { meta = document.createElement('div'); meta.className = 'msg-meta dim small'; target.parentElement.appendChild(meta) }
    meta.innerHTML = ''
-   if (pctNum != null) setCtxBadge(meta, pctNum, j.cost, (j.usage.prompt_tokens || 0) + (j.usage.completion_tokens || 0))
+   if (pctNum != null) setCtxBadge(meta, pctNum, j.cost, (j.usage.prompt_tokens || 0) + (j.usage.completion_tokens || 0), j.cacheHit)
    meta.insertAdjacentHTML('beforeend', ` <span>${t('tokens')} ${fmtNum(j.usage.prompt_tokens)}/${fmtNum(j.usage.completion_tokens)} · ${t('cache')} ${fmtNum(j.cacheHit)} · ${t('cost')} ${fmtCost(j.cost)}</span>`)
   }
  } catch {}
@@ -1130,6 +1174,7 @@ async function refreshTeamSessions(selectId) {
  sel.value = state.teamSessionId
  const cur = state.teamSessions.find((s) =>s.id === state.teamSessionId)
  $('team-session-ws').textContent = cur?.workspace ? ` ${cur.workspace}` : ''
+ setEffortVisual('team-effort', cur?.effort || state.settings.reasoningEffort || 'default') // ★ 推理等级滑块跟随团队会话
 }
 // ★ 预算实时显示：本次任务已花费 + 剩余额度（修改预算数字即时预览）
 function renderTeamBudget() {
@@ -1298,6 +1343,17 @@ function renderRoleActivity() {
  box.querySelectorAll('.role-chip[data-role]').forEach((el) => { el.onclick = () => { setTeamFocus(el.dataset.role); switchSubtab('roles') } })
  renderTeamTabs()
 }
+// ★ 角色卡片指标行：费用 / 使用率 / Token / 缓存命中（与环形提示一致）
+function roleStatsHtml(id) {
+ const st = (state.roleLive[id] || {}).stats
+ if (!st || (!st.prompt && !st.cost)) return ''
+ const pct = st.ctxLimit ? Math.round((st.lastPrompt || 0) / st.ctxLimit * 100) + '%' : '--'
+ return `费用 ${fmtCost(st.cost)} · 使用率 ${pct} · Token ${fmtNum(st.prompt)}/${fmtNum(st.completion)} · ${t('cache')} ${fmtNum(st.cacheHit)}`
+}
+function updateRoleStatsEl(id) {
+ const el = document.querySelector(`.role-col[data-role="${id}"] .rc-stats`)
+ if (el) el.textContent = roleStatsHtml(id)
+}
 function renderRolesLive() {
  const box = $('roles-live')
  if (!box) return
@@ -1307,6 +1363,7 @@ function renderRolesLive() {
  return `<div class="role-col" data-role="${r.id}" data-st="${rl.status || 'idle'}">
  <div class="rc-head"><span class="role-dot" style="background:${esc(r.color || '#888')}"></span><b>${esc(r.label)}</b><span class="rc-head-status dim small">${esc(stLabel(rl.status || 'idle'))}</span></div>
  <div class="rc-sub dim small">${esc([rl.model, rl.sub].filter(Boolean).join(' · '))}</div>
+ <div class="rc-stats dim small">${esc(roleStatsHtml(r.id))}</div>
  <div class="rc-tools">${(rl.tools || []).map((x) => `<div class="rc-tool"> ${esc(x.call)} ${esc(x.detail || '')}</div>`).join('')}</div>
  <div class="rc-text">${esc(rl.acc || '')}</div>
  </div>`
@@ -1546,7 +1603,7 @@ async function roleChatSend() {
       el.innerHTML = `<summary>${t('toolLabel')} · ${esc(j.tool)}</summary><div>${esc(String(j.result || '').slice(0, 1500))}</div>`
       box.appendChild(el)
      }
-     if (j.usage && j.contextLimit) setCtxBadge(box, Math.round((j.usage.prompt_tokens || 0) / j.contextLimit * 100), j.cost, (j.usage.prompt_tokens || 0) + (j.usage.completion_tokens || 0))
+     if (j.usage && j.contextLimit) setCtxBadge(box, Math.round((j.usage.prompt_tokens || 0) / j.contextLimit * 100), j.cost, (j.usage.prompt_tokens || 0) + (j.usage.completion_tokens || 0), j.cacheHit)
      if (j.question || j.confirm || j.ask || j.ask_done || j.tool) scrollIfNearBottom($('team-stream'))
     } catch { /* ignore */ }
    }
@@ -1689,20 +1746,32 @@ function handleTeamEvent(ev, run, ref) {
  if (ev.call === 'generate_image' || ev.call === 'generate_video') appendMediaCard(run.body, ev.result)
  applyTeamFilter(); return
  }
-  if (ev.type === 'usage') {
-   if (ev.cost) { run.cost += ev.cost; run.foot.textContent = ` ${fmtCost(run.cost)} · ${t('tokens')} ${fmtNum(ev.usage?.prompt_tokens)}/${fmtNum(ev.usage?.completion_tokens)} · ${t('cache')} ${fmtNum(ev.cacheHit)}` }
-   state.teamTaskCost = ev.totalCost != null ? Number(ev.totalCost) : (Number(state.teamTaskCost) || 0) + (Number(ev.cost) || 0)
-   renderTeamBudget()
-   const last = Object.values(ref.stepBoxes).filter((s) =>s.agent === ev.agent).pop()
-   if (last?.body) last.body.parentElement.insertAdjacentHTML('beforeend', `<div class="dim small"> ${fmtNum(ev.usage?.prompt_tokens)}/${fmtNum(ev.usage?.completion_tokens)} · ${t('cache')} ${fmtNum(ev.cacheHit)} · ${fmtCost(ev.cost)}</div>`)
-   // ★ 每个角色块的上下文占用环形指示器
-   if (ev.usage && ev.contextLimit) {
-    const pct = Math.min(999, Math.round((ev.usage.prompt_tokens || 0) / ev.contextLimit * 100))
-    const host = last?.body ? last.body.parentElement : (ev.agent === 'leader' && ref.finalBox ? ref.finalBox.parentElement : null)
-    setCtxBadge(host, pct, ev.cost, (ev.usage.prompt_tokens || 0) + (ev.usage.completion_tokens || 0))
+   if (ev.type === 'usage') {
+    if (ev.cost) { run.cost += ev.cost; run.foot.textContent = ` ${fmtCost(run.cost)} · ${t('tokens')} ${fmtNum(ev.usage?.prompt_tokens)}/${fmtNum(ev.usage?.completion_tokens)} · ${t('cache')} ${fmtNum(ev.cacheHit)}` }
+    state.teamTaskCost = ev.totalCost != null ? Number(ev.totalCost) : (Number(state.teamTaskCost) || 0) + (Number(ev.cost) || 0)
+    renderTeamBudget()
+    // ★ 团队角色卡片指标累计（费用/使用率/Token/缓存命中）
+    try {
+     const rl = roleLiveOf(ev.agent)
+     rl.stats = rl.stats || { cost: 0, prompt: 0, completion: 0, cacheHit: 0, lastPrompt: 0, ctxLimit: 0 }
+     rl.stats.cost += Number(ev.cost) || 0
+     rl.stats.prompt += ev.usage?.prompt_tokens || 0
+     rl.stats.completion += ev.usage?.completion_tokens || 0
+     rl.stats.cacheHit += Number(ev.cacheHit) || 0
+     if (ev.usage?.prompt_tokens) rl.stats.lastPrompt = ev.usage.prompt_tokens
+     if (ev.contextLimit) rl.stats.ctxLimit = ev.contextLimit
+     updateRoleStatsEl(ev.agent)
+    } catch { /* ignore */ }
+    const last = Object.values(ref.stepBoxes).filter((s) =>s.agent === ev.agent).pop()
+    if (last?.body) last.body.parentElement.insertAdjacentHTML('beforeend', `<div class="dim small"> ${fmtNum(ev.usage?.prompt_tokens)}/${fmtNum(ev.usage?.completion_tokens)} · ${t('cache')} ${fmtNum(ev.cacheHit)} · ${fmtCost(ev.cost)}</div>`)
+    // ★ 每个角色块的上下文占用环形指示器
+    if (ev.usage && ev.contextLimit) {
+     const pct = Math.min(999, Math.round((ev.usage.prompt_tokens || 0) / ev.contextLimit * 100))
+     const host = last?.body ? last.body.parentElement : (ev.agent === 'leader' && ref.finalBox ? ref.finalBox.parentElement : null)
+     setCtxBadge(host, pct, ev.cost, (ev.usage.prompt_tokens || 0) + (ev.usage.completion_tokens || 0), ev.cacheHit)
+    }
+    return
    }
-   return
-  }
  if (ev.type === 'limit') {
  if (ev.agent) roleSetStatus(ev.agent, 'failed', { sub: ev.message })
  const box = document.createElement('div')
@@ -2748,6 +2817,15 @@ async function main() {
  // 拖拽上传（对话 + 团队任务）
  setupToBottom('chat-messages', 'btn-chat-bottom')
  setupToBottom('team-stream', 'btn-team-bottom')
+ // ★ 推理等级滑块：对话（写入会话）/ 团队任务（写入团队会话）；无会话时写全局
+ setupEffortControl('chat-effort', () => (state.activeSession?.effort || state.settings.reasoningEffort || 'default'), async (v) => {
+  if (state.activeSession) { state.activeSession.effort = v; await api('PUT', `/api/sessions/${state.activeSession.id}`, { effort: v }); refreshSessions() }
+  else { state.settings.reasoningEffort = v; await api('PUT', '/api/settings', { reasoningEffort: v }) }
+ })
+ setupEffortControl('team-effort', () => ((state.teamSessions.find((s) => s.id === state.teamSessionId) || {}).effort || state.settings.reasoningEffort || 'default'), async (v) => {
+  if (state.teamSessionId) { await api('PUT', `/api/sessions/${state.teamSessionId}`, { effort: v }); await refreshTeamSessions(state.teamSessionId) }
+  else { state.settings.reasoningEffort = v; await api('PUT', '/api/settings', { reasoningEffort: v }) }
+ })
  setupDropzone($('chat-messages'), $('chat-text'))
  setupDropzone($('chat-text'), $('chat-text'))
  // ★ 团队：聚焦某角色时拖入 → 发给该角色的单独对话；否则 → 团队任务输入框

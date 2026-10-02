@@ -463,3 +463,9 @@ body[data-spacing="relaxed"] .provider-cards, body[data-spacing="relaxed"] .sett
   border-radius: 8px; padding: 4px 8px; font-size: 12px;
 }
 .team-budget input:focus { outline: none; border-color: var(--accent); }
+
+/* ══════════ ★ 会话列表指标悬停卡 + 角色卡片指标行 ══════════ */
+.session-item { position: relative; }
+.session-item:hover .sess-tip { display: block; }
+.session-item .sess-tip { right: auto; left: 6px; bottom: calc(100% + 6px); }
+.rc-stats { font-size: 10px; color: var(--text-dim); margin: 2px 0 4px; }
