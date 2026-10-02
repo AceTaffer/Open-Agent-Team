@@ -17,10 +17,11 @@ import dgram from 'node:dgram'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import crypto from 'node:crypto'
-import { spawn, exec as execCb } from 'node:child_process'
+import { spawn, exec as execCb, execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 
 const execAsync = promisify(execCb)
+const execFileAsync = promisify(execFile)
 
 // ★ 版本比较（用于 GitHub 热更新检测）
 function appVersion() { try { return JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version || '0.0.0' } catch { return '0.0.0' } }
@@ -171,6 +172,24 @@ function genPairCode() {
   pairCodes.set(code, { token, expires: Date.now() + 5 * 60 * 1000 })
   return { code, token, expires: Date.now() + 5 * 60 * 1000 }
 }
+// ★ 安全审计修复：配对码暴力破解防护（每 IP 10 分钟窗口内最多 10 次失败，超限锁 10 分钟）
+//   rec: { n 失败计数, until 锁定截止, first 窗口起点 }
+const pairFails = new Map()
+const PAIR_WINDOW = 10 * 60 * 1000
+function pairAllowed(ip) {
+  const rec = pairFails.get(ip)
+  if (!rec) return true
+  if (rec.until > Date.now()) return false                                   // 锁定中
+  if (rec.until && rec.until <= Date.now()) { pairFails.delete(ip); return true } // 锁定期已过，清零
+  if (rec.first && Date.now() - rec.first > PAIR_WINDOW) { pairFails.delete(ip); return true } // 窗口过期
+  return true
+}
+function pairFail(ip) {
+  const rec = pairFails.get(ip) || { n: 0, until: 0, first: Date.now() }
+  rec.n++
+  if (rec.n >= 10) { rec.until = Date.now() + PAIR_WINDOW; rec.n = 0 }
+  pairFails.set(ip, rec)
+}
 
 // ★ 技能市场：内置技能（可一键导入到技能库）
 const BUILTIN_SKILLS = [
@@ -192,6 +211,8 @@ const BUILTIN_SKILLS = [
   { id: 'mk_novel_style', name: '文风与视角控制', description: '统一视角/语气/节奏与用词', tags: ['小说', '风格'], prompt: '写作时严格控制文风：1) 开工前先确定并记录：叙事视角（第一/第三人称、限知/全知）、整体基调（轻松/严肃/黑暗）、语言风格（简洁白描/细腻抒情）与禁用词表；2) 每章写作保持人物语气、称呼、时间线一致；3) 对话要符合人物性格与身份，避免所有角色一个腔调；4) 章节结尾留钩子，控制段落节奏，避免大段说明文。' },
   { id: 'mk_novel_draft', name: '章节写作规范', description: '按章纲写稿、真实落盘、自检', tags: ['小说', '写作'], prompt: '写章节时：1) 严格按分章大纲写作，每章用 write_file 真实落盘（如 chapters/chapter_01.md），不要只在回复里贴正文；2) 开篇承接上一章，场景/时间/地点交代清楚；3) 写完自检：本章目标是否达成、伏笔是否记录、字数是否达标、有无与前面章节矛盾；4) 在 chapters/README.md 里维护进度清单（章号、标题、字数、状态），写完用 list_files 核对文件存在。' },
   { id: 'mk_novel_proofread', name: '小说校对规范', description: '逻辑/人设/时间线/文字逐项校对', tags: ['小说', '质量'], prompt: '校对小说话稿时逐项检查并给出证据：1) 剧情逻辑漏洞（动机不足、前后矛盾）；2) 人设一致性（性格、能力、称呼是否走形）；3) 时间线/空间线错误（季节、昼夜、路程）；4) 重复用词、口头禅滥用、错别字；5) 节奏问题（拖沓/跳跃）与建议删改段。输出「文件+段落位置+问题类型+修改建议」清单，重大问题用 ask_role 反馈给写手，改后必须复审。' },
+  // ★ Paperclip 要点②：验收证据门——任何「完成/通过」结论必须附可复核证据（借鉴 Paperclip 的"无证据不算完成"）
+  { id: 'mk_evidence', name: '验收证据规范', description: '完成/通过必须附命令、输出与读回证据', tags: ['质量', '规范'], prompt: '任何「完成 / 通过 / 已修复」结论都必须附可复核证据（禁止只声称）：1) 文件类：给出完整路径 + 用 read_file 读回的关键片段（或 list_files 结果）；2) 命令类：给出执行的命令原文 + 关键输出片段（如语法检查、字节比对、测试通过行）；3) 数据类：给出统计口径与原始数字；4) 若某项无法验证，明确写「未验证」并说明原因，不得默认通过；5) 汇报格式：结论 → 证据（逐项）→ 遗留问题。' },
 ]
 let stats = { calls: 0, promptTokens: 0, completionTokens: 0, cacheHitTokens: 0, cost: 0, toolCalls: 0, byRole: {}, byModel: {}, updatedAt: 0 }
 let ROLE_META = {}      // ★ 由 roles 动态重建：{ id: role }，兼容旧代码的 ROLE_META[id].label/.color
@@ -642,7 +663,12 @@ function leaderSystemPrompt(role) {
 /* ═══════════════════════════════════════════════════════════════
  * 八、工具执行
  * ═══════════════════════════════════════════════════════════════ */
-const BLOCKED_CMD = [/\bformat\b/i, /\bshutdown\b/i, /\brestart-computer\b/i, /rmdir\s+\/s/i, /del\s+\/f\s+\/s/i, /\bdiskpart\b/i, /\breg\s+delete\b/i, /\bnet\s+user\b/i, /\bmkfs\b/i, /\bdd\s+if=/i]
+// ★ 安全审计修复：扩充危险命令黑名单（阻止递归删除/卷影删除/批处理强删等破坏性操作）
+const BLOCKED_CMD = [
+  /\bformat\b/i, /\bshutdown\b/i, /\brestart-computer\b/i, /\bdiskpart\b/i, /\bmkfs\b/i, /\bdd\s+if=/i,
+  /\brmdir\b.*\/s\b/i, /\brd\b.*\/s\b/i, /\bdel\b.*\/[fsq]\b/i, /remove-item\b.*-recurse/i, /remove-item\b.*-force/i,
+  /\breg\s+delete\b/i, /\bnet\s+user\b/i, /\bvssadmin\b.*\bdelete\b/i, /\bcipher\s+\/w/i, /\bwbadmin\b.*\bdelete\b/i,
+]
 function resolveInWorkspace(p, root = getActiveRoot(), allowOutside = false) {
   const abs = path.resolve(root, p || '.')
   const r = path.resolve(root) // ★ 统一规范化（避免正/反斜杠混用导致误判越界）
@@ -792,9 +818,12 @@ async function toolRunExe({ path: exePath, args = [], cwd = '', timeoutMs = 1200
   if (!existsSync(norm)) return `程序不存在：${norm}`
   try {
     const workdir = cwd ? path.resolve(cwd) : path.dirname(norm)
-    const { stdout, stderr } = await execAsync(`"${norm}" ${(Array.isArray(args) ? args : []).map((a) => `"${a}"`).join(' ')}`, { cwd: workdir, timeout: Math.min(Number(timeoutMs) || 120000, 300000), maxBuffer: 4 * 1024 * 1024, windowsHide: true })
-    dbg('exe.run', { path: norm, args })
-    return `$ ${path.basename(norm)} ${(args || []).join(' ')}\n${(stdout || '') + (stderr ? '\n[stderr]\n' + stderr : '')}`.slice(0, 8000) || '（无输出）'
+    // ★ 安全审计修复：改用 execFile（不经过 shell、参数按数组传递），
+    //   杜绝通过参数内嵌引号（如 x" & calc & "）实现命令注入
+    const argArr = (Array.isArray(args) ? args : []).map((a) => String(a))
+    const { stdout, stderr } = await execFileAsync(norm, argArr, { cwd: workdir, timeout: Math.min(Number(timeoutMs) || 120000, 300000), maxBuffer: 4 * 1024 * 1024, windowsHide: true })
+    dbg('exe.run', { path: norm, args: argArr })
+    return `$ ${path.basename(norm)} ${argArr.join(' ')}\n${(stdout || '') + (stderr ? '\n[stderr]\n' + stderr : '')}`.slice(0, 8000) || '（无输出）'
   } catch (e) { return `程序执行失败：${e.message}` }
 }
 function extractToolCalls(text) {
@@ -1222,12 +1251,26 @@ async function ghPublish({ dir, repoName, isPrivate = true, message = 'Update fr
  * 十、HTTP 工具
  * ═══════════════════════════════════════════════════════════════ */
 function sendJson(res, code, obj) { res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(obj)) }
-async function readBody(req) { const cs = []; for await (const c of req) cs.push(c); if (!cs.length) return {}; try { return JSON.parse(Buffer.concat(cs).toString('utf8')) } catch { return {} } }
+// ★ 安全审计修复：请求体大小上限（默认 64MB），避免超大请求造成内存耗尽
+const MAX_BODY = 64 * 1024 * 1024
+async function readBody(req) {
+  const cs = []
+  let total = 0
+  for await (const c of req) {
+    total += c.length
+    if (total > MAX_BODY) { const e = new Error('请求体过大'); e.statusCode = 413; throw e }
+    cs.push(c)
+  }
+  if (!cs.length) return {}
+  try { return JSON.parse(Buffer.concat(cs).toString('utf8')) } catch { return {} }
+}
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.webp': 'image/webp', '.mp4': 'video/mp4', '.webm': 'video/webm' }
 async function serveStatic(res, urlPath) {
   const rel = urlPath === '/' ? 'index.html' : urlPath.replace(/^\/+/, '')
   const file = path.join(WEB_DIR, rel)
-  if (!file.startsWith(WEB_DIR) || !existsSync(file)) { res.writeHead(404); res.end('Not Found'); return }
+  // ★ 安全审计修复：用 path.relative 做目录边界判定（避免前缀比较被同前缀兄弟目录绕过）
+  const relCheck = path.relative(WEB_DIR, file)
+  if (relCheck.startsWith('..') || path.isAbsolute(relCheck) || !existsSync(file)) { res.writeHead(404); res.end('Not Found'); return }
   res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream' })
   res.end(await readFile(file))
 }
@@ -1431,6 +1474,64 @@ function sessionArchive(sess, maxChars = 6000) {
   let text = out.join('\n')
   if (text.length > maxChars) text = text.slice(-maxChars) // 保尾部（最新状态）
   return text ? `【本项目团队会话档案（回忆依据：已完成的任务/步骤/产物/协作；无需再去翻文件确认）】\n${text}` : ''
+}
+
+/* ═══════════════════════════════════════════════════════════════
+ * 10.5d ★ .oat 常驻项目档案（借鉴 hindsight「项目记忆」思路的极简实现）：
+ *   团队任务收尾时把「任务/步骤/产物线索/状态/汇总节选」追加进 工作区/.oat/PROJECT.md；
+ *   之后的角色对话与团队步骤自动注入档案摘要 → 新会话不翻文件也能了解项目历史
+ * ═══════════════════════════════════════════════════════════════ */
+const projMemCache = new Map() // root -> { at, text }
+async function readProjectMemory(root) {
+  try {
+    const hit = projMemCache.get(root)
+    if (hit && Date.now() - hit.at < 15000) return hit.text
+    let text = ''
+    try { text = await readFile(path.join(root, '.oat', 'PROJECT.md'), 'utf8') } catch { text = '' }
+    projMemCache.set(root, { at: Date.now(), text })
+    return text
+  } catch { return '' }
+}
+const PROJ_MEM_MAX = 30 * 1024 // 档案上限 ~30KB，超出时裁掉最旧日志
+async function appendProjectMemory(root, info) {
+  if (!root) return 0
+  const dir = path.join(root, '.oat')
+  await mkdir(dir, { recursive: true })
+  const file = path.join(dir, 'PROJECT.md')
+  let text = ((await readProjectMemory(root)) || '').trimEnd()
+  if (!text) {
+    text = `# 项目档案（.oat/PROJECT.md · Open Agent Team 自动维护）\n\n> 团队任务收尾会自动追加任务日志；角色对话与团队执行会自动读取本档案。\n> 本档案属于项目本身，可随项目一起复制/迁移/版本管理。\n\n## 项目概览\n- 工作区：${root}\n- 建档时间：${new Date().toLocaleString('zh-CN', { hour12: false })}\n\n## 任务日志`
+  }
+  const stamp = new Date().toLocaleString('zh-CN', { hour12: false })
+  const stepLine = (info.plan?.steps || []).map((s) => `${roleById(s.agent)?.label || s.agent}:${s.title}`).join('；')
+  const blob = `${info.task || ''}\n${info.finalText || ''}\n${(info.results || []).map((r) => r.result || '').join('\n')}`
+  const exts = 'html|htm|js|mjs|cjs|ts|tsx|md|txt|json|css|scss|py|bat|ps1|sh|yml|yaml|xml|csproj|sln|zip|png|jpg|jpeg|gif|webp|svg|mp4|mp3|wav|csv|xlsx|docx|pdf|db|sqlite'
+  const found = [...new Set((blob.match(new RegExp(`[\\w\\u4e00-\\u9fa5./\\\\-]+\\.(?:${exts})\\b`, 'gi')) || []).map((s) => s.replace(/^[.\\/]+/, '').trim()).filter((s) => s && s.length < 120))].slice(0, 24)
+  const entry = `\n### [${stamp}] ${String(info.task || '').replace(/\s+/g, ' ').slice(0, 160)}\n- 状态：${info.status} · 费用 ¥${Number(info.cost || 0).toFixed(6)} · 工具 ${info.toolCalls || 0} 次${info.sessionId ? ` · 会话 ${String(info.sessionId).slice(0, 8)}` : ''}\n- 步骤：${stepLine || '（无）'}\n- 产物线索：${found.length ? found.join('；') : '（未含明确文件名）'}\n- 汇总节选：${String(info.finalText || '（无汇总）').replace(/```tool[\s\S]*?```/g, '').replace(/\s+/g, ' ').slice(0, 600)}\n`
+  text += entry
+  if (text.length > PROJ_MEM_MAX) {
+    const headMark = '\n## 任务日志'
+    const idx = text.indexOf(headMark)
+    if (idx > 0) {
+      const head = text.slice(0, idx + headMark.length)
+      let logs = text.slice(idx + headMark.length)
+      while (head.length + logs.length > PROJ_MEM_MAX && logs.length > 4000) {
+        const next = logs.indexOf('\n### [', 1)
+        if (next < 0) break
+        logs = logs.slice(next)
+      }
+      text = head + logs
+    }
+  }
+  await writeFile(file, text, 'utf8')
+  projMemCache.delete(root) // 失效缓存
+  return found.length
+}
+// ★ 注入用摘要：取档案尾部（最新任务最关键）；无档案返回空串，零开销
+async function projectMemoryDigest(root, maxChars = 1800) {
+  const t = (await readProjectMemory(root) || '').trim()
+  if (!t) return ''
+  return `【.oat 常驻项目档案（任务历史/产物线索；直接据此回答与行动，无需翻文件）】\n${t.slice(-maxChars)}`
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1708,9 +1809,11 @@ async function runTeam(task, opts = {}) {
     const contextText = results.map((r) => `【${roleById(r.agent)?.label || r.agent}·${r.title}】\n${r.result.slice(0, 3000)}`).join('\n\n')
     // ★ 工作区快照：直接给出文件树现状，减少反复 list_files/read_file（省 token、省等待）
     const digest = await projectDigest(root, 50)
+    // ★ .oat 常驻项目档案：注入项目历史（任务/产物线索），让每一步都带着项目记忆干活
+    const projMem = await projectMemoryDigest(root)
     const messages = [
       { role: 'system', content: roleSystemPrompt(agent.role) },
-      { role: 'user', content: `总任务：${task}\n（当前工作区目录：${root}）\n\n${digest}\n\n本步骤（${step.title}）：${step.instruction}\n\n此前产出：\n${contextText || '（无）'}\n\n（提示：工作区快照已给出文件现状，请直接据此行动；确需细节时再按需读取个别文件，避免全量重复翻查。）` },
+      { role: 'user', content: `总任务：${task}\n（当前工作区目录：${root}）\n\n${digest}${projMem ? '\n\n' + projMem : ''}\n\n本步骤（${step.title}）：${step.instruction}\n\n此前产出：\n${contextText || '（无）'}\n\n（提示：工作区快照已给出文件现状，请直接据此行动；确需细节时再按需读取个别文件，避免全量重复翻查。）` },
     ]
     // ★ 工具调用限制：角色单独设置优先，否则用全局「团队任务」限制；0=无限
     const roleLimit = effectiveToolLimit(agent.role, 'team')
@@ -1807,7 +1910,7 @@ async function runTeam(task, opts = {}) {
         const producer = [...plan.steps.slice(0, i + 1)].reverse().find((s) => s.agent !== roleId)?.agent
         if (producer) {
           reworkCount++
-          plan.steps.push({ agent: producer, title: `根据${agent.role.label}反馈返工（第${reworkCount}轮）`, instruction: `上一环节（${agent.role.label}）提出了以下问题/返工要求：\n${stepText.slice(0, 2500)}\n\n请逐项修复/补写（务必真实写入文件，写完用 list_files 核对），完成后简要列出修改点；如对反馈有异议，先用 ask_role 与${agent.role.label}确认，不要等待用户转达。` })
+          plan.steps.push({ agent: producer, title: `根据${agent.role.label}反馈返工（第${reworkCount}轮）`, instruction: `上一环节（${agent.role.label}）提出了以下问题/返工要求：\n${stepText.slice(0, 2500)}\n\n请逐项修复/补写（务必真实写入文件，写完用 list_files 核对），完成后简要列出修改点；如对反馈有异议，先用 ask_role 与${agent.role.label}确认，不要等待用户转达。★证据门：每项修复必须附证据——文件路径 + read_file 读回的关键片段；如运行过命令，附命令原文与输出摘要。禁止只声称「已修复」。` })
           plan.steps.push({ agent: roleId, title: `复审返工结果（第${reworkCount}轮）`, instruction: `对上一轮返工结果逐项复审并给出结论：通过 / 仍需修改（逐条列出具体问题）。若仍有问题请在结论中明确写出「不通过」与问题清单，系统会再安排一轮返工；无问题则给出明确「通过」结论。` })
           send({ type: 'delta', agent: 'leader', text: `\n\n（检测到${agent.role.label}提出问题：已自动安排返工与复审，第 ${reworkCount} 轮）` })
         }
@@ -1878,7 +1981,7 @@ async function runTeam(task, opts = {}) {
           send({ type: 'tool', agent: 'leader', call: call.tool, detail: call.path || call.command || call.query || call.plugin || call.url || '', result: result.slice(0, 1500) })
           outs.push(`【工具结果】${call.tool} ${call.path || call.command || call.query || call.plugin || call.url || ''}\n${result}`)
         }
-        messages.push({ role: 'user', content: outs.join('\n\n') + '\n\n请继续：如成果已产出完毕，请给出最终汇总（不要再调用工具）。' })
+        messages.push({ role: 'user', content: outs.join('\n\n') + '\n\n请继续：如成果已产出完毕，请给出最终汇总（不要再调用工具）。★汇总必须附证据：产物路径 + 关键读回/命令输出片段；无法验证的项明确标注「未验证」。' })
       }
     } catch (e) { send({ type: 'error', message: `队长汇总失败：${e.message}` }) }
   }
@@ -1887,6 +1990,18 @@ async function runTeam(task, opts = {}) {
   try {
     if (finalText) roleChatAppend('leader', 'assistant', `【团队任务·最终汇总】${String(finalText).replace(/```tool[\s\S]*?```/g, '').slice(0, 1500)}`)
     roleChatAppend('leader', 'user', `【团队任务状态】${run.abort ? '已终止' : (budgetStopped ? '已停止' : '已完成')}（工具调用 ${taskToolCalls} 次，费用 ¥${Number(totalCost.toFixed(6))}）如需继续，请直接说明下一步。`)
+  } catch { /* ignore */ }
+  // ★ .oat 常驻项目档案：任务收尾时写入项目记忆（跨会话复用，角色对话/后续任务自动读取）
+  try { await appendProjectMemory(root, { task, plan, results, finalText, status: run.abort ? '已终止' : (budgetStopped ? '已停止' : '已完成'), cost: totalCost, toolCalls: taskToolCalls, sessionId: sess?.id || '' }) } catch { /* ignore */ }
+  // ★ Paperclip 要点①：自动续跑——会话设置 0-5 次；完成后自动以「继续」任务续跑，
+  //   直到汇总里出现「【全部完成】」或次数用尽（续跑事件照常落盘，页面可用「接回任务」接入）
+  try {
+    if (!run.abort && !budgetStopped && sess && Number(sess.autoContinue) > 0) {
+      sess.autoContinue = Math.max(0, Number(sess.autoContinue) - 1)
+      await saveSessions()
+      const contTask = `自动续跑（剩余 ${sess.autoContinue} 次）：请先检查上一轮任务是否已全部完成，然后二选一：\n- 若仍有未完成项：继续完成，更新产物并重新汇总（汇总附证据）。\n- 若已全部完成：在汇总开头明确写「【全部完成】」后即停，不再做实质性改动。\n\n原任务：${String(task).slice(0, 600)}\n上一轮汇总节选：${String(finalText || '').replace(/\s+/g, ' ').slice(-600) || '（无）'}`
+      setTimeout(() => { startDetachedTeamRun(contTask, sess.id).catch(() => {}) }, 1500)
+    }
   } catch { /* ignore */ }
   // 4. 记录到团队会话（★ 计划完成与每步完成时已增量保存，这里补最终记录）
   if (sess) {
@@ -1909,6 +2024,17 @@ async function runTeam(task, opts = {}) {
     await writeTaskIndex([entry, ...(await readTaskIndex()).filter((x) => x.id !== taskId)])
   } catch { /* ignore */ }
   send({ type: 'done', taskId, cost: Number(totalCost.toFixed(6)), usage: totalUsage, cacheHitTokens: totalUsage.prompt_cache_hit_tokens, toolCalls: taskToolCalls, budgetStopped, aborted: run.abort })
+}
+
+/* ★ Paperclip 要点①：脱离页面运行团队任务（供自动续跑使用；事件照常落盘/广播，页面可经「接回任务」接入） */
+async function startDetachedTeamRun(task, sessionId) {
+  const tsess = sessions.find((s) => s.id === sessionId)
+  if (!tsess) return
+  const run = createTeamRun(task, sessionId)
+  bumpRev('tasks')
+  try { await runTeam(task, { session: tsess, run }) } catch (e) { runEmit(run, { type: 'error', message: e?.message || String(e) }) }
+  run.finished = true
+  teamRuns.delete(run.id)
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1992,15 +2118,18 @@ async function handleApi(req, res, url) {
   if (pathname === '/api/ping' && method === 'GET') return sendJson(res, 200, { ok: true, app: 'Open Agent Team', version: appVersion(), time: Date.now() })
   // 配对（公开，凭一次性配对码/PIN 换设备 token）
   if (pathname === '/api/pair' && method === 'POST') {
+    // ★ 安全审计修复：失败次数限速（防 6 位配对码被暴力枚举）
+    if (!pairAllowed(clientIp)) { audit(req, 'pair.rate_limited', {}); return sendJson(res, 200, { ok: false, error: '配对尝试次数过多，请 10 分钟后再试' }) }
     const b = await readBody(req)
     const code = String(b.code || '').trim()
     const pToken = String(b.pairToken || '').trim()
     let entryKey = null
     for (const [k, v] of pairCodes) { if ((code && k === code) || (pToken && v.token === pToken)) { entryKey = k; break } }
-    if (!entryKey) { audit(req, 'pair.fail', { reason: 'invalid-code' }); return sendJson(res, 200, { ok: false, error: '配对码无效或已过期，请在电脑端重新生成' }) }
+    if (!entryKey) { pairFail(clientIp); audit(req, 'pair.fail', { reason: 'invalid-code' }); return sendJson(res, 200, { ok: false, error: '配对码无效或已过期，请在电脑端重新生成' }) }
     const entry = pairCodes.get(entryKey)
-    if (entry.expires < Date.now()) { pairCodes.delete(entryKey); return sendJson(res, 200, { ok: false, error: '配对码已过期' }) }
+    if (entry.expires < Date.now()) { pairCodes.delete(entryKey); pairFail(clientIp); return sendJson(res, 200, { ok: false, error: '配对码已过期' }) }
     pairCodes.delete(entryKey) // 一次性使用
+    pairFails.delete(clientIp)
     const token = crypto.randomBytes(24).toString('hex')
     const dev = { id: crypto.randomUUID(), name: String(b.deviceName || '手机设备').slice(0, 30), tokenHash: sha256(token), perm: 'approve', revoked: false, createdAt: Date.now(), lastSeen: Date.now(), lastIp: clientIp }
     devices.push(dev); await saveDevices()
@@ -2074,6 +2203,15 @@ async function handleApi(req, res, url) {
       await mkdir(ET_DIR, { recursive: true })
       const zip = path.join(ET_DIR, 'easytier.zip')
       await execAsync(`powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '${asset.browser_download_url}' -OutFile '${zip}' -UseBasicParsing -Headers @{'User-Agent'='open-agent-team'}"`, { timeout: 600000, windowsHide: true })
+      // ★ 安全审计修复：官方 Release 提供 sha256 摘要时校验下载完整性（防下载被篡改/损坏）
+      if (typeof asset.digest === 'string' && asset.digest.startsWith('sha256:')) {
+        const buf = await readFile(zip)
+        const got = crypto.createHash('sha256').update(buf).digest('hex')
+        if (got !== asset.digest.slice(7).toLowerCase()) {
+          try { await rm(zip, { force: true }) } catch { /* ignore */ }
+          return sendJson(res, 200, { ok: false, error: '下载文件 sha256 校验失败，已删除（可能存在下载损坏或篡改风险），请重试或手动安装' })
+        }
+      }
       try { await execAsync(`tar -xf "${zip}" -C "${ET_DIR}"`, { timeout: 120000, windowsHide: true }) }
       catch { await execAsync(`powershell -NoProfile -Command "Expand-Archive -LiteralPath '${zip}' -DestinationPath '${ET_DIR}' -Force"`, { timeout: 180000, windowsHide: true }) }
       const { stdout: found } = await execAsync(`cmd /c dir /s /b "${ET_DIR}\\easytier-core.exe"`, { windowsHide: true }).catch(() => ({ stdout: '' }))
@@ -2582,6 +2720,8 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
   if (pathname === '/api/sessions' && method === 'POST') {
     const b = await readBody(req)
     const s = { id: crypto.randomUUID(), kind: b.kind === 'team' ? 'team' : 'chat', providerId: b.providerId || providers[0]?.id || '', model: b.model || '', title: b.title || '', workspace: b.workspace || getActiveRoot(), permission: PERMISSIONS.includes(b.permission) ? b.permission : (settings.defaultPermission || 'modify'), autoApprove: false, archived: false, messages: [], tokens: 0, cost: 0, createdAt: Date.now(), updatedAt: Date.now() }
+    // ★ 会话工作区不存在时自动创建（避免工具静默回退到全局工作区，造成"文件不见"的困惑）
+    try { if (s.workspace && !existsSync(s.workspace)) await mkdir(s.workspace, { recursive: true }) } catch { /* ignore */ }
     sessions.unshift(s); await saveSessions()
     return sendJson(res, 200, { ok: true, session: s })
   }
@@ -2610,6 +2750,8 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
       if (b.autoApprove != null) s.autoApprove = !!b.autoApprove
       // ★ 推理等级（拖动滑块）：''=跟随全局；none/low/high/max/default
       if (b.effort != null && ['', 'none', 'low', 'high', 'max', 'default'].includes(b.effort)) s.effort = b.effort
+      // ★ Paperclip 要点①：自动续跑次数（0=关闭，1-5 轮）
+      if (b.autoContinue != null) s.autoContinue = Math.max(0, Math.min(5, Math.round(Number(b.autoContinue) || 0)))
       s.updatedAt = Date.now(); await saveSessions()
       return sendJson(res, 200, { ok: true, session: s })
     }
@@ -2619,6 +2761,18 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
       sessions = sessions.filter((x) => x.id !== s.id); await saveSessions()
       let purged = '', purgeError = ''
       if (purge && s.workspace) {
+        // ★ 安全审计修复：防止「对话与文件夹一起删除」误删默认工作区/激活工作区/应用目录（含应用数据）
+        const wsAbs = path.resolve(s.workspace)
+        const appRoot = path.resolve(path.dirname(DATA_DIR))
+        const relIn = path.relative(appRoot, wsAbs)   // ws 位于应用目录内？
+        const relOut = path.relative(wsAbs, appRoot)  // ws 是应用目录的祖先？
+        const insideApp = relIn === '' || (!relIn.startsWith('..') && !path.isAbsolute(relIn))
+        const containsApp = relOut === '' || (!relOut.startsWith('..') && !path.isAbsolute(relOut))
+        const unsafe = insideApp || containsApp || wsAbs === path.resolve(WORKSPACE_DIR) || wsAbs === path.resolve(getActiveRoot())
+        if (unsafe) {
+          audit(req, 'session.purge_denied', { workspace: s.workspace })
+          return sendJson(res, 200, { ok: true, purged: '', purgeError: '出于安全考虑：该文件夹是默认/激活工作区或包含应用数据，已取消「连同文件夹删除」（会话记录已删除，文件夹保留）' })
+        }
         try {
           await rm(s.workspace, { recursive: true, force: true })
           if (s.workspace === WORKSPACE_DIR) await mkdir(s.workspace, { recursive: true })
@@ -2805,7 +2959,9 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
       //   目的：AI 记得自己做过什么，且不用每次重新翻项目文件（省 token、省等待、利于缓存命中）
       const archive = sessionArchive(sess, 6000)
       const digest = await projectDigest(root, 50)
-      const userMsg = `【与用户的单独对话】${String(b.message || '').slice(0, 4000)}\n（当前工作区目录：${root}）\n\n${digest}${archive ? '\n\n' + archive : ''}\n\n（提示：以上快照与档案已包含当前进度与产物，请直接据此回答，避免不必要的重复读取；如确需细节再调用工具。你可以用 ask_role 询问队友。请以你的角色身份简洁、专业地回复。）`
+      // ★ .oat 常驻项目档案：跨会话注入项目历史（新会话问项目历史无需翻文件）
+      const projMem = await projectMemoryDigest(root)
+      const userMsg = `【与用户的单独对话】${String(b.message || '').slice(0, 4000)}\n（当前工作区目录：${root}）\n\n${digest}${projMem ? '\n\n' + projMem : ''}${archive ? '\n\n' + archive : ''}\n\n（提示：以上快照与档案已包含当前进度与产物，请直接据此回答，避免不必要的重复读取；如确需细节再调用工具。你可以用 ask_role 询问队友。请以你的角色身份简洁、专业地回复。）`
       const messages = [
         { role: 'system', content: roleSystemPrompt(role) },
         ...roleChatHistory(role.id), // ★ 完整角色记忆（不再只取最后 12 条）
@@ -2911,6 +3067,28 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
       return sendJson(res, 200, { ok: true, urls })
     } catch (e) { return sendJson(res, 200, { ok: false, error: e.message }) }
   }
+  // ★ .oat 常驻项目档案：查看 / 覆盖 / 清空（存于 工作区/.oat/PROJECT.md，随项目迁移）
+  if (pathname === '/api/project-memory' && method === 'GET') {
+    const root = String(url.searchParams.get('root') || '') || getActiveRoot()
+    return sendJson(res, 200, { ok: true, root, path: path.join(root, '.oat', 'PROJECT.md'), text: await readProjectMemory(root) })
+  }
+  if (pathname === '/api/project-memory' && method === 'POST') {
+    const b = await readBody(req)
+    const root = String(b.root || '') || getActiveRoot()
+    const dir = path.join(root, '.oat')
+    await mkdir(dir, { recursive: true })
+    await writeFile(path.join(dir, 'PROJECT.md'), String(b.text || ''), 'utf8')
+    projMemCache.delete(root)
+    audit(req, 'project_memory.write', { root })
+    return sendJson(res, 200, { ok: true })
+  }
+  if (pathname === '/api/project-memory' && method === 'DELETE') {
+    const root = String(url.searchParams.get('root') || '') || getActiveRoot()
+    try { await rm(path.join(root, '.oat', 'PROJECT.md'), { force: true }) } catch { /* ignore */ }
+    projMemCache.delete(root)
+    audit(req, 'project_memory.clear', { root })
+    return sendJson(res, 200, { ok: true })
+  }
   // ★ 清理残留数据：孤儿任务记录 / 引用已删除会话的任务 / 空会话 / 已删除角色的对话记忆
   if (pathname === '/api/cleanup' && method === 'POST') {
     const result = { sessions: 0, tasks: 0, taskFiles: 0, roleChats: 0 }
@@ -3011,20 +3189,32 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
     return sendJson(res, 200, { ok: true })
   }
   if (pathname === '/api/vault/reveal' && method === 'POST') {
+    // ★ 安全审计修复：密钥查看密码暴力破解防护（每 IP 5 次失败锁 60 秒）
+    const vf = pairFails.get('vault:' + clientIp) || { n: 0, until: 0 }
+    if (vf.until > Date.now()) return sendJson(res, 200, { ok: false, error: '密码尝试次数过多，请 1 分钟后再试' })
     const b = await readBody(req)
     const it = vault.find((x) => x.id === b.id)
     if (!it) return sendJson(res, 200, { ok: false, error: '记录不存在' })
     const pass = await getVaultPass()
     if (pass) {
       const salt = pass.salt || ''
-      if (vaultHash(b.password || '', salt) !== pass.hash) return sendJson(res, 200, { ok: false, error: '密码不正确' })
+      if (vaultHash(b.password || '', salt) !== pass.hash) {
+        vf.n++
+        if (vf.n >= 5) { vf.until = Date.now() + 60 * 1000; vf.n = 0 }
+        pairFails.set('vault:' + clientIp, vf)
+        audit(req, 'vault.reveal_fail', {})
+        return sendJson(res, 200, { ok: false, error: '密码不正确' })
+      }
     }
+    pairFails.delete('vault:' + clientIp)
     const kb = await vaultGetKey()
     return sendJson(res, 200, { ok: true, key: decryptText(it.keyCipher, kb) || '' })
   }
-  // ★ 忘记/从未设置密码时清除保护（本地工具定位：仅解除查看门槛，数据仍为本机加密存储）
+  // ★ 安全审计修复：清除保护仅允许电脑本机操作（防远程/局域网设备清掉密码门槛后查看密钥）
   if (pathname === '/api/vault/password/reset' && method === 'POST') {
+    if (!isLoopback) { audit(req, 'vault.reset_denied', {}); return sendJson(res, 403, { ok: false, error: '为安全起见，「清除保护」仅允许在电脑本机操作' }) }
     try { await rm(VAULT_PASS_FILE, { force: true }) } catch { /* ignore */ }
+    audit(req, 'vault.reset', {})
     return sendJson(res, 200, { ok: true, hasPassword: false })
   }
   if (pathname === '/api/vault/password' && method === 'POST') {
@@ -3137,9 +3327,12 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
  * 十四、启动
  * ═══════════════════════════════════════════════════════════════ */
 const server = http.createServer(async (req, res) => {
+  // ★ 安全审计修复：客户端中途断开/上传中被销毁会产生流错误，统一兜底避免未处理错误
+  req.on('error', () => { /* client abort */ })
+  res.on('error', () => { /* client abort */ })
   const url = new URL(req.url, `http://${req.headers.host || HOST}`)
   try { if (url.pathname.startsWith('/api/')) await handleApi(req, res, url); else await serveStatic(res, url.pathname) }
-  catch (e) { dbg('server.error', { message: String(e?.message || e) }); sendJson(res, 500, { ok: false, error: String(e?.message || e) }) }
+  catch (e) { dbg('server.error', { message: String(e?.message || e) }); sendJson(res, e?.statusCode || 500, { ok: false, error: String(e?.message || e) }) }
 })
 await loadData()
 // ★ TAT：监听地址——「手机连接」开启局域网监听时绑 0.0.0.0（所有网卡），否则仅本机

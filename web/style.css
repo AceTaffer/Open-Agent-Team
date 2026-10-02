@@ -286,6 +286,10 @@ body.hide-tools .tool-box, body.hide-tools .tool-note { display: none !important
 #pg-pin { font-size: 22px; letter-spacing: 6px; text-align: center; }
 #remote-toast { position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%) translateY(20px); background: var(--bg-card); border: 1px solid var(--border); color: var(--text); padding: 8px 14px; border-radius: 10px; font-size: 12px; opacity: 0; pointer-events: none; transition: all .25s; z-index: 500; max-width: 86vw; text-align: center; }
 #remote-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+/* ★ Orca：SSE 断线自动重连横幅 */
+#reconnect-banner { position: fixed; top: 10px; left: 50%; transform: translateX(-50%) translateY(-64px); background: #b07a3c; color: #fff; padding: 6px 16px; border-radius: 999px; font-size: 12px; z-index: 9999; transition: transform .25s ease; pointer-events: none; box-shadow: 0 4px 14px rgba(0,0,0,.25); }
+#reconnect-banner.show { transform: translateX(-50%) translateY(0); }
+body.theme-light #reconnect-banner { background: #c07f2f; }
 .mob-dev-row { display: flex; gap: 8px; align-items: center; margin: 6px 0; flex-wrap: wrap; }
 .mobile-only { display: none; }
 

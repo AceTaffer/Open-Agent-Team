@@ -292,8 +292,17 @@ const TEAM_PRESETS = {
 }
 
 /* 版本迭代记录（设置页展示） */
-const APP_VERSION = '1.1.0'
+const APP_VERSION = '1.2.0'
 const CHANGELOG = [
+  ['P9.1', '2026-10', [
+    '.oat 常驻项目档案（借鉴 hindsight 思路）：团队任务收尾自动把「任务/步骤/产物线索/状态/汇总节选」写入 工作区/.oat/PROJECT.md，角色对话与团队每个步骤自动注入——新会话不翻文件也能记得项目历史；设置页可查看/编辑/清空，档案随项目复制迁移',
+    '自动续跑（团队任务栏，0-5 次）：任务完成后自动检查并继续未完成项，直到汇总写出「【全部完成】」或次数用尽；续跑任务照常落盘，随时可「接回任务」；同时修复了「接回任务」横幅此前不会自动出现的隐藏问题',
+    '验收证据门（借鉴 Paperclip「无证据不算完成」）：新增内置技能「验收证据规范」；返工与最终汇总被强制要求附证据（文件读回片段 / 命令原文与输出），无法验证必须标注「未验证」，不允许只声称完成',
+    '后台系统通知：页面切到后台时提醒「任务完成 / 待授权 / 待回答」（http 访问下自动退化为标题闪烁）；SSE 断线时顶部出现自动重连横幅',
+    '手机连接页新增 IPv6 地址显示与一键复制；新建会话的工作区不存在时自动创建（避免文件静默写到全局工作区）',
+    '安全审计与加固：配对码失败限速（防 6 位码爆破）、调试工具执行改 execFile 数组参数（修复引号截断命令注入）、请求体 64MB 上限、保险箱「清除保护」仅限本机、危险命令黑名单扩充、静态文件目录边界校验、客户端断传稳定性兜底',
+    '作者声明新增「特别感谢：YY程」',
+  ]],
   ['P9', '2026-10', ['重大版本：手机端互联（合并自实验分支 Turing Agent Team，该分支完成使命后归档）——桌面端 + 安卓手机浏览器/App 互联', '手机连接：局域网监听开关（默认关）+ 6 位 PIN/二维码配对（手机系统相机扫码自动配对）+ 设备令牌与权限档（只读/可操作/可批准/可配置）+ 设备管理（命名/改权限/撤销）', '手机端能力：走电脑代理对话、远程监控与控制团队任务（暂停/继续/终止/中途指令/角色单聊）、批准权限申请、回答 AI 提问', '断线不暂停：手机切后台/断网不打断电脑端任务；任务事件落盘，重连后完整回放', '跨设备同步：/api/stream 事件流（rev 变更广播），多设备自动刷新/提示', 'EasyTier 异地组网一键引导（LGPL-3.0：官方下载 + 独立进程调用，见《第三方声明与许可》）', '移动端适配：窄屏抽屉侧栏、工具栏横滑、配对门页面与防火墙提示', '新增内置技能「安全审计（多阶段）」（借鉴 Cloudflare security-audit-skill 方法论：侦察→覆盖排查→候选验证→结构化输出→独立复核→报告）']],
   ['P8.7', '2026-10', ['新增工具调用次数限制（设置 → 工具调用限制）：对话 / 团队任务 / 团队角色单独对话三处独立设置，可选「无限（默认）/ 禁止 / 自定义次数」；角色栏可为单个角色单独设置（角色优先）', '权限不足时 AI 主动申请：弹出「允许一次 / 本任务全部允许 / 拒绝」按钮卡片，不再静默卡住', '团队角色卡片状态标记：✓ 已完成（绿）、! 需授权（棕）、✗ 失败（红）；等待授权时对应角色卡片显示棕色感叹号', '审核/校对判定不通过时自动「返工 → 复审」循环（最多 2 轮）：AI 之间自动对接协作，不再坐等用户转达', '团队角色单独对话：思考过程与工具调用改为可折叠独立框（与对话页一致）；达到次数上限/被禁用时明确提示', '放宽工具轮次上限：默认无限（此前团队每步最多 5 轮、对话 6 轮，导致写长文写到一半停止）']],
   ['P8.6', '2026-10', ['团队会话里的角色单独对话与「协作询问/协作回复」现在会持久化保存，刷新后完整回放（不再只剩记忆）', '对话与团队任务新增「回到底部」浮动按钮：不在底部时自动出现，一键滚到最新内容', '角色单独对话支持拖入图片/文件：聚焦某角色后拖入即发给该角色（文件存入工作区 uploads/ 并附带路径），未聚焦时仍发给团队任务']],
@@ -356,6 +365,46 @@ function setupStateStream() {
     const url = '/api/stream' + (AUTH_TOKEN ? `?token=${encodeURIComponent(AUTH_TOKEN)}` : '')
     tatStream = new EventSource(url)
     tatStream.onmessage = (e) => { try { const ev = JSON.parse(e.data); if (ev.type === 'changed') onRemoteChange(ev) } catch { /* ignore */ } }
+    // ★ Orca 要点②：断线自动重连 + 顶部横幅提示（EventSource 自带重连，这里只做可视化）
+    tatStream.onopen = () => hideReconnectBanner()
+    tatStream.onerror = () => showReconnectBanner()
+  } catch { /* ignore */ }
+}
+/* ★ Orca 要点②：SSE 重连横幅 */
+function showReconnectBanner() {
+  let el = document.getElementById('reconnect-banner')
+  if (!el) {
+    el = document.createElement('div')
+    el.id = 'reconnect-banner'
+    el.textContent = '连接已断开，正在自动重连…'
+    document.body.appendChild(el)
+  }
+  el.classList.add('show')
+}
+function hideReconnectBanner() { const el = document.getElementById('reconnect-banner'); if (el) el.classList.remove('show') }
+/* ★ Orca 要点①：后台系统通知（页面隐藏时提醒任务完成/待授权/待回答）
+ *   优先用浏览器系统通知（需 HTTPS/localhost 且已授权）；不可用时退化为标题闪烁 */
+let _titleTimer = null
+function flashTitle(msg) {
+  try {
+    const orig = document.title
+    let i = 0
+    clearInterval(_titleTimer)
+    _titleTimer = setInterval(() => {
+      document.title = i % 2 ? orig : msg
+      i++
+      if (i > 6) { clearInterval(_titleTimer); document.title = orig }
+    }, 1500)
+    const h = () => { if (!document.hidden) { clearInterval(_titleTimer); document.title = orig; document.removeEventListener('visibilitychange', h) } }
+    document.addEventListener('visibilitychange', h)
+  } catch { /* ignore */ }
+}
+function maybeNotify(title, body) {
+  try {
+    if (localStorage.getItem('oat-notify') !== '1' || !document.hidden) return
+    const text = String(body || '').replace(/\s+/g, ' ').slice(0, 160)
+    try { if ('Notification' in window && Notification.permission === 'granted') new Notification(title, { body: text, tag: 'oat-team' }) } catch { /* ignore */ }
+    flashTitle(`【${title}】${text.slice(0, 40)}`)
   } catch { /* ignore */ }
 }
 function remoteToast(msg) {
@@ -368,8 +417,8 @@ function remoteToast(msg) {
 }
 function onRemoteChange(ev) {
   try {
-    if (ev.key === 'sessions') { refreshSessions().catch(() => {}); if (state.teamLoaded) refreshTeamSessions(state.teamSessionId).catch(() => {}) }
-    else if (ev.key === 'tasks') refreshTasks()
+    if (ev.key === 'sessions') { refreshSessions().catch(() => {}); if (state.teamLoaded) refreshTeamSessions(state.teamSessionId).catch(() => {}); checkActiveRuns(true).catch(() => {}) }
+    else if (ev.key === 'tasks') { refreshTasks(); checkActiveRuns(true).catch(() => {}) }
     else if (ev.key === 'art') refreshArtGallery()
     else if (ev.key === 'stats') refreshStats()
     else if (['settings', 'roles', 'providers', 'devices'].includes(ev.key) && Date.now() - lastLocalWrite > 3000) remoteToast('另一台设备更新了配置，刷新页面后生效')
@@ -630,9 +679,37 @@ async function renderMobileCard() {
  tgl.checked = !!state.settings.lanListen
  // ★ 优先真实网卡（WLAN/以太网），排除虚拟网卡（VirtualBox/VMware/VPN 等）
  const NOISY = /virtualbox|vmware|hyper-v|radmin|loopback|vpn|zerotier|tailscale|hamachi|docker/i
- const ips = (info.ips || []).filter((x) => x.family === 'IPv4')
- const cands = ips.filter((x) => !NOISY.test(x.iface || ''))
- $('mob-ips').textContent = ips.length ? `本机地址：${ips.map((x) => `${x.iface || ''} ${x.address}`.trim()).join('、')}（端口 ${info.port || 3411}）` : '未检测到局域网地址'
+  const ips = (info.ips || []).filter((x) => x.family === 'IPv4')
+  const cands = ips.filter((x) => !NOISY.test(x.iface || ''))
+  $('mob-ips').textContent = ips.length ? `本机地址：${ips.map((x) => `${x.iface || ''} ${x.address}`.trim()).join('、')}（端口 ${info.port || 3411}）` : '未检测到局域网地址'
+  // ★ Orca 要点③：IPv6 地址显示（全局地址可直连；fe80 链路本地需带区域且不便使用，故过滤）
+  const ipv6s = (info.ips || []).filter((x) => x.family === 'IPv6' && !/^fe80/i.test(x.address) && x.address !== '::1').map((x) => x.address.split('%')[0])
+  const ipv6El = $('mob-ipv6'), ipv6Btn = $('btn-mob-copy-ipv6')
+  renderMobileCard._ipv6 = ipv6s[0] ? `http://[${ipv6s[0]}]:${info.port || 3411}` : ''
+  if (ipv6El) ipv6El.textContent = ipv6s.length ? `IPv6：${ipv6s.join('、')}（端口 ${info.port || 3411}，浏览器访问需带方括号）` : 'IPv6：未检测到可用全局地址'
+  if (ipv6Btn) {
+    ipv6Btn.classList.toggle('hidden', !renderMobileCard._ipv6)
+    ipv6Btn.onclick = async () => {
+      const url = renderMobileCard._ipv6
+      if (!url) return
+      try { await navigator.clipboard.writeText(url); ipv6Btn.textContent = '已复制 ✓'; setTimeout(() => { ipv6Btn.textContent = '复制 IPv6 地址' }, 1500) }
+      catch { $('mob-pair-msg').textContent = url }
+    }
+  }
+  // ★ Orca 要点①：后台系统通知开关（浏览器需 HTTPS/localhost 才能授权系统通知；否则用标题闪烁）
+  const ntf = $('set-notify')
+  if (ntf) {
+    ntf.checked = localStorage.getItem('oat-notify') === '1'
+    ntf.onchange = async () => {
+      if (!ntf.checked) { localStorage.setItem('oat-notify', '0'); return }
+      try {
+        if ('Notification' in window) {
+          const p = await Notification.requestPermission()
+          localStorage.setItem('oat-notify', p === 'granted' ? '1' : '1') // 未授权也开启：退回标题闪烁
+        } else localStorage.setItem('oat-notify', '1')
+      } catch { localStorage.setItem('oat-notify', '1') }
+    }
+  }
  $('btn-mob-restart').classList.toggle('hidden', state.settings.lanListen === info.listeningAll)
  tgl.onchange = async () => {
   state.settings.lanListen = tgl.checked
@@ -1210,9 +1287,9 @@ async function sendChat() {
  try {
  const j = JSON.parse(s.slice(5).trim())
           if (j.confirm) appendConfirmCard(box, j.confirm)
-          if (j.permreq) appendPermReqCard(box, { permreq: j.permreq }, 'chat')
+          if (j.permreq) { appendPermReqCard(box, { permreq: j.permreq }, 'chat'); maybeNotify('对话待授权', j.permreq?.tool || '') }
           if (j.notice) appendNotice(box, j.notice)
-          if (j.question) appendQuestionCard(box, j.question, 'chat')
+          if (j.question) { appendQuestionCard(box, j.question, 'chat'); maybeNotify('AI 等待你的回答', j.question?.questions?.[0]?.question || '') }
           if (j.imagereview) appendImageReviewCard(box, j.imagereview)
  if (j.image) setArtCallout({ who: 'AI', ...j.image })
  if (j.reasoning) { ensureTurn(j); const rb = ensureReasoning(); queueReason(rb, j.reasoning); scrollIfNearBottom(box) }
@@ -1351,7 +1428,9 @@ async function refreshTeamSessions(selectId) {
  sel.value = state.teamSessionId
  const cur = state.teamSessions.find((s) =>s.id === state.teamSessionId)
  $('team-session-ws').textContent = cur?.workspace ? ` ${cur.workspace}` : ''
- setEffortVisual('team-effort', cur?.effort || state.settings.reasoningEffort || 'default') // ★ 推理等级滑块跟随团队会话
+  setEffortVisual('team-effort', cur?.effort || state.settings.reasoningEffort || 'default') // ★ 推理等级滑块跟随团队会话
+  // ★ Paperclip：自动续跑设置跟随团队会话
+  if ($('team-auto-continue')) $('team-auto-continue').value = String(cur?.autoContinue || 0)
 }
 // ★ 预算实时显示：本次任务已花费 + 剩余额度（修改预算数字即时预览）
 function renderTeamBudget() {
@@ -1749,11 +1828,11 @@ async function roleChatSend() {
       appendStreamText(target, j.delta); setMsgStatus(target, 'answering'); scrollIfNearBottom($('team-stream'))
      }
      if (j.error) { target.textContent = t('failure') + ': ' + j.error; setMsgStatus(target, 'failed'); finished = true }
-     if (j.done) { setMsgStatus(target, 'done'); finished = true }
+     if (j.done) { setMsgStatus(target, 'done'); finished = true; maybeNotify('角色对话完成', roleLabel(roleId)) }
      // ★ 单角色对话中的工具与协作事件（ask_role 联系队友等）
-     if (j.question) appendQuestionCard(box, j.question, roleId)
+     if (j.question) { appendQuestionCard(box, j.question, roleId); maybeNotify('AI 等待你的回答', j.question?.questions?.[0]?.question || '') }
      if (j.confirm) appendConfirmCard(box, j.confirm)
-     if (j.permreq) appendPermReqCard(box, { permreq: j.permreq }, roleId)
+     if (j.permreq) { appendPermReqCard(box, { permreq: j.permreq }, roleId); maybeNotify('对话待授权', j.permreq?.tool || '') }
      if (j.notice) appendNotice(box, j.notice, roleId)
      if (j.ask) {
       // ★ 协作消息挂在总流上并标记双方，切换任一角色视图都能看到；气泡用发言者角色色
@@ -1820,10 +1899,10 @@ async function runTeam() {
 function handleTeamEvent(ev, run, ref) {
  if (ev.type === 'session') { ref.id = ev.taskId; state.currentTeamTaskId = ev.taskId; state.teamTaskCost = 0; renderTeamBudget(); updatePauseUI(); return }
  if (ev.type === 'confirm') { appendConfirmCard(run.body, ev.confirm); return }
- if (ev.type === 'permreq') { appendPermReqCard(run.body, ev, ev.agent); applyTeamFilter(); return }
+ if (ev.type === 'permreq') { appendPermReqCard(run.body, ev, ev.agent); applyTeamFilter(); maybeNotify('团队任务待授权', `${roleLabel(ev.agent)} 请求授权：${ev.permreq?.tool || ''}`); return }
  if (ev.type === 'notice') { appendNotice(run.body, ev.text || '', ev.agent); applyTeamFilter(); return }
  if (ev.type === 'role_status') { roleSetStatus(ev.agent, ev.status, { sub: ev.sub || '' }); return }
- if (ev.type === 'question') { appendQuestionCard(run.body, ev, ev.agent); return }
+ if (ev.type === 'question') { appendQuestionCard(run.body, ev, ev.agent); maybeNotify('AI 等待你的回答', ev.question?.questions?.[0]?.question || ''); return }
  if (ev.type === 'imagereview') { appendImageReviewCard(run.body, ev); applyTeamFilter(); return }
  if (ev.type === 'ask') {
  const box = document.createElement('div')
@@ -1982,6 +2061,8 @@ function handleTeamEvent(ev, run, ref) {
   }
  if (ev.type === 'done') {
   if (ev.cost != null) { state.teamTaskCost = Number(ev.cost) || 0; renderTeamBudget() }
+  maybeNotify(ev.budgetStopped || ev.aborted ? '团队任务已停止' : '团队任务完成', `费用 ¥${Number(ev.cost || 0).toFixed(4)} · 工具 ${ev.toolCalls || 0} 次`)
+  setTimeout(() => checkActiveRuns(true).catch(() => {}), 3500) // ★ 自动续跑：稍后检测新任务并弹出「接回任务」
   run.status.textContent = ev.budgetStopped || ev.aborted ? t('stopped') : `${t('done')} · ${t('toolCalls')} ${ev.toolCalls || 0}`
   run.foot.textContent = ` ${fmtCost(ev.cost)} · ${t('tokens')} ${fmtNum((ev.usage?.prompt_tokens || 0) + (ev.usage?.completion_tokens || 0))} · ${t('cache')} ${fmtNum(ev.cacheHitTokens)}`
   if (ref.finalBox) setMsgStatus(ref.finalBox, ev.budgetStopped || ev.aborted ? 'failed' : 'done')
@@ -2861,6 +2942,7 @@ async function main() {
  }
  if (!IS_LOCAL_HOST && !AUTH_TOKEN) { showPairGate(); return }
  setupStateStream()
+ checkActiveRuns(true).catch(() => {}) // ★ 启动时检测未完成任务（含自动续跑产生的）
  const tpl = await api('GET', '/api/templates')
  if (tpl.ok) state.templates = tpl.templates
  $('f-template').innerHTML = Object.entries(state.templates).map(([k, v]) => `<option value="${k}">${esc(v.label)}</option>`).join('')
@@ -3090,7 +3172,13 @@ async function main() {
  const v = prompt('Title', cur?.title || '')
  if (v != null) { await api('PUT', `/api/sessions/${state.teamSessionId}`, { title: v }); await refreshTeamSessions(state.teamSessionId); renderTeamSession() }
  }
- $('btn-team-session-export').onclick = () => { if (state.teamSessionId) window.open(`/api/sessions/${state.teamSessionId}/export`, '_blank') }
+  $('btn-team-session-export').onclick = () => { if (state.teamSessionId) window.open(`/api/sessions/${state.teamSessionId}/export`, '_blank') }
+  // ★ Paperclip：自动续跑（0=关；1-5=完成后自动继续的最大轮数）
+  if ($('team-auto-continue')) $('team-auto-continue').onchange = async () => {
+    if (!state.teamSessionId) return
+    await api('PUT', `/api/sessions/${state.teamSessionId}`, { autoContinue: Number($('team-auto-continue').value) || 0 })
+    await refreshTeamSessions(state.teamSessionId)
+  }
  $('btn-team-session-del').onclick = async () => {
   if (!state.teamSessionId) return
   const cur = state.teamSessions.find((s) => s.id === state.teamSessionId)
@@ -3144,7 +3232,22 @@ async function main() {
    renderChatMessages()
   }
  }
- $('set-effort').onchange = async () => { state.settings.reasoningEffort = $('set-effort').value; await api('PUT', '/api/settings', { reasoningEffort: state.settings.reasoningEffort }) }
+  // ★ .oat 常驻项目档案：查看/编辑 与 清空
+  if ($('btn-projmem-view')) $('btn-projmem-view').onclick = async () => {
+    $('projmem-msg').textContent = '…'
+    const r = await api('GET', '/api/project-memory').catch(() => ({ ok: false }))
+    if (!r.ok) { $('projmem-msg').textContent = t('failure'); return }
+    const text = prompt(`项目档案：${r.path}\n（可直接编辑，确定后保存；取消不保存）`, r.text || '')
+    if (text === null) { $('projmem-msg').textContent = ''; return }
+    const w = await api('POST', '/api/project-memory', { text }).catch(() => ({ ok: false }))
+    $('projmem-msg').textContent = w.ok ? t('savedOk') : (w.error || t('failure'))
+  }
+  if ($('btn-projmem-clear')) $('btn-projmem-clear').onclick = async () => {
+    if (!confirm('清空当前工作区的项目档案？（不影响工作区里的任何文件）')) return
+    const r = await api('DELETE', '/api/project-memory').catch(() => ({ ok: false }))
+    $('projmem-msg').textContent = r.ok ? '已清空' : (r.error || t('failure'))
+  }
+  $('set-effort').onchange = async () => { state.settings.reasoningEffort = $('set-effort').value; await api('PUT', '/api/settings', { reasoningEffort: state.settings.reasoningEffort }) }
  $('btn-open-roles').onclick = () =>switchView('teamconfig')
  $('btn-open-roles2').onclick = () =>switchView('teamconfig')
  $('team-budget').oninput = renderTeamBudget

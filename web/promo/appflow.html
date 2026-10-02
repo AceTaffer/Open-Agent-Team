@@ -505,11 +505,11 @@ function drawSettings(t, fontScale, swLight) {
       ['字体大小', Math.round(14 * fontScale) + 'px'],
     ] },
     { t: 'Agent 工作方式 / 权限', x: 500, w: 320, rows: [['新会话默认权限', '修改'], ['推理强度', '低']] },
-    { t: '作者声明', x: 836, w: 268, rows: [['作者', 'Acct'], ['AI 协作', 'deepseek-v4.1-flash'], ['邮箱', '577940959@qq.com']] },
+    { t: '作者声明', x: 836, w: 268, h: 178, rows: [['作者', 'Acct'], ['特别感谢', 'YY程'], ['AI 协作', 'deepseek-v4.1-flash'], ['邮箱', '577940959@qq.com']] },
   ]
   cards.forEach((cd) => {
     const x = AW.x + cd.x, y = AW.y + 120, w = cd.w
-    rr(x, y, w, 150, 10, c.card, c.border)
+    rr(x, y, w, cd.h || 150, 10, c.card, c.border)
     tx(cd.t, x + 16, y + 24, { size: 13, bold: true })
     cd.rows.forEach((r, i) => {
       const ry = y + 52 + i * 30
@@ -596,6 +596,7 @@ function drawCredits(t) {
   tx('本机 AI 多智能体工作站', W / 2, 258, { size: 17, color: COL.dim, align: 'center', alpha: ease(seg(t, 170, 171.5)) })
   const rows = [
     ['作者', 'Acct'],
+    ['特别感谢', 'YY程'],
     ['AI 协作', 'deepseek-v4.1-flash'],
     ['联系邮箱', '577940959@qq.com'],
     ['授权', '开源软件 · 保留作者声明'],
