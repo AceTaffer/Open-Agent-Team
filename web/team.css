@@ -448,6 +448,16 @@ body[data-spacing="relaxed"] .provider-cards, body[data-spacing="relaxed"] .sett
 .cl-block ul { margin: 4px 0 0; padding-left: 18px; }
 .cl-block li { font-size: 12px; color: var(--text-dim); }
 .team-budget #team-budget-left.over { color: #e05656; }
+/* ★ 角色卡片状态标记：done=绿勾 / needs=棕色感叹号 / failed=红叉 */
+.role-chip[data-st="needs"] { border-color: #b07a3c; }
+.role-chip[data-st="needs"] .rc-status { color: #d99a4e; }
+.role-chip[data-st="done"] .rc-status { color: #43d17c; }
+.role-chip[data-st="failed"] .rc-status { color: #e05656; }
+.role-col[data-st="needs"] .rc-head-status { color: #d99a4e; }
+.role-col[data-st="done"] .rc-head-status { color: #43d17c; }
+.role-col[data-st="failed"] .rc-head-status { color: #e05656; }
+/* ★ 角色栏快捷设置下拉 */
+.mini-sel { background: var(--bg-card); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; font-size: 12px; max-width: 118px; }
 .team-budget input {
   background: var(--bg-card); color: var(--text); border: 1px solid var(--border);
   border-radius: 8px; padding: 4px 8px; font-size: 12px;

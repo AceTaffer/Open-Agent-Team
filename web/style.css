@@ -255,6 +255,17 @@ body.hide-tools .tool-box, body.hide-tools .tool-note { display: none !important
 .msg-status[data-st="done"] { color: #43d17c; }
 .msg-status[data-st="failed"] { color: #e05656; }
 @keyframes oat-blink { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
+/* ★ 权限申请卡片（棕色警示）与系统提示条 */
+.permreq-box { border-color: #b07a3c; background: #2a2216; }
+body.theme-light .permreq-box { background: #fdf6e2; }
+.notice-box {
+  background: #2b2416; border: 1px solid var(--warn); border-radius: 10px;
+  padding: 8px 12px; font-size: 12px; margin: 4px 0; white-space: pre-wrap;
+}
+body.theme-light .notice-box { background: #fdf3df; }
+/* ★ 可折叠的工具调用框（角色对话） */
+details.tool-note > summary { cursor: pointer; font-weight: 600; font-size: 12px; }
+details.tool-note > div { white-space: pre-wrap; margin-top: 4px; color: var(--text-dim); }
 body.theme-light .ask-box { background: #e8f4fa; border-color: #7fb3cf; }
 body.theme-light .ask-box.done { background: #e9f6ee; border-color: #86bfa0; }
 body.theme-light .question-box { background: var(--info-bg); }

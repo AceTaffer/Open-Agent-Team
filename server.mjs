@@ -136,7 +136,7 @@ let roles = []          // ★ 角色为数组，可增删改（Open Agent Team�
 let plugins = []        // HTTP API 插件
 let skills = []         // ★ Agent 技能预设 [{id,name,description,prompt}]
 let sessions = []       // ★ 会话：每个 API 下可多个独立会话（含消息、工作区、模型）
-let settings = { developerMode: false, exeEnabled: false, exeAllowlist: [], githubLogin: '', workspaces: [], activeWorkspace: '', language: '', taskBudgetCost: 0, chatTools: true, defaultPermission: 'modify', reasoningEffort: 'low', artProvider: '', artModel: '', videoProvider: '', videoModel: '', updateRepo: 'AceTaffer/Open-Agent-Team', updateBranch: 'main', ui: { theme: 'dark', accent: '#2f9e8f', fontSize: 13, spacing: 'normal', teamInputPos: 'bottom' } }
+let settings = { developerMode: false, exeEnabled: false, exeAllowlist: [], githubLogin: '', workspaces: [], activeWorkspace: '', language: '', taskBudgetCost: 0, chatTools: true, defaultPermission: 'modify', reasoningEffort: 'low', artProvider: '', artModel: '', videoProvider: '', videoModel: '', updateRepo: 'AceTaffer/Open-Agent-Team', updateBranch: 'main', toolLimits: { chat: 0, team: 0, roleChat: 0 }, ui: { theme: 'dark', accent: '#2f9e8f', fontSize: 13, spacing: 'normal', teamInputPos: 'bottom' } }
 
 // ★ 技能市场：内置技能（可一键导入到技能库）
 const BUILTIN_SKILLS = [
@@ -832,6 +832,21 @@ function permissionCheck(perm, cat) {
   return { allow: true, confirm: true }
 }
 function toolDetailOf(call) { return call.path || call.command || call.query || call.plugin || call.url || call.question || call.role || '' }
+// ★ 工具调用次数限制：0=无限（默认）、-1=禁止、N=最多 N 次；角色可单独覆盖
+function effectiveToolLimit(role, ctxKey) {
+  const rv = role && role.toolLimit !== '' && role.toolLimit != null ? Number(role.toolLimit) : null
+  if (rv != null && Number.isFinite(rv)) return Math.max(-1, Math.trunc(rv))
+  const g = settings.toolLimits ? settings.toolLimits[ctxKey] : 0
+  return Number.isFinite(Number(g)) ? Number(g) : 0
+}
+// ★ 权限申请：工具被权限拦截时向用户弹卡片申请（允许一次 / 本任务全部允许 / 拒绝）
+const pendingPermReqs = new Map()
+function waitPermReq(id, timeoutMs = 10 * 60 * 1000) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => { pendingPermReqs.delete(id); resolve('deny') }, timeoutMs)
+    pendingPermReqs.set(id, (d) => { clearTimeout(timer); pendingPermReqs.delete(id); resolve(d) })
+  })
+}
 
 // ★ 角色 → 可用的对话 API/模型（自动跳过出图/实时等非对话模型，大模型优先兜底）
 function resolveRoleTarget(role) {
@@ -932,10 +947,19 @@ async function runToolGuarded(call, ctx = {}) {
     ctx.onAskDone?.({ ...info, answer: String(ans).slice(0, 1200) })
     return ans
   }
-  const perm = PERMISSIONS.includes(ctx.permission) ? ctx.permission : 'modify'
+  const perm = ctx.autoState?.permGranted ? 'full' : (PERMISSIONS.includes(ctx.permission) ? ctx.permission : 'modify')
   const cat = toolCategory(call)
   const chk = permissionCheck(perm, cat)
-  if (!chk.allow) return `⛔ ${chk.reason}`
+  if (!chk.allow) {
+    // ★ 主动申请权限：弹卡片让用户点选（允许一次 / 本任务全部允许 / 拒绝）
+    if (typeof ctx.onPermRequest === 'function') {
+      const decision = await ctx.onPermRequest({ tool: call.tool, category: cat, reason: chk.reason })
+      if (decision === 'deny') return `⛔ ${chk.reason}（用户拒绝了本次授权；请不要反复重试同一操作，改为向用户说明情况）`
+      if (decision === 'all') { ctx.autoState.permGranted = true }
+      return await runToolGuarded(call, { ...ctx, permission: 'full', onPermRequest: undefined, autoState: ctx.autoState || {} })
+    }
+    return `⛔ ${chk.reason}`
+  }
   const autoApprove = ctx.autoState?.approvedAll || ctx.session?.autoApprove
   if (chk.confirm && !autoApprove && typeof ctx.onConfirm === 'function') {
     const id = crypto.randomUUID()
@@ -1556,9 +1580,9 @@ async function runTeam(task, opts = {}) {
     } catch { /* ignore */ }
   }
 
-  // 2. 依次执行角色（所有角色都允许工具，最多 5 轮）
+  // 2. 依次执行角色（工具轮次由「工具调用限制」设置决定：默认无限）
   const results = []
-  let reworkAdded = false
+  let reworkCount = 0
   const STEP_FAIL_RE = /不通过|验证失败|未找到|不存在|MISSING|无法运行|无法加载/i
   for (let i = 0; i < plan.steps.length; i++) {
     if (budgetStopped || run.abort) break
@@ -1574,9 +1598,14 @@ async function runTeam(task, opts = {}) {
       { role: 'system', content: roleSystemPrompt(agent.role) },
       { role: 'user', content: `总任务：${task}\n（当前工作区目录：${root}）\n\n本步骤（${step.title}）：${step.instruction}\n\n此前产出：\n${contextText || '（无）'}` },
     ]
+    // ★ 工具调用限制：角色单独设置优先，否则用全局「团队任务」限制；0=无限
+    const roleLimit = effectiveToolLimit(agent.role, 'team')
+    const stepMaxTurns = roleLimit === -1 ? 1 : roleLimit > 0 ? Math.min(roleLimit + 3, 40) : 40
+    let stepToolCalls = 0
+    let limitHit = ''
     let stepText = '', turn = 0, emptyRetried = false
     try {
-      while (turn < 5) {
+      while (turn < stepMaxTurns) {
         if (budgetStopped || run.abort) break
         if (!(await gate(roleId))) break
         turn++
@@ -1608,8 +1637,23 @@ async function runTeam(task, opts = {}) {
         if (!calls.length) break
         messages.push({ role: 'assistant', content: turnText })
         const toolResults = []
+        // ★ 工具次数限制：禁止 / 达到上限时停止执行，并明确告知模型与用户
+        if (roleLimit === -1) {
+          messages.push({ role: 'user', content: '工具调用已被用户设置为「禁止」。请直接用已有信息回答，不要再输出工具块。' })
+          send({ type: 'notice', agent: roleId, text: `${agent.role.label} 的工具调用被设置为「禁止」，本轮仅文字输出。` })
+          limitHit = 'off'
+          break
+        }
+        if (roleLimit > 0 && stepToolCalls >= roleLimit) {
+          messages.push({ role: 'user', content: `工具调用次数已达用户设置的上限（${roleLimit} 次）。请基于已有结果给出当前阶段结论，不要再调用工具。` })
+          send({ type: 'notice', agent: roleId, text: `${agent.role.label} 的工具调用已达上限（${roleLimit} 次）：已完成部分已保留，可提高上限或发送中途指令让它继续。` })
+          limitHit = 'limit'
+          break
+        }
         for (const call of calls) {
           if (!(await gate(roleId))) break
+          if (roleLimit > 0 && stepToolCalls >= roleLimit) break
+          stepToolCalls++
           // ★ 角色独立权限：该角色单独设置了权限则覆盖会话权限
           const rolePerm = PERMISSIONS.includes(agent.role.permission) ? agent.role.permission : permission
           const result = await runToolGuarded(call, {
@@ -1621,6 +1665,15 @@ async function runTeam(task, opts = {}) {
             onQuestion: (q) => send({ type: 'question', ...q }),
             onAsk: (info) => { recordAsk(info); send({ type: 'ask', ...info }) },
             onAskDone: (info) => { recordAskDone(info); send({ type: 'ask_done', ...info }) },
+            // ★ 权限不足时主动向用户申请（角色卡片会显示棕色感叹号）
+            onPermRequest: async (info) => {
+              const id = crypto.randomUUID()
+              send({ type: 'permreq', agent: roleId, permreq: { id, ...info } })
+              send({ type: 'role_status', agent: roleId, status: 'needs', sub: `等待授权：${call.tool}` })
+              const d = await waitPermReq(id)
+              send({ type: 'role_status', agent: roleId, status: 'acting', sub: '' })
+              return d
+            },
           })
           taskToolCalls++
           send({ type: 'tool', agent: roleId, call: call.tool, detail: call.path || call.command || call.query || call.plugin || call.url || call.path || '', result: result.slice(0, 1500) })
@@ -1628,15 +1681,18 @@ async function runTeam(task, opts = {}) {
         }
         messages.push({ role: 'user', content: toolResults.join('\n\n') + '\n\n请根据工具结果继续（如已完成请给出最终答复，不要再调用工具）。' })
       }
+      if (limitHit) stepText += `\n\n（已达到工具调用限制：${limitHit === 'off' ? '已禁用工具调用' : `上限 ${roleLimit} 次`}。可提高设置中的上限，或发送中途指令让该角色继续。）`
       results.push({ agent: roleId, title: step.title, result: stepText })
       send({ type: 'step_done', index: i, agent: roleId, title: step.title, result: stepText })
-      // ★ 测试判定不通过：自动追加一轮程序返工（只追加一次，避免无限循环）
-      if (roleId === 'tester' && !reworkAdded && STEP_FAIL_RE.test(stepText) && plan.steps.length < 6) {
-        const fixRole = (enabledOthers.find((r) => r.id === 'coder' || r.id === 'programmer') || enabledOthers[0])?.id
-        if (fixRole) {
-          reworkAdded = true
-          plan.steps.push({ agent: fixRole, title: '根据测试反馈修复', instruction: `测试环节判定未通过。测试报告摘要：\n${stepText.slice(0, 2500)}\n\n请修复报告中的问题：务必用 write_file 真实写入产物文件（大文件可拆成多次写入），写完用 list_files 核对文件确实存在，再简述修复点。` })
-          send({ type: 'delta', agent: 'leader', text: '\n\n（检测到测试未通过：已自动安排程序返工修复…）' })
+      // ★ 审核/测试判定不通过：自动安排「返工 → 复审」循环（最多 2 轮，避免无限循环）
+      const isReviewer = roleId === 'tester' || roleId === 'editor' || /测试|校对|审核|质检/.test(agent.role.label || '')
+      if (isReviewer && reworkCount < 2 && STEP_FAIL_RE.test(stepText) && plan.steps.length < 12) {
+        const producer = [...plan.steps.slice(0, i + 1)].reverse().find((s) => s.agent !== roleId)?.agent
+        if (producer) {
+          reworkCount++
+          plan.steps.push({ agent: producer, title: `根据${agent.role.label}反馈返工（第${reworkCount}轮）`, instruction: `上一环节（${agent.role.label}）提出了以下问题/返工要求：\n${stepText.slice(0, 2500)}\n\n请逐项修复/补写（务必真实写入文件，写完用 list_files 核对），完成后简要列出修改点；如对反馈有异议，先用 ask_role 与${agent.role.label}确认，不要等待用户转达。` })
+          plan.steps.push({ agent: roleId, title: `复审返工结果（第${reworkCount}轮）`, instruction: `对上一轮返工结果逐项复审并给出结论：通过 / 仍需修改（逐条列出具体问题）。若仍有问题请在结论中明确写出「不通过」与问题清单，系统会再安排一轮返工；无问题则给出明确「通过」结论。` })
+          send({ type: 'delta', agent: 'leader', text: `\n\n（检测到${agent.role.label}提出问题：已自动安排返工与复审，第 ${reworkCount} 轮）` })
         }
       }
     } catch (e) {
@@ -1670,7 +1726,7 @@ async function runTeam(task, opts = {}) {
         { role: 'user', content: `总任务：${task}\n\n${steerText ? `用户中途指令记录（需重新评估）：\n${steerText}\n\n` : ''}团队产出：\n${ctxText}` },
       ]
       let turn = 0
-      while (turn < 3) {
+      while (turn < 8) {
         if (budgetStopped || run.abort) break
         if (!(await gate('*'))) break
         turn++
@@ -1692,6 +1748,14 @@ async function runTeam(task, opts = {}) {
             onQuestion: (q) => send({ type: 'question', ...q }),
             onAsk: (info) => { recordAsk(info); send({ type: 'ask', ...info }) },
             onAskDone: (info) => { recordAskDone(info); send({ type: 'ask_done', ...info }) },
+            onPermRequest: async (info) => {
+              const id = crypto.randomUUID()
+              send({ type: 'permreq', agent: 'leader', permreq: { id, ...info } })
+              send({ type: 'role_status', agent: 'leader', status: 'needs', sub: `等待授权：${call.tool}` })
+              const d = await waitPermReq(id)
+              send({ type: 'role_status', agent: 'leader', status: 'acting', sub: '' })
+              return d
+            },
           })
           taskToolCalls++
           send({ type: 'tool', agent: 'leader', call: call.tool, detail: call.path || call.command || call.query || call.plugin || call.url || '', result: result.slice(0, 1500) })
@@ -1809,6 +1873,15 @@ async function handleApi(req, res, url) {
   if (pathname === '/api/settings' && method === 'GET') return sendJson(res, 200, { ok: true, settings })
   if (pathname === '/api/settings' && method === 'PUT') {
     const b = await readBody(req)
+    // ★ 工具调用限制：0=无限（默认）、-1=禁止、N=最多 N 次
+    if (b.toolLimits && typeof b.toolLimits === 'object') {
+      const tl = {}
+      for (const k of ['chat', 'team', 'roleChat']) {
+        const v = Number(b.toolLimits[k])
+        tl[k] = Number.isFinite(v) ? Math.max(-1, Math.trunc(v)) : 0
+      }
+      b.toolLimits = { ...(settings.toolLimits || {}), ...tl }
+    }
     settings = { ...settings, ...b }
     await saveSettings()
     return sendJson(res, 200, { ok: true, settings })
@@ -1941,7 +2014,7 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
   if (pathname === '/api/roles' && method === 'GET') return sendJson(res, 200, { ok: true, roles })
   if (pathname === '/api/roles' && method === 'PUT') {
     const b = await readBody(req)
-    if (Array.isArray(b)) roles = b.map((r) => ({ ...r, id: r.id || crypto.randomUUID(), label: r.label || '未命名角色', color: r.color || '#888', enabled: r.enabled !== false, skills: r.skills || [], permission: (r.permission === '' || PERMISSIONS.includes(r.permission)) ? (r.permission || '') : '' }))
+    if (Array.isArray(b)) roles = b.map((r) => ({ ...r, id: r.id || crypto.randomUUID(), label: r.label || '未命名角色', color: r.color || '#888', enabled: r.enabled !== false, skills: r.skills || [], permission: (r.permission === '' || PERMISSIONS.includes(r.permission)) ? (r.permission || '') : '', toolLimit: (r.toolLimit === '' || r.toolLimit == null) ? '' : (Number.isFinite(Number(r.toolLimit)) ? Math.max(-1, Math.trunc(Number(r.toolLimit))) : '') }))
     else if (b && typeof b === 'object') roles = DEFAULT_ROLES.map((d) => ({ ...d, ...(b[d.id] || {}) }))
     rebuildRoleMeta(); await saveRoles()
     return sendJson(res, 200, { ok: true, roles: ROLE_META })
@@ -2104,9 +2177,12 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
     const chatRoot = session?.workspace && existsSync(session.workspace) ? session.workspace : getActiveRoot()
     if (toolsEnabled && !history.some((m) => m.role === 'system')) history.unshift({ role: 'system', content: chatSystemPrompt(chatRoot) })
     try {
-      const maxTurns = toolsEnabled ? 6 : 2 // ★ 至少 2 轮：推理模型首轮可能只思考没正文，需要追问一次
+      // ★ 工具调用次数限制（设置页可调）：0=无限（默认）、-1=禁止、N=最多 N 次
+      const chatLimit = effectiveToolLimit(null, 'chat')
+      const maxTurns = !toolsEnabled ? 2 : chatLimit === -1 ? 2 : chatLimit > 0 ? Math.min(chatLimit + 2, 40) : 40
       const autoState = { approvedAll: false } // ★ 本请求内「全部允许」状态
       let emptyRetried = false
+      let chatToolCalls = 0
       for (let turn = 0; turn < maxTurns; turn++) {
         let usage = null, cost = null, turnReasoning = ''
         const tIdx = turn
@@ -2146,7 +2222,20 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
         if (!calls.length) break
         history.push({ role: 'assistant', content: text })
         const toolResults = []
+        // ★ 工具次数限制：禁止 / 达到上限时不再执行，明确告知模型与用户
+        if (chatLimit === -1) {
+          history.push({ role: 'user', content: '工具调用已被用户设置为「禁止」。请直接用已有信息回答，不要再输出工具块。' })
+          emit({ notice: '工具调用已被用户设置为「禁止」，本轮仅文字回答。', turn: tIdx })
+          break
+        }
+        if (chatLimit > 0 && chatToolCalls >= chatLimit) {
+          history.push({ role: 'user', content: `工具调用次数已达用户设置的上限（${chatLimit} 次）。请基于已有结果直接给出最终答复，不要再调用工具。` })
+          emit({ notice: `工具调用已达上限（${chatLimit} 次），已停止继续调用；可提高设置中的上限或发送新消息继续。`, turn: tIdx })
+          break
+        }
         for (const call of calls) {
+          if (chatLimit > 0 && chatToolCalls >= chatLimit) break
+          chatToolCalls++
           const result = await runToolGuarded(call, {
             root: chatRoot,
             permission: session?.permission || body.permission || settings.defaultPermission || 'modify',
@@ -2155,6 +2244,7 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
             onImage: (info) => emit({ image: info, turn: tIdx }),
             onImageReview: (r) => emit({ imagereview: r, turn: tIdx }),
             onQuestion: (q) => emit({ question: q, turn: tIdx }),
+            onPermRequest: (info) => { const id = crypto.randomUUID(); emit({ permreq: { id, agent: 'chat', ...info }, turn: tIdx }); return waitPermReq(id) },
           })
           const detail = call.path || call.command || call.query || call.plugin || call.url || ''
           emit({ tool: call.tool, detail, result: result.slice(0, 3000), turn: tIdx })
@@ -2170,6 +2260,14 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
     } catch (e) { emit({ error: e.message }) }
     res.end()
     return
+  }
+  // ★ 权限申请回执（允许一次 / 本任务全部允许 / 拒绝）
+  if (pathname === '/api/permreq' && method === 'POST') {
+    const b = await readBody(req)
+    const fn = pendingPermReqs.get(b.id)
+    if (!fn) return sendJson(res, 200, { ok: false, error: '权限申请已过期或已完成' })
+    fn(['once', 'all', 'deny'].includes(b.decision) ? b.decision : 'deny')
+    return sendJson(res, 200, { ok: true })
   }
   // ★ 步骤确认回执
   if (pathname === '/api/confirm' && method === 'POST') {
@@ -2405,8 +2503,12 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
       ]
       // ★ 权限：优先用该角色自己的权限设置，未设置则跟随全局默认
       const rolePerm = PERMISSIONS.includes(role.permission) ? role.permission : (settings.defaultPermission || 'modify')
+      // ★ 工具调用次数限制：角色单独设置优先，否则用全局「单个角色对话」限制
+      const roleLimit = effectiveToolLimit(role, 'roleChat')
+      const roleMaxTurns = roleLimit === -1 ? 2 : roleLimit > 0 ? Math.min(roleLimit + 3, 40) : 40
+      let roleToolCalls = 0
       let lastText = ''
-      for (let turn = 0; turn < 8; turn++) {
+      for (let turn = 0; turn < roleMaxTurns; turn++) {
         const text = await chatComplete(target.provider, target.model, messages, {
           stream: true, temperature: 0.5,
           onDelta: (d) => emit({ delta: d, turn }),
@@ -2426,7 +2528,20 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
         if (!calls.length) break
         messages.push({ role: 'assistant', content: text })
         const outs = []
+        // ★ 工具次数限制：禁止 / 达到上限时停止执行并明确说明
+        if (roleLimit === -1) {
+          messages.push({ role: 'user', content: '工具调用已被用户设置为「禁止」。请直接用已有信息回答，不要再输出工具块。' })
+          emit({ notice: '工具调用已被用户设置为「禁止」，本轮仅文字回答。' })
+          break
+        }
+        if (roleLimit > 0 && roleToolCalls >= roleLimit) {
+          messages.push({ role: 'user', content: `工具调用次数已达用户设置的上限（${roleLimit} 次）。请基于已有结果直接给出最终答复，不要再调用工具。` })
+          emit({ notice: `工具调用已达上限（${roleLimit} 次），已停止继续调用；可在角色设置中调整上限。` })
+          break
+        }
         for (const call of calls) {
+          if (roleLimit > 0 && roleToolCalls >= roleLimit) break
+          roleToolCalls++
           const result = await runToolGuarded(call, {
             root, permission: rolePerm, session: null, autoState, agentId: role.id, task: '',
             reportUsage: (a, p, m, u) => { const cost = calcCost(getPrice(p, m), u); statsAdd({ role: a, model: m, usage: u, cost: cost || 0 }) },
@@ -2435,6 +2550,7 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
             onQuestion: (q) => emit({ question: q }),
             onAsk: (info) => { rec({ kind: 'team-ask', from: info.from, to: info.to, question: info.question }); emit({ ask: info }) },
             onAskDone: (info) => { rec({ kind: 'team-ask-done', from: info.from, to: info.to, answer: String(info.answer || '').slice(0, 2000) }); emit({ ask_done: info }) },
+            onPermRequest: (info) => { const id = crypto.randomUUID(); emit({ permreq: { id, agent: role.id, ...info } }); return waitPermReq(id) },
           })
           emit({ tool: call.tool, detail: call.path || call.command || call.query || call.plugin || call.url || '', result: result.slice(0, 3000) })
           outs.push(`【工具结果】${call.tool} ${call.path || call.command || call.query || call.plugin || call.url || ''}\n${result}`)

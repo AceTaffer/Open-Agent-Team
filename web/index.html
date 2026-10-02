@@ -5,8 +5,8 @@
  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
  <title>Open Agent Team</title>
  <link rel="icon" href="/oat.png" />
- <link rel="stylesheet" href="/style.css?v=1.0.6" />
- <link rel="stylesheet" href="/team.css?v=1.0.6" />
+ <link rel="stylesheet" href="/style.css?v=1.0.7" />
+ <link rel="stylesheet" href="/team.css?v=1.0.7" />
 </head>
 <body>
  <!-- ═══ 顶栏 ═══ -->
@@ -158,11 +158,13 @@
   <div class="empty-tip" data-i18n="teamEmpty">队长先规划，再派给各角色执行；可调用工作区工具、联网搜索、插件。</div>
   </div>
   <button id="btn-team-bottom" class="to-bottom hidden" data-i18n="toBottom">回到底部</button>
- <div id="team-role-bar" class="team-role-bar hidden">
- <span id="team-role-bar-name" class="dim small"></span>
- <input id="team-role-text" placeholder="与该角色直接对话（任务进行中将作为中途指令发送）…" />
- <button id="btn-role-chat-send" class="btn primary" data-i18n="send">发送</button>
- </div>
+  <div id="team-role-bar" class="team-role-bar hidden">
+  <span id="team-role-bar-name" class="dim small"></span>
+  <select id="role-perm-quick" class="mini-sel" title="该角色的工具权限"></select>
+  <select id="role-limit-quick" class="mini-sel" title="该角色的工具调用次数"></select>
+  <input id="team-role-text" placeholder="与该角色直接对话（任务进行中将作为中途指令发送）…" />
+  <button id="btn-role-chat-send" class="btn primary" data-i18n="send">发送</button>
+  </div>
  <div id="team-cost" class="team-cost hidden"></div>
  </div>
  <div class="splitter" id="split-team" title="拖动调整宽度"></div>
@@ -529,6 +531,19 @@
   <p class="dim small" data-i18n="effortDesc">对 DeepSeek V4 系列等推理模型生效：思考过长会耗尽输出预算，导致「只思考不回答」并大量消耗 token，推荐「低」。</p>
   </div>
   <div class="set-card">
+  <h3 data-i18n="toolLimitTitle">工具调用限制</h3>
+  <label class="set-row"><span data-i18n="tlChat">对话</span>
+  <select id="set-limit-chat" class="tl-sel"></select><input type="number" id="set-limit-chat-n" min="1" step="1" style="width:90px" class="hidden" />
+  </label>
+  <label class="set-row"><span data-i18n="tlTeam">团队任务 AI</span>
+  <select id="set-limit-team" class="tl-sel"></select><input type="number" id="set-limit-team-n" min="1" step="1" style="width:90px" class="hidden" />
+  </label>
+  <label class="set-row"><span data-i18n="tlRoleChat">团队角色单独对话</span>
+  <select id="set-limit-rolechat" class="tl-sel"></select><input type="number" id="set-limit-rolechat-n" min="1" step="1" style="width:90px" class="hidden" />
+  </label>
+  <p class="dim small" data-i18n="toolLimitDesc">控制每个请求内 AI 可调用工具的次数量：默认无限；达到上限时会自动停止并提示（可在角色栏单独为该角色设置，角色设置优先）。</p>
+  </div>
+  <div class="set-card">
   <h3 data-i18n="cleanupTitle">数据清理</h3>
   <p class="dim small" data-i18n="cleanupDesc">清理残留数据：已删除会话遗留的任务记录、孤儿任务文件、从未产生消息的空会话，以及已删除角色的对话记忆。不会删除工作区里的文件。</p>
   <div class="gh-row">
@@ -783,6 +798,6 @@
  </div>
  </div>
 
- <script src="/app.js?v=1.0.6"></script>
+ <script src="/app.js?v=1.0.7"></script>
 </body>
 </html>

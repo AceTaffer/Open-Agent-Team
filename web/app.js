@@ -80,7 +80,11 @@ const I18N = {
  reviewTitle: '出图审核', keepImg: '保留', reviewHint: '这张图是否保留？（可修改提示词后重画）', regenDone: '重画完成',
  presetTitle: '团队预设：', applyPreset: '应用预设（导入角色+技能）', presetApplied: '预设已应用（已保留各角色的 API/模型选择）', presetConfirm: '应用预设将覆盖当前角色配置（同 id 角色的 API/模型选择会保留），确定继续？',
  presetCustomPrefix: '自定义：', presetCustomGroup: '自定义预设', presetNameAsk: '给这个自定义预设起个名字：', presetCustomDefault: '我的团队', presetSaved: '已保存为自定义预设', presetDeleteConfirm: '删除该自定义预设？', presetDeleted: '自定义预设已删除', presetCurrent: '（当前角色配置）', saveAsPreset: '保存为自定义预设', delPreset: '删除该预设', teamPresetPick: '团队预设（可选，选中后自动带出角色）',
- stAnswering: '回答中', noReply: '没有收到回复', toBottom: '回到底部',
+ stAnswering: '回答中', noReply: '没有收到回复', toBottom: '回到底部', stNeeds: '需授权',
+ toolLimitTitle: '工具调用限制', tlChat: '对话', tlTeam: '团队任务 AI', tlRoleChat: '团队角色单独对话', tlUnlimited: '无限（默认）', tlOff: '禁止调用', tlCustom: '自定义次数',
+ toolLimitDesc: '控制每个请求内 AI 可调用工具的次数量：默认无限；达到上限时会自动停止并提示（可在角色栏单独为该角色设置，角色设置优先）。',
+ permTitle: '权限申请', permOnce: '允许一次', permAll: '本任务全部允许', permDeny: '拒绝', permGranted: '已授权', permDenied: '已拒绝',
+ limitFollow: '跟随全局', limitCustomAsk: '输入最大工具调用次数（1-999）：',
  answerTitle: '队长向你确认需求', answerTitleSuffix: '向你确认需求', answerSubmit: '提交回答', skip: '跳过', optionOr: '也可自行填写（填写后将优先采用你写的内容）',
  uiSpacing: '界面间距', spCompact: '紧凑', spNormal: '标准', spRelaxed: '宽松', teamInputPos: '团队输入框位置', posTop: '上方', posBottom: '下方',
  roleChatAsk: '与该角色直接对话（任务进行中将作为中途指令发送）…', detach: '弹出', detachTitle: '弹出为独立窗口',
@@ -176,7 +180,11 @@ const I18N = {
  reviewTitle: 'Image review', keepImg: 'Keep', reviewHint: 'Keep this image? You can edit the prompt and regenerate.', regenDone: 'Regenerated',
  presetTitle: 'Team presets:', applyPreset: 'Apply preset (roles + skills)', presetApplied: 'Preset applied (API/model choices kept)', presetConfirm: 'Applying a preset overwrites current roles (API/model per role id is kept). Continue?',
  presetCustomPrefix: 'Custom: ', presetCustomGroup: 'Custom presets', presetNameAsk: 'Name this custom preset:', presetCustomDefault: 'My team', presetSaved: 'Saved as custom preset', presetDeleteConfirm: 'Delete this custom preset?', presetDeleted: 'Custom preset deleted', presetCurrent: '(current roles)', saveAsPreset: 'Save as custom preset', delPreset: 'Delete preset', teamPresetPick: 'Team preset (optional; brings in its roles)',
- stAnswering: 'Replying', noReply: 'no reply received', toBottom: 'To bottom',
+ stAnswering: 'Replying', noReply: 'no reply received', toBottom: 'To bottom', stNeeds: 'Needs help',
+ toolLimitTitle: 'Tool call limits', tlChat: 'Chat', tlTeam: 'Team tasks', tlRoleChat: 'Role chat', tlUnlimited: 'Unlimited (default)', tlOff: 'Disabled', tlCustom: 'Custom',
+ toolLimitDesc: 'Max tool calls per request. Default unlimited; the AI stops with a notice when the cap is reached. Per-role limits (role bar) take priority.',
+ permTitle: 'Permission request', permOnce: 'Allow once', permAll: 'Allow all', permDeny: 'Deny', permGranted: 'Granted', permDenied: 'Denied',
+ limitFollow: 'Follow global', limitCustomAsk: 'Max tool calls (1-999):',
     answerTitle: 'The leader asks for your confirmation', answerSubmit: 'Submit', skip: 'Skip', optionOr: 'or type your own (yours takes priority)',
     answerTitleSuffix: 'asks for confirmation', uiSpacing: 'UI spacing', spCompact: 'Compact', spNormal: 'Normal', spRelaxed: 'Relaxed', teamInputPos: 'Team input position', posTop: 'Top', posBottom: 'Bottom',
     roleChatAsk: 'Chat with this role directly (sent as a mid-run instruction during tasks)…', detach: 'Detach', detachTitle: 'Open in a separate window',
@@ -270,8 +278,9 @@ const TEAM_PRESETS = {
 }
 
 /* 版本迭代记录（设置页展示） */
-const APP_VERSION = '1.0.6'
+const APP_VERSION = '1.0.7'
 const CHANGELOG = [
+  ['P8.7', '2026-10', ['新增工具调用次数限制（设置 → 工具调用限制）：对话 / 团队任务 / 团队角色单独对话三处独立设置，可选「无限（默认）/ 禁止 / 自定义次数」；角色栏可为单个角色单独设置（角色优先）', '权限不足时 AI 主动申请：弹出「允许一次 / 本任务全部允许 / 拒绝」按钮卡片，不再静默卡住', '团队角色卡片状态标记：✓ 已完成（绿）、! 需授权（棕）、✗ 失败（红）；等待授权时对应角色卡片显示棕色感叹号', '审核/校对判定不通过时自动「返工 → 复审」循环（最多 2 轮）：AI 之间自动对接协作，不再坐等用户转达', '团队角色单独对话：思考过程与工具调用改为可折叠独立框（与对话页一致）；达到次数上限/被禁用时明确提示', '放宽工具轮次上限：默认无限（此前团队每步最多 5 轮、对话 6 轮，导致写长文写到一半停止）']],
   ['P8.6', '2026-10', ['团队会话里的角色单独对话与「协作询问/协作回复」现在会持久化保存，刷新后完整回放（不再只剩记忆）', '对话与团队任务新增「回到底部」浮动按钮：不在底部时自动出现，一键滚到最新内容', '角色单独对话支持拖入图片/文件：聚焦某角色后拖入即发给该角色（文件存入工作区 uploads/ 并附带路径），未聚焦时仍发给团队任务']],
   ['P8.5', '2026-10', ['修复工具执行可靠性：对话与单角色对话新增「工具块 JSON 解析失败自动重发」（此前失败块被静默丢弃，AI 会误报「读取结果未回传」）', '工具协议补充运行环境：Windows 下 run_command 用 cmd（dir/type/findstr），禁止 cat/ls 等 Linux 命令；误用时直接返回替代方案（read_file/list_files/type/dir）', '单角色对话工具循环轮数 6 → 8（为重发与补读留出余量）', '修复团队配置：点「添加角色」不再清空未保存的编辑内容（先收集当前输入再追加）', '团队预设支持自定义：可把当前角色配置保存为自定义预设（持久化），支持套用与删除；新建团队会话弹窗新增预设下拉，选中即带出对应角色', '套用内置预设时，新增角色自动继承队长的 API/模型配置（修复写手/校对等新角色无模型可用）', '团队任务与单角色对话新增状态标签：思考中（闪烁）→ 回答中 → 已完成/失败；点击状态可折叠/展开思考过程', '协作规则：队友间的问题优先用 ask_role 直接沟通（对方立即自动回复），仅重大决策/无法判断时才交给用户']],
   ['P8.4', '2026-10', ['团队预算栏新增实时显示：本次任务已花费 + 预算剩余（修改预算数字即时预览，超支变红；切换会话自动恢复上次花费）', '上下文占用升级为环形进度指示器：直接显示在对话消息内与团队每个角色块头部，悬停弹出「成本 / 使用率 / Token」卡片，≥60% 变黄、≥85% 变红', '修复环形指示器在消息重绘（发送完成/刷新）后消失的问题：会话现在持久化上下文上限，历史消息同样显示环形占用']],
@@ -481,9 +490,30 @@ function renderSettings() {
  $('update-current').textContent = 'v' + APP_VERSION
  $('set-update-repo').value = state.settings.updateRepo || ''
  $('set-update-branch').value = state.settings.updateBranch || 'main'
+ // ★ 工具调用限制（0=无限、-1=禁止、custom=自定义）
+ const tl = state.settings.toolLimits || {}
+ for (const [key, selId, numId] of [['chat', 'set-limit-chat', 'set-limit-chat-n'], ['team', 'set-limit-team', 'set-limit-team-n'], ['roleChat', 'set-limit-rolechat', 'set-limit-rolechat-n']]) {
+  const sel = $(selId), num = $(numId)
+  if (!sel || !num) continue
+  sel.innerHTML = `<option value="0">${t('tlUnlimited')}</option><option value="-1">${t('tlOff')}</option><option value="custom">${t('tlCustom')}</option>`
+  const v = Number(tl[key] ?? 0)
+  if (v === -1) sel.value = '-1'
+  else if (v > 0) { sel.value = 'custom'; num.value = v }
+  else sel.value = '0'
+  const upd = () => num.classList.toggle('hidden', sel.value !== 'custom')
+  sel.onchange = () => { upd(); saveToolLimit(key, sel, num) }
+  num.onchange = () => saveToolLimit(key, sel, num)
+  upd()
+ }
  $('changelog').innerHTML = `<div class="dim small" style="margin-bottom:6px">v${APP_VERSION}</div>` + CHANGELOG.map(([v, date, items]) => `
  <div class="cl-block"><div class="cl-head"><b>${esc(v)}</b><span class="dim small">${esc(date)}</span></div>
  <ul>${items.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>`).join('')
+}
+async function saveToolLimit(key, sel, num) {
+ const v = sel.value === 'custom' ? Math.max(1, Math.min(999, Number(num.value) || 50)) : Number(sel.value)
+ if (sel.value === 'custom') num.value = v
+ state.settings.toolLimits = { ...(state.settings.toolLimits || {}), [key]: v }
+ await api('PUT', '/api/settings', { toolLimits: state.settings.toolLimits })
 }
 async function saveUi(patch) {
  state.settings.ui = { ...(state.settings.ui || {}), ...patch }
@@ -514,6 +544,40 @@ function appendConfirmCard(container, conf) {
  el.querySelector('.cf-actions').innerHTML = `<span class="small">${decision === 'deny' ? ' ' + t('confirmDenied') : (decision === 'all' ? ' ' + t('confirmAllDone') : ' ' + t('confirmDone'))}</span>`
  }
  })
+ return el
+}
+// ★ 权限申请卡片（AI 主动申请工具权限：允许一次 / 本任务全部允许 / 拒绝）
+function appendPermReqCard(container, ev, agent) {
+ const p = ev.permreq || ev
+ const el = document.createElement('div')
+ el.className = 'confirm-box permreq-box'
+ if (agent && agent !== 'chat') el.dataset.agent = agent
+ el.innerHTML = `<div class="cf-head"><b>${t('permTitle')}</b> · <b>${esc(p.tool)}</b> <span class="badge">${esc(CONF_CAT[p.category] || p.category || '')}</span></div>
+ <div class="cf-detail dim small">${esc(p.reason || '')}</div>
+ <div class="cf-actions">
+ <button class="btn primary tiny" data-d="once">${t('permOnce')}</button>
+ <button class="btn ghost tiny" data-d="all">${t('permAll')}</button>
+ <button class="btn danger tiny" data-d="deny">${t('permDeny')}</button>
+ </div>`
+ container.appendChild(el)
+ container.scrollTop = container.scrollHeight
+ el.querySelectorAll('button[data-d]').forEach((b) => {
+  b.onclick = async () => {
+   await api('POST', '/api/permreq', { id: p.id, decision: b.dataset.d })
+   el.classList.add(b.dataset.d === 'deny' ? 'denied' : 'done')
+   el.querySelector('.cf-actions').innerHTML = `<span class="small">${b.dataset.d === 'deny' ? t('permDenied') : t('permGranted')}</span>`
+  }
+ })
+ return el
+}
+// ★ 系统提示条（工具次数上限/禁用等）
+function appendNotice(container, text, agent) {
+ const el = document.createElement('div')
+ el.className = 'notice-box'
+ if (agent && agent !== 'chat') el.dataset.agent = agent
+ el.textContent = text
+ container.appendChild(el)
+ container.scrollTop = container.scrollHeight
  return el
 }
 const fmtCost = (c) => (c == null ? '--' : `¥${Number(c).toFixed(4)}`)
@@ -925,6 +989,8 @@ async function sendChat() {
  try {
  const j = JSON.parse(s.slice(5).trim())
           if (j.confirm) appendConfirmCard(box, j.confirm)
+          if (j.permreq) appendPermReqCard(box, { permreq: j.permreq }, 'chat')
+          if (j.notice) appendNotice(box, j.notice)
           if (j.question) appendQuestionCard(box, j.question, 'chat')
           if (j.imagereview) appendImageReviewCard(box, j.imagereview)
  if (j.image) setArtCallout({ who: 'AI', ...j.image })
@@ -1149,7 +1215,15 @@ async function renderTeamSession() {
 }
 
 /* 角色实时活动（底部活动栏 + 右侧「角色」面板） */
-const STATUS_KEY = { idle: 'stIdle', thinking: 'stThinking', acting: 'stActing', final: 'stFinal', done: 'stDone', failed: 'stFailed' }
+const STATUS_KEY = { idle: 'stIdle', thinking: 'stThinking', acting: 'stActing', final: 'stFinal', done: 'stDone', failed: 'stFailed', needs: 'stNeeds' }
+// ★ 状态文本带标记：✓ 完成 / ! 需授权 / ✗ 失败
+function stLabel(st) {
+ const base = t(STATUS_KEY[st] || st)
+ if (st === 'done') return '✓ ' + base
+ if (st === 'needs') return '! ' + base
+ if (st === 'failed') return '✗ ' + base
+ return base
+}
 function resetRoleLive() {
  state.roleLive = {}
  for (const r of state.roles.filter((x) =>x.enabled !== false)) {
@@ -1182,10 +1256,12 @@ function roleSetStatus(id, st, patch = {}) {
  if (patch.model != null) rl.model = patch.model
  if (patch.sub != null) rl.sub = patch.sub
  if (patch.snippet != null) { rl.snippet = patch.snippet; if (rl.chipSnip) rl.chipSnip.textContent = String(patch.snippet).slice(-70) }
- if (rl.chipSt) rl.chipSt.textContent = t(STATUS_KEY[st] || st)
+ if (rl.chipSt) rl.chipSt.textContent = stLabel(st)
  if (rl.subEl) rl.subEl.textContent = [rl.model, rl.sub].filter(Boolean).join(' · ')
  const colSt = document.querySelector(`.role-col[data-role="${id}"] .rc-head-status`)
- if (colSt) colSt.textContent = t(STATUS_KEY[st] || st)
+ if (colSt) colSt.textContent = stLabel(st)
+ const col = document.querySelector(`.role-col[data-role="${id}"]`)
+ if (col) col.dataset.st = st
 }
 function roleAppend(id, text) {
  const rl = liveEls(id)
@@ -1213,8 +1289,8 @@ function renderRoleActivity() {
  const rl = state.roleLive[r.id] || {}
  return `<div class="role-chip ${state.teamFocus === r.id ? 'active' : ''}" data-role="${r.id}" data-st="${rl.status || 'idle'}" title="${esc(r.label)}：${esc(t('focusHint'))}">
  <span class="role-dot" style="background:${esc(r.color || '#888')}"></span>
- <span class="rc-name">${esc(r.label)}</span>
- <span class="rc-status">${t(STATUS_KEY[rl.status || 'idle'] || 'stIdle')}</span>
+  <span class="rc-name">${esc(r.label)}</span>
+  <span class="rc-status">${esc(stLabel(rl.status || 'idle'))}</span>
  <span class="rc-snip dim small">${esc((rl.snippet || '').slice(-70))}</span>
  </div>`
  }).join('')
@@ -1228,8 +1304,8 @@ function renderRolesLive() {
  const roles = state.roles.filter((r) =>r.enabled !== false)
  box.innerHTML = roles.map((r) => {
  const rl = state.roleLive[r.id] || {}
- return `<div class="role-col" data-role="${r.id}">
- <div class="rc-head"><span class="role-dot" style="background:${esc(r.color || '#888')}"></span><b>${esc(r.label)}</b><span class="rc-head-status dim small">${t(STATUS_KEY[rl.status || 'idle'] || 'stIdle')}</span></div>
+ return `<div class="role-col" data-role="${r.id}" data-st="${rl.status || 'idle'}">
+ <div class="rc-head"><span class="role-dot" style="background:${esc(r.color || '#888')}"></span><b>${esc(r.label)}</b><span class="rc-head-status dim small">${esc(stLabel(rl.status || 'idle'))}</span></div>
  <div class="rc-sub dim small">${esc([rl.model, rl.sub].filter(Boolean).join(' · '))}</div>
  <div class="rc-tools">${(rl.tools || []).map((x) => `<div class="rc-tool"> ${esc(x.call)} ${esc(x.detail || '')}</div>`).join('')}</div>
  <div class="rc-text">${esc(rl.acc || '')}</div>
@@ -1331,6 +1407,33 @@ function setTeamFocus(id) {
  state.teamFocus = state.teamFocus === id ? '' : id
  applyTeamFilter()
 }
+// ★ 角色栏快捷设置：该角色的权限 + 工具调用次数（保存到角色配置，角色设置优先于全局）
+function renderRoleQuickSettings() {
+ const r = roleById(state.teamFocus)
+ const ps = $('role-perm-quick'), ls = $('role-limit-quick')
+ if (!r || !ps || !ls) return
+ ps.innerHTML = `<option value="">${t('permFollow')}</option><option value="view">${t('permView')}</option><option value="modify">${t('permModify')}</option><option value="limited">${t('permLimited')}</option><option value="full">${t('permFullOpt')}</option>`
+ ps.value = r.permission || ''
+ const lv = (r.toolLimit === '' || r.toolLimit == null) ? '' : String(r.toolLimit)
+ ls.innerHTML = `<option value="">${t('limitFollow')}</option><option value="-1">${t('tlOff')}</option><option value="0">${t('tlUnlimited')}</option><option value="20">20</option><option value="50">50</option><option value="100">100</option><option value="custom">${t('tlCustom')}</option>`
+ ls.value = ['', '-1', '0', '20', '50', '100'].includes(lv) ? lv : 'custom'
+ if (ls.value === 'custom') ls.dataset.num = lv
+ ps.onchange = () => saveRoleQuick({ permission: ps.value })
+ ls.onchange = () => {
+  let v = ls.value
+  if (v === 'custom') {
+   const n = prompt(t('limitCustomAsk'), ls.dataset.num || '50')
+   if (n == null) { renderRoleQuickSettings(); return }
+   v = String(Math.max(1, Math.min(999, Number(n) || 50)))
+  }
+  saveRoleQuick({ toolLimit: v === '' ? '' : Number(v) })
+ }
+}
+async function saveRoleQuick(patch) {
+ const roles = state.roles.map((x) => (x.id === state.teamFocus ? { ...x, ...patch } : x))
+ const res = await api('PUT', '/api/roles', roles)
+ if (res.ok) { state.roles = roles; renderRoleSummary(); renderRoleQuickSettings() }
+}
 function applyTeamFilter() {
  const stream = $('team-stream')
  if (!stream) return
@@ -1345,14 +1448,15 @@ function applyTeamFilter() {
  const ov = $('btn-team-overview')
  if (ov) ov.classList.toggle('active', !state.teamFocus)
  // ★ 角色标签页激活时，底部显示"单独对话栏"
- const bar = $('team-role-bar')
- if (bar) {
-  bar.classList.toggle('hidden', !state.teamFocus)
-  if (state.teamFocus) {
-   $('team-role-bar-name').textContent = `${roleLabel(state.teamFocus)}：`
-   $('team-role-text').placeholder = t('roleChatAsk')
+  const bar = $('team-role-bar')
+  if (bar) {
+   bar.classList.toggle('hidden', !state.teamFocus)
+   if (state.teamFocus) {
+    $('team-role-bar-name').textContent = `${roleLabel(state.teamFocus)}：`
+    $('team-role-text').placeholder = t('roleChatAsk')
+    renderRoleQuickSettings()
+   }
   }
- }
 }
 /* ★ 角色标签页（总览 + 每个角色一个独立标签，互不干扰） */
 function renderTeamTabs() {
@@ -1398,12 +1502,25 @@ async function roleChatSend() {
     const s = line.trim(); if (!s.startsWith('data:')) continue
     try {
      const j = JSON.parse(s.slice(5))
-     if (j.delta) { if (first) { first = false } appendStreamText(target, j.delta); setMsgStatus(target, 'answering'); scrollIfNearBottom($('team-stream')) }
+     // ★ 思考过程：可折叠的独立框（与对话页一致）
+     if (j.reasoning) {
+      let d = box.querySelector('details.reasoning')
+      if (!d) { d = document.createElement('details'); d.className = 'reasoning'; d.open = true; d.innerHTML = `<summary>${t('thinking')}</summary><div class="reasoning-body"></div>`; box.insertBefore(d, target) }
+      queueReason(d.querySelector('.reasoning-body'), j.reasoning)
+     }
+     if (j.delta) {
+      if (first) { first = false }
+      const d = box.querySelector('details.reasoning')
+      if (d && !d.dataset.done) { d.dataset.done = '1'; d.open = false; d.querySelector('summary').textContent = ` ${t('thoughtDone')}（${d.querySelector('.reasoning-body').textContent.length}）` }
+      appendStreamText(target, j.delta); setMsgStatus(target, 'answering'); scrollIfNearBottom($('team-stream'))
+     }
      if (j.error) { target.textContent = t('failure') + ': ' + j.error; setMsgStatus(target, 'failed'); finished = true }
      if (j.done) { setMsgStatus(target, 'done'); finished = true }
      // ★ 单角色对话中的工具与协作事件（ask_role 联系队友等）
      if (j.question) appendQuestionCard(box, j.question, roleId)
      if (j.confirm) appendConfirmCard(box, j.confirm)
+     if (j.permreq) appendPermReqCard(box, { permreq: j.permreq }, roleId)
+     if (j.notice) appendNotice(box, j.notice, roleId)
      if (j.ask) {
       // ★ 协作消息挂在总流上并标记双方，切换任一角色视图都能看到；气泡用发言者角色色
       const el = document.createElement('div')
@@ -1423,9 +1540,10 @@ async function roleChatSend() {
       $('team-stream').appendChild(el); applyTeamFilter()
      }
      if (j.tool && j.tool !== 'ask_role') {
-      const el = document.createElement('div')
+      // ★ 工具调用：可折叠的独立框（点击展开/收起）
+      const el = document.createElement('details')
       el.className = 'ask-box tool-note'
-      el.innerHTML = `<b>${t('toolLabel')} · ${esc(j.tool)}</b><div>${esc(String(j.result || '').slice(0, 300))}</div>`
+      el.innerHTML = `<summary>${t('toolLabel')} · ${esc(j.tool)}</summary><div>${esc(String(j.result || '').slice(0, 1500))}</div>`
       box.appendChild(el)
      }
      if (j.usage && j.contextLimit) setCtxBadge(box, Math.round((j.usage.prompt_tokens || 0) / j.contextLimit * 100), j.cost, (j.usage.prompt_tokens || 0) + (j.usage.completion_tokens || 0))
@@ -1468,6 +1586,9 @@ async function runTeam() {
 function handleTeamEvent(ev, run, ref) {
  if (ev.type === 'session') { ref.id = ev.taskId; state.currentTeamTaskId = ev.taskId; state.teamTaskCost = 0; renderTeamBudget(); updatePauseUI(); return }
  if (ev.type === 'confirm') { appendConfirmCard(run.body, ev.confirm); return }
+ if (ev.type === 'permreq') { appendPermReqCard(run.body, ev, ev.agent); applyTeamFilter(); return }
+ if (ev.type === 'notice') { appendNotice(run.body, ev.text || '', ev.agent); applyTeamFilter(); return }
+ if (ev.type === 'role_status') { roleSetStatus(ev.agent, ev.status, { sub: ev.sub || '' }); return }
  if (ev.type === 'question') { appendQuestionCard(run.body, ev, ev.agent); return }
  if (ev.type === 'imagereview') { appendImageReviewCard(run.body, ev); applyTeamFilter(); return }
  if (ev.type === 'ask') {
