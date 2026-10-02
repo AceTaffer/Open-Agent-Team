@@ -5,8 +5,8 @@
  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
  <title>Open Agent Team</title>
  <link rel="icon" href="/oat.png" />
- <link rel="stylesheet" href="/style.css?v=1.0.5b" />
- <link rel="stylesheet" href="/team.css?v=1.0.5b" />
+ <link rel="stylesheet" href="/style.css?v=1.0.6" />
+ <link rel="stylesheet" href="/team.css?v=1.0.6" />
 </head>
 <body>
  <!-- ═══ 顶栏 ═══ -->
@@ -95,11 +95,12 @@
  <button id="btn-rail-toggle" class="btn ghost" title="显示/隐藏历史栏"><span data-i18n="chatHistory">历史对话</span></button>
  <button id="btn-clear-chat" class="btn ghost" data-i18n="clearChat">清空对话</button>
  </div>
- <div class="chat-body">
- <div class="chat-main">
- <div id="chat-messages" class="chat-messages">
- <div class="empty-tip" data-i18n="chatEmpty">单智能体对话。支持给视觉模型发图片（图片按钮）。</div>
- </div>
+  <div class="chat-body">
+  <div class="chat-main">
+  <div id="chat-messages" class="chat-messages">
+  <div class="empty-tip" data-i18n="chatEmpty">单智能体对话。支持给视觉模型发图片（图片按钮）。</div>
+  </div>
+  <button id="btn-chat-bottom" class="to-bottom hidden" data-i18n="toBottom">回到底部</button>
  <div id="cmd-palette" class="cmd-palette hidden"></div>
  <div class="chat-input">
  <textarea id="chat-text" rows="3" data-i18n-ph="chatPlaceholder" placeholder="输入指令，/ 查看命令，Enter 发送"></textarea>
@@ -153,9 +154,10 @@
  <div id="team-resume-banner" class="team-resume hidden"></div>
  <div id="team-activity" class="team-activity"></div>
  <div id="team-tabs" class="team-tabs"></div>
- <div id="team-stream" class="team-stream">
- <div class="empty-tip" data-i18n="teamEmpty">队长先规划，再派给各角色执行；可调用工作区工具、联网搜索、插件。</div>
- </div>
+  <div id="team-stream" class="team-stream">
+  <div class="empty-tip" data-i18n="teamEmpty">队长先规划，再派给各角色执行；可调用工作区工具、联网搜索、插件。</div>
+  </div>
+  <button id="btn-team-bottom" class="to-bottom hidden" data-i18n="toBottom">回到底部</button>
  <div id="team-role-bar" class="team-role-bar hidden">
  <span id="team-role-bar-name" class="dim small"></span>
  <input id="team-role-text" placeholder="与该角色直接对话（任务进行中将作为中途指令发送）…" />
@@ -781,6 +783,6 @@
  </div>
  </div>
 
- <script src="/app.js?v=1.0.5b"></script>
+ <script src="/app.js?v=1.0.6"></script>
 </body>
 </html>

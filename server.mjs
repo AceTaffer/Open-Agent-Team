@@ -1394,6 +1394,9 @@ async function runTeam(task, opts = {}) {
   const startedAt = Date.now()
   // ★ 团队会话：工作区与权限跟随会话（没有会话时退回全局工作区）
   const sess = opts.session || null
+  // ★ 协作询问写进会话历史（刷新后仍可见）
+  const recordAsk = (info) => { if (!sess) return; sess.messages.push({ role: 'assistant', kind: 'team-ask', from: info.from, to: info.to, question: String(info.question || '').slice(0, 2000), t: Date.now() }); sess.updatedAt = Date.now(); saveSessions().catch(() => {}) }
+  const recordAskDone = (info) => { if (!sess) return; sess.messages.push({ role: 'assistant', kind: 'team-ask-done', from: info.from, to: info.to, answer: String(info.answer || '').slice(0, 2000), t: Date.now() }); sess.updatedAt = Date.now(); saveSessions().catch(() => {}) }
   const root = sess?.workspace && existsSync(sess.workspace) ? sess.workspace : getActiveRoot()
   const permission = sess?.permission || settings.defaultPermission || 'modify'
   const autoState = { approvedAll: false }
@@ -1616,8 +1619,8 @@ async function runTeam(task, opts = {}) {
             onImage: (info) => send({ type: 'image', agent: roleId, ...info }),
             onImageReview: (r) => send({ type: 'imagereview', agent: roleId, ...r }),
             onQuestion: (q) => send({ type: 'question', ...q }),
-            onAsk: (info) => send({ type: 'ask', ...info }),
-            onAskDone: (info) => send({ type: 'ask_done', ...info }),
+            onAsk: (info) => { recordAsk(info); send({ type: 'ask', ...info }) },
+            onAskDone: (info) => { recordAskDone(info); send({ type: 'ask_done', ...info }) },
           })
           taskToolCalls++
           send({ type: 'tool', agent: roleId, call: call.tool, detail: call.path || call.command || call.query || call.plugin || call.url || call.path || '', result: result.slice(0, 1500) })
@@ -1687,8 +1690,8 @@ async function runTeam(task, opts = {}) {
             onImage: (info) => send({ type: 'image', agent: 'leader', ...info }),
             onImageReview: (r) => send({ type: 'imagereview', agent: 'leader', ...r }),
             onQuestion: (q) => send({ type: 'question', ...q }),
-            onAsk: (info) => send({ type: 'ask', ...info }),
-            onAskDone: (info) => send({ type: 'ask_done', ...info }),
+            onAsk: (info) => { recordAsk(info); send({ type: 'ask', ...info }) },
+            onAskDone: (info) => { recordAskDone(info); send({ type: 'ask_done', ...info }) },
           })
           taskToolCalls++
           send({ type: 'tool', agent: 'leader', call: call.tool, detail: call.path || call.command || call.query || call.plugin || call.url || '', result: result.slice(0, 1500) })
@@ -2386,6 +2389,10 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
     if (!target) return sendJson(res, 200, { ok: false, error: '该角色没有可用的对话模型' })
     res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' })
     const emit = (o) => { try { res.write(`data: ${JSON.stringify(o)}\n\n`) } catch { /* ignore */ } }
+    // ★ 团队会话内的角色对话会写进会话历史（刷新后可见）
+    const sess = b.sessionId ? sessions.find((s) => s.id === b.sessionId) : null
+    const rec = (msg) => { if (!sess) return; sess.messages.push({ role: 'assistant', t: Date.now(), ...msg }); sess.updatedAt = Date.now(); saveSessions().catch(() => {}) }
+    if (sess) rec({ kind: 'role-chat', agent: role.id, side: 'user', content: String(b.message || '').slice(0, 4000) })
     try {
       // ★ 单角色对话也支持工具（含 ask_role 联系队友、读写工作区等）：多轮工具循环
       const root = getActiveRoot()
@@ -2426,8 +2433,8 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
             onConfirm: (c) => emit({ confirm: c }),
             onImage: (info) => emit({ image: info }),
             onQuestion: (q) => emit({ question: q }),
-            onAsk: (info) => emit({ ask: info }),
-            onAskDone: (info) => emit({ ask_done: info }),
+            onAsk: (info) => { rec({ kind: 'team-ask', from: info.from, to: info.to, question: info.question }); emit({ ask: info }) },
+            onAskDone: (info) => { rec({ kind: 'team-ask-done', from: info.from, to: info.to, answer: String(info.answer || '').slice(0, 2000) }); emit({ ask_done: info }) },
           })
           emit({ tool: call.tool, detail: call.path || call.command || call.query || call.plugin || call.url || '', result: result.slice(0, 3000) })
           outs.push(`【工具结果】${call.tool} ${call.path || call.command || call.query || call.plugin || call.url || ''}\n${result}`)
@@ -2437,6 +2444,7 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
       // ★ 对话留痕：角色下次（无论用户直聊还是队友提问）都能回忆
       roleChatAppend(role.id, 'user', String(b.message || '').slice(0, 4000))
       if (lastText.trim()) roleChatAppend(role.id, 'assistant', lastText)
+      if (sess && lastText.trim()) rec({ kind: 'role-chat', agent: role.id, side: 'ai', content: lastText })
       emit({ done: true })
     } catch (e) { emit({ error: e.message }) }
     res.end()

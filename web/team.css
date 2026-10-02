@@ -412,7 +412,7 @@ body.theme-light .team-resume { background: #fdf3df; }
 .team-tab.active { background: var(--bg); color: var(--text); border-color: var(--border); }
 .team-role-bar { display: flex; gap: 8px; align-items: center; padding: 8px 12px; border-top: 1px solid var(--border); background: var(--bg-soft); flex-shrink: 0; }
 .team-role-bar input { flex: 1; background: var(--bg-card); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font: inherit; }
-.team-main { display: flex; flex-direction: column; }
+.team-main { display: flex; flex-direction: column; position: relative; }
 .team-input { order: 0; }
 body.team-input-bottom .team-input { order: 20; border-top: 1px solid var(--border); border-bottom: none; }
 .role-chat .rc-ai { white-space: pre-wrap; word-break: break-word; font-size: 13px; }

@@ -80,7 +80,7 @@ const I18N = {
  reviewTitle: '出图审核', keepImg: '保留', reviewHint: '这张图是否保留？（可修改提示词后重画）', regenDone: '重画完成',
  presetTitle: '团队预设：', applyPreset: '应用预设（导入角色+技能）', presetApplied: '预设已应用（已保留各角色的 API/模型选择）', presetConfirm: '应用预设将覆盖当前角色配置（同 id 角色的 API/模型选择会保留），确定继续？',
  presetCustomPrefix: '自定义：', presetCustomGroup: '自定义预设', presetNameAsk: '给这个自定义预设起个名字：', presetCustomDefault: '我的团队', presetSaved: '已保存为自定义预设', presetDeleteConfirm: '删除该自定义预设？', presetDeleted: '自定义预设已删除', presetCurrent: '（当前角色配置）', saveAsPreset: '保存为自定义预设', delPreset: '删除该预设', teamPresetPick: '团队预设（可选，选中后自动带出角色）',
- stAnswering: '回答中', noReply: '没有收到回复',
+ stAnswering: '回答中', noReply: '没有收到回复', toBottom: '回到底部',
  answerTitle: '队长向你确认需求', answerTitleSuffix: '向你确认需求', answerSubmit: '提交回答', skip: '跳过', optionOr: '也可自行填写（填写后将优先采用你写的内容）',
  uiSpacing: '界面间距', spCompact: '紧凑', spNormal: '标准', spRelaxed: '宽松', teamInputPos: '团队输入框位置', posTop: '上方', posBottom: '下方',
  roleChatAsk: '与该角色直接对话（任务进行中将作为中途指令发送）…', detach: '弹出', detachTitle: '弹出为独立窗口',
@@ -176,7 +176,7 @@ const I18N = {
  reviewTitle: 'Image review', keepImg: 'Keep', reviewHint: 'Keep this image? You can edit the prompt and regenerate.', regenDone: 'Regenerated',
  presetTitle: 'Team presets:', applyPreset: 'Apply preset (roles + skills)', presetApplied: 'Preset applied (API/model choices kept)', presetConfirm: 'Applying a preset overwrites current roles (API/model per role id is kept). Continue?',
  presetCustomPrefix: 'Custom: ', presetCustomGroup: 'Custom presets', presetNameAsk: 'Name this custom preset:', presetCustomDefault: 'My team', presetSaved: 'Saved as custom preset', presetDeleteConfirm: 'Delete this custom preset?', presetDeleted: 'Custom preset deleted', presetCurrent: '(current roles)', saveAsPreset: 'Save as custom preset', delPreset: 'Delete preset', teamPresetPick: 'Team preset (optional; brings in its roles)',
- stAnswering: 'Replying', noReply: 'no reply received',
+ stAnswering: 'Replying', noReply: 'no reply received', toBottom: 'To bottom',
     answerTitle: 'The leader asks for your confirmation', answerSubmit: 'Submit', skip: 'Skip', optionOr: 'or type your own (yours takes priority)',
     answerTitleSuffix: 'asks for confirmation', uiSpacing: 'UI spacing', spCompact: 'Compact', spNormal: 'Normal', spRelaxed: 'Relaxed', teamInputPos: 'Team input position', posTop: 'Top', posBottom: 'Bottom',
     roleChatAsk: 'Chat with this role directly (sent as a mid-run instruction during tasks)…', detach: 'Detach', detachTitle: 'Open in a separate window',
@@ -270,8 +270,9 @@ const TEAM_PRESETS = {
 }
 
 /* 版本迭代记录（设置页展示） */
-const APP_VERSION = '1.0.5'
+const APP_VERSION = '1.0.6'
 const CHANGELOG = [
+  ['P8.6', '2026-10', ['团队会话里的角色单独对话与「协作询问/协作回复」现在会持久化保存，刷新后完整回放（不再只剩记忆）', '对话与团队任务新增「回到底部」浮动按钮：不在底部时自动出现，一键滚到最新内容', '角色单独对话支持拖入图片/文件：聚焦某角色后拖入即发给该角色（文件存入工作区 uploads/ 并附带路径），未聚焦时仍发给团队任务']],
   ['P8.5', '2026-10', ['修复工具执行可靠性：对话与单角色对话新增「工具块 JSON 解析失败自动重发」（此前失败块被静默丢弃，AI 会误报「读取结果未回传」）', '工具协议补充运行环境：Windows 下 run_command 用 cmd（dir/type/findstr），禁止 cat/ls 等 Linux 命令；误用时直接返回替代方案（read_file/list_files/type/dir）', '单角色对话工具循环轮数 6 → 8（为重发与补读留出余量）', '修复团队配置：点「添加角色」不再清空未保存的编辑内容（先收集当前输入再追加）', '团队预设支持自定义：可把当前角色配置保存为自定义预设（持久化），支持套用与删除；新建团队会话弹窗新增预设下拉，选中即带出对应角色', '套用内置预设时，新增角色自动继承队长的 API/模型配置（修复写手/校对等新角色无模型可用）', '团队任务与单角色对话新增状态标签：思考中（闪烁）→ 回答中 → 已完成/失败；点击状态可折叠/展开思考过程', '协作规则：队友间的问题优先用 ask_role 直接沟通（对方立即自动回复），仅重大决策/无法判断时才交给用户']],
   ['P8.4', '2026-10', ['团队预算栏新增实时显示：本次任务已花费 + 预算剩余（修改预算数字即时预览，超支变红；切换会话自动恢复上次花费）', '上下文占用升级为环形进度指示器：直接显示在对话消息内与团队每个角色块头部，悬停弹出「成本 / 使用率 / Token」卡片，≥60% 变黄、≥85% 变红', '修复环形指示器在消息重绘（发送完成/刷新）后消失的问题：会话现在持久化上下文上限，历史消息同样显示环形占用']],
   ['P8.3', '2026-10', ['修复 ask_user 提问卡片：自己填写的内容现在优先于预设选项（此前选了预设再填写，结果仍采用预设的问题）', '新增「小说写作团队」预设：主编 / 大纲策划 / 写手 / 校对 + 配套技能（世界观大纲、文风控制、章节写作规范、校对规范）', '问题卡片输入框提示更新：填写后将优先采用你写的内容']],
@@ -424,6 +425,20 @@ function appendStreamText(el, text) {
  const raw = (streamRaw.get(el) || '') + text
  streamRaw.set(el, raw)
  el.textContent = stripToolFences(raw)
+}
+// ★ 一键到底：滚动容器 + 浮动按钮（有内容且不在底部时显示）
+function setupToBottom(streamId, btnId) {
+ const stream = $(streamId), btn = $(btnId)
+ if (!stream || !btn) return
+ const upd = () => btn.classList.toggle('hidden', stream.scrollHeight - stream.scrollTop - stream.clientHeight < 60)
+ stream.addEventListener('scroll', upd, { passive: true })
+ btn.onclick = () => {
+  // ★ 直接用即时滚动：部分环境（无 GPU/Electron 隐藏窗口）不支持 behavior:'smooth'
+  stream.scrollTop = stream.scrollHeight
+  setTimeout(upd, 100)
+ }
+ try { new MutationObserver(upd).observe(stream, { childList: true, subtree: true }) } catch { /* ignore */ }
+ upd()
 }
 function steerBox(message, agent) {
  const el = document.createElement('div')
@@ -834,7 +849,9 @@ function setupDropzone(el, targetInput) {
   e.preventDefault(); depth = 0; el.classList.remove('dragging')
   const files = [...(e.dataTransfer?.files || [])]
   if (!files.length) return
-  await uploadFiles(files, targetInput)
+  // ★ targetInput 可以是函数：在拖放时动态决定输入框（如团队任务 vs 角色单独对话）
+  const ta = typeof targetInput === 'function' ? targetInput() : targetInput
+  await uploadFiles(files, ta)
  })
 }
 
@@ -1063,6 +1080,36 @@ function renderTeamBudget() {
  el.textContent = `${t('budgetSpent')} ${fmtCost(spent)} · ${t('budgetLeft')} ${fmtCost(left)}`
  el.classList.toggle('over', left <= 0)
 }
+// ★ 历史回放：角色单独对话（用户气泡 + AI 回复）
+function renderRoleChatHistory(container, m) {
+ const agent = m.agent || 'leader'
+ let box = [...container.querySelectorAll('.role-chat')].filter((x) => x.dataset.agent === agent).pop()
+ if (m.side === 'user' || !box) {
+  box = document.createElement('div')
+  box.className = 'role-chat agent-block'
+  box.dataset.agent = agent
+  box.style.borderLeftColor = roleColor(agent)
+  box.innerHTML = `<div class="agent-head"><span class="agent-name">你 → ${esc(roleLabel(agent))}</span></div><div class="rc-user"></div><div class="rc-ai"></div>`
+  container.appendChild(box)
+ }
+ if (m.side === 'user') box.querySelector('.rc-user').textContent = m.content || ''
+ else {
+  box.querySelector('.rc-ai').textContent = stripToolFences(m.content || '')
+  setMsgStatus(box.querySelector('.rc-ai'), 'done')
+ }
+}
+// ★ 历史回放：协作询问/回复
+function renderAskHistory(container, m) {
+ const el = document.createElement('div')
+ const done = m.kind === 'team-ask-done'
+ el.className = 'ask-box' + (done ? ' done' : '')
+ el.dataset.agent = `${m.from || ''},${m.to || ''}`
+ el.innerHTML = done
+  ? `<b>${t('askReply')}</b> <b style="color:${roleColor(m.to)}">${esc(roleLabel(m.to))}</b> → <b style="color:${roleColor(m.from)}">${esc(roleLabel(m.from))}</b><div>${esc(String(m.answer || '').slice(0, 600))}</div>`
+  : `<b>${t('askLabel')}</b> <b style="color:${roleColor(m.from)}">${esc(roleLabel(m.from))}</b> → <b style="color:${roleColor(m.to)}">${esc(roleLabel(m.to))}</b><div>${esc(m.question || '')}</div>`
+ styleAskBox(el, done ? m.to : m.from)
+ container.appendChild(el)
+}
 async function renderTeamSession() {
  const stream = $('team-stream')
  if (!stream) return
@@ -1073,6 +1120,9 @@ async function renderTeamSession() {
  if (!r.ok) return
  let run = null
  for (const m of r.session.messages || []) {
+ // ★ 角色单独对话 / 协作记录（可能出现在任务之外，先于 run 判断）
+ if (m.kind === 'role-chat') { renderRoleChatHistory(stream, m); continue }
+ if (m.kind === 'team-ask' || m.kind === 'team-ask-done') { renderAskHistory(stream, m); continue }
  if (m.kind === 'team-task') { run = createRunBox(m.content || ''); run.status.textContent = 'history'; continue }
  if (!run) continue
  if (m.kind === 'team-plan') {
@@ -1337,7 +1387,7 @@ async function roleChatSend() {
  setMsgStatus(target, 'thinking') // ★ 状态：思考中
  let first = true, finished = false
  try {
-  const res = await fetch('/api/role/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ roleId, message: text }) })
+  const res = await fetch('/api/role/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ roleId, message: text, sessionId: state.teamSessionId || '' }) })
   if (!res.ok) { const er = await res.json().catch(() => ({})); target.textContent = t('failure') + ': ' + (er.error || res.status); setMsgStatus(target, 'failed'); return }
   const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = ''
   while (true) {
@@ -2575,9 +2625,13 @@ async function main() {
  // 分栏拖拽
  initSplitters()
  // 拖拽上传（对话 + 团队任务）
+ setupToBottom('chat-messages', 'btn-chat-bottom')
+ setupToBottom('team-stream', 'btn-team-bottom')
  setupDropzone($('chat-messages'), $('chat-text'))
  setupDropzone($('chat-text'), $('chat-text'))
- setupDropzone($('team-stream'), $('team-task'))
+ // ★ 团队：聚焦某角色时拖入 → 发给该角色的单独对话；否则 → 团队任务输入框
+ setupDropzone($('team-stream'), () => (state.teamFocus && $('team-role-bar') && !$('team-role-bar').classList.contains('hidden')) ? $('team-role-text') : $('team-task'))
+ setupDropzone($('team-role-bar'), $('team-role-text'))
  setupDropzone($('team-task'), $('team-task'))
   // 视频 / 开放 API
   $('btn-video-gen').onclick = btnVideoGen
