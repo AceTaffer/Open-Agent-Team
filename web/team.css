@@ -464,7 +464,21 @@ body[data-spacing="relaxed"] .provider-cards, body[data-spacing="relaxed"] .sett
 }
 .team-budget input:focus { outline: none; border-color: var(--accent); }
 
-/* ══════════ ★ 会话列表指标悬停卡 + 角色卡片指标行 ══════════ */
+/* ══════════ ★ TAT 移动端团队页适配（必须放在 team.css 末尾以覆盖上方规则） ══════════ */
+@media (max-width: 860px) {
+  .team-side { display: none !important; }
+  .team-grid { grid-template-columns: 1fr !important; }
+  .team-budget .btn { margin-left: 0 !important; }
+  .role-chip .rc-snip { display: none; }
+  #team-session { max-width: 56vw; }
+  .team-session-row, .team-budget { flex-wrap: nowrap; overflow-x: auto; white-space: nowrap; padding-bottom: 4px; }
+  .team-session-row > *, .team-budget > * { flex-shrink: 0; }
+  .team-input { padding: 8px; }
+  .team-input textarea { font-size: 15px; }
+  .team-activity { flex-wrap: nowrap; overflow-x: auto; }
+}
+
+/* ══════════ ★ TAT：会话列表指标悬停卡 + 角色卡片指标行 ══════════ */
 .session-item { position: relative; }
 .session-item:hover .sess-tip { display: block; }
 .session-item .sess-tip { right: auto; left: 6px; bottom: calc(100% + 6px); }

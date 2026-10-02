@@ -84,6 +84,13 @@ const I18N = {
  toolLimitTitle: '工具调用限制', tlChat: '对话', tlTeam: '团队任务 AI', tlRoleChat: '团队角色单独对话', tlUnlimited: '无限（默认）', tlOff: '禁止调用', tlCustom: '自定义次数',
  toolLimitDesc: '控制每个请求内 AI 可调用工具的次数量：默认无限；达到上限时会自动停止并提示（可在角色栏单独为该角色设置，角色设置优先）。',
  permTitle: '权限申请', permOnce: '允许一次', permAll: '本任务全部允许', permDeny: '拒绝', permGranted: '已授权', permDenied: '已拒绝',
+ mobTitle: '手机连接（手机端）', mobLan: '局域网监听', mobLanDesc: '开启后，同一 Wi-Fi 下的手机可连接本机使用（修改后需重启服务生效）。异地连接可用 EasyTier 组网（后续版本提供一键引导）。',
+ mobGenPair: '生成配对码', mobRestart: '重启服务使监听生效', mobPinLabel: '配对码（手机端输入）：', mobQrLabel: '手机系统相机扫码自动配对',
+ mobPairHint: '手机与电脑在同一 Wi-Fi 时：打开下面的地址，输入配对码即可（也可直接扫码）：', mobDevices: '已配对设备', mobNoDevices: '（暂无设备，生成配对码后手机即可加入）',
+ etTitle: 'EasyTier 异地组网（可选）', etDesc: '让手机在任意网络（流量/异地 Wi-Fi）也能连回本机：电脑与手机都加入同一个 EasyTier 网络即可（P2P 直连；共享节点仅作引荐与兜底）。启动需要管理员权限，电脑会弹 UAC 授权框。',
+ etDownload: '一键下载安装', etStart: '启动组网', etStop: '停止', etPhoneHint: '手机端：安装 EasyTier 官方 Android 客户端并加入相同网络名/密码，然后手机浏览器访问「http://本机虚拟IP:3411」即可（与局域网访问用法相同）。',
+ etLicense: 'EasyTier 为 LGPL-3.0 开源项目（github.com/EasyTier/EasyTier）。本软件仅从官方 Release 下载并以独立进程方式调用，不修改其代码；详见《第三方声明与许可》。',
+ fwBtn: '手机连不上？防火墙设置',
  limitFollow: '跟随全局', limitCustomAsk: '输入最大工具调用次数（1-999）：',
  answerTitle: '队长向你确认需求', answerTitleSuffix: '向你确认需求', answerSubmit: '提交回答', skip: '跳过', optionOr: '也可自行填写（填写后将优先采用你写的内容）',
  uiSpacing: '界面间距', spCompact: '紧凑', spNormal: '标准', spRelaxed: '宽松', teamInputPos: '团队输入框位置', posTop: '上方', posBottom: '下方',
@@ -184,6 +191,13 @@ const I18N = {
  toolLimitTitle: 'Tool call limits', tlChat: 'Chat', tlTeam: 'Team tasks', tlRoleChat: 'Role chat', tlUnlimited: 'Unlimited (default)', tlOff: 'Disabled', tlCustom: 'Custom',
  toolLimitDesc: 'Max tool calls per request. Default unlimited; the AI stops with a notice when the cap is reached. Per-role limits (role bar) take priority.',
  permTitle: 'Permission request', permOnce: 'Allow once', permAll: 'Allow all', permDeny: 'Deny', permGranted: 'Granted', permDenied: 'Denied',
+ mobTitle: 'Mobile connection (Mobile app)', mobLan: 'LAN listen', mobLanDesc: 'Allow phones on the same Wi-Fi to connect (restart required). Remote access: EasyTier guide coming soon.',
+ mobGenPair: 'Generate pair code', mobRestart: 'Restart to apply', mobPinLabel: 'Pair code (enter on phone):', mobQrLabel: 'Scan with phone camera to pair',
+ mobPairHint: 'Open this address on your phone (same Wi-Fi) and enter the code, or scan the QR:', mobDevices: 'Paired devices', mobNoDevices: '(no devices yet)',
+ etTitle: 'EasyTier remote mesh (optional)', etDesc: 'Connect from any network: join the same EasyTier network on PC and phone (P2P; shared nodes only for introduction/fallback). Starting requires admin (UAC prompt).',
+ etDownload: 'Download & install', etStart: 'Start', etStop: 'Stop', etPhoneHint: 'On phone: install the official EasyTier Android app, join the same network, then open http://<virtual-ip>:3411.',
+ etLicense: 'EasyTier is LGPL-3.0 (github.com/EasyTier/EasyTier). This app only downloads it from official releases and runs it as a separate process.',
+ fwBtn: 'Phone cannot connect? Firewall',
  limitFollow: 'Follow global', limitCustomAsk: 'Max tool calls (1-999):',
     answerTitle: 'The leader asks for your confirmation', answerSubmit: 'Submit', skip: 'Skip', optionOr: 'or type your own (yours takes priority)',
     answerTitleSuffix: 'asks for confirmation', uiSpacing: 'UI spacing', spCompact: 'Compact', spNormal: 'Normal', spRelaxed: 'Relaxed', teamInputPos: 'Team input position', posTop: 'Top', posBottom: 'Bottom',
@@ -278,9 +292,9 @@ const TEAM_PRESETS = {
 }
 
 /* 版本迭代记录（设置页展示） */
-const APP_VERSION = '1.0.8'
+const APP_VERSION = '1.1.0'
 const CHANGELOG = [
-  ['P8.8', '2026-10', ['重大修复：角色长期记忆——团队任务现在会写入每个角色的记忆（队长记录任务/规划/最终汇总，各角色记录自己完成的步骤），角色单独对话自动附带「团队会话档案 + 工作区快照」，做完任务后不再失忆', '上下文复用优化（参考 DeepSeek Harness 缓存复用思路）：角色记忆改为完整历史+稳定前缀（利于上游 prompt cache 命中，降低成本与等待）；消息内自动附加工作区快照，减少反复 list_files/read_file 造成的 token 消耗', '团队角色卡片新增指标：费用 / 使用率 / Token / 缓存命中', '环形占用提示卡与会话列表悬停卡新增「缓存命中」显示；会话项悬停可看：费用/使用率/Token/缓存命中', '推理等级滑块：对话与团队任务工具栏均可拖动调节（关闭/低/默认/高/最大），等级越高动画越炫（流光+脉冲+火花+光晕）；写入会话级设置，团队任务全流程生效']],
+  ['P9', '2026-10', ['重大版本：手机端互联（合并自实验分支 Turing Agent Team，该分支完成使命后归档）——桌面端 + 安卓手机浏览器/App 互联', '手机连接：局域网监听开关（默认关）+ 6 位 PIN/二维码配对（手机系统相机扫码自动配对）+ 设备令牌与权限档（只读/可操作/可批准/可配置）+ 设备管理（命名/改权限/撤销）', '手机端能力：走电脑代理对话、远程监控与控制团队任务（暂停/继续/终止/中途指令/角色单聊）、批准权限申请、回答 AI 提问', '断线不暂停：手机切后台/断网不打断电脑端任务；任务事件落盘，重连后完整回放', '跨设备同步：/api/stream 事件流（rev 变更广播），多设备自动刷新/提示', 'EasyTier 异地组网一键引导（LGPL-3.0：官方下载 + 独立进程调用，见《第三方声明与许可》）', '移动端适配：窄屏抽屉侧栏、工具栏横滑、配对门页面与防火墙提示', '新增内置技能「安全审计（多阶段）」（借鉴 Cloudflare security-audit-skill 方法论：侦察→覆盖排查→候选验证→结构化输出→独立复核→报告）']],
   ['P8.7', '2026-10', ['新增工具调用次数限制（设置 → 工具调用限制）：对话 / 团队任务 / 团队角色单独对话三处独立设置，可选「无限（默认）/ 禁止 / 自定义次数」；角色栏可为单个角色单独设置（角色优先）', '权限不足时 AI 主动申请：弹出「允许一次 / 本任务全部允许 / 拒绝」按钮卡片，不再静默卡住', '团队角色卡片状态标记：✓ 已完成（绿）、! 需授权（棕）、✗ 失败（红）；等待授权时对应角色卡片显示棕色感叹号', '审核/校对判定不通过时自动「返工 → 复审」循环（最多 2 轮）：AI 之间自动对接协作，不再坐等用户转达', '团队角色单独对话：思考过程与工具调用改为可折叠独立框（与对话页一致）；达到次数上限/被禁用时明确提示', '放宽工具轮次上限：默认无限（此前团队每步最多 5 轮、对话 6 轮，导致写长文写到一半停止）']],
   ['P8.6', '2026-10', ['团队会话里的角色单独对话与「协作询问/协作回复」现在会持久化保存，刷新后完整回放（不再只剩记忆）', '对话与团队任务新增「回到底部」浮动按钮：不在底部时自动出现，一键滚到最新内容', '角色单独对话支持拖入图片/文件：聚焦某角色后拖入即发给该角色（文件存入工作区 uploads/ 并附带路径），未聚焦时仍发给团队任务']],
   ['P8.5', '2026-10', ['修复工具执行可靠性：对话与单角色对话新增「工具块 JSON 解析失败自动重发」（此前失败块被静默丢弃，AI 会误报「读取结果未回传」）', '工具协议补充运行环境：Windows 下 run_command 用 cmd（dir/type/findstr），禁止 cat/ls 等 Linux 命令；误用时直接返回替代方案（read_file/list_files/type/dir）', '单角色对话工具循环轮数 6 → 8（为重发与补读留出余量）', '修复团队配置：点「添加角色」不再清空未保存的编辑内容（先收集当前输入再追加）', '团队预设支持自定义：可把当前角色配置保存为自定义预设（持久化），支持套用与删除；新建团队会话弹窗新增预设下拉，选中即带出对应角色', '套用内置预设时，新增角色自动继承队长的 API/模型配置（修复写手/校对等新角色无模型可用）', '团队任务与单角色对话新增状态标签：思考中（闪烁）→ 回答中 → 已完成/失败；点击状态可折叠/展开思考过程', '协作规则：队友间的问题优先用 ask_role 直接沟通（对方立即自动回复），仅重大决策/无法判断时才交给用户']],
@@ -322,7 +336,68 @@ const state = {
  cmd: { open: false, list: [], index: 0 },
 }
 const esc = (s) =>String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
-const api = async (method, url, body) => (await fetch(url, { method, headers: body ? { 'Content-Type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined })).json()
+/* ★ TAT：手机端设备 token（配对后保存在本机浏览器；电脑本机无需 token） */
+let AUTH_TOKEN = localStorage.getItem('oat-token') || ''
+const IS_LOCAL_HOST = ['127.0.0.1', 'localhost', '::1', ''].includes(location.hostname)
+const authHeaders = () => (AUTH_TOKEN ? { Authorization: 'Bearer ' + AUTH_TOKEN } : {})
+const detectDeviceName = () => /Android/i.test(navigator.userAgent) ? 'Android 手机' : /iPhone|iPad/i.test(navigator.userAgent) ? 'iPhone/iPad' : '手机浏览器'
+let lastLocalWrite = 0
+const api = async (method, url, body) => {
+  const res = await fetch(url, { method, headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...authHeaders() }, body: body ? JSON.stringify(body) : undefined })
+  if (method !== 'GET') lastLocalWrite = Date.now()
+  if (res.status === 401 && !IS_LOCAL_HOST) showPairGate('配对已失效，请重新配对（设备可能已被电脑端撤销）')
+  return res.json()
+}
+/* ★ TAT：跨设备同步——订阅统一事件流，其他设备变更时自动刷新列表/提示 */
+let tatStream = null
+function setupStateStream() {
+  if (tatStream) return
+  try {
+    const url = '/api/stream' + (AUTH_TOKEN ? `?token=${encodeURIComponent(AUTH_TOKEN)}` : '')
+    tatStream = new EventSource(url)
+    tatStream.onmessage = (e) => { try { const ev = JSON.parse(e.data); if (ev.type === 'changed') onRemoteChange(ev) } catch { /* ignore */ } }
+  } catch { /* ignore */ }
+}
+function remoteToast(msg) {
+  let el = document.getElementById('remote-toast')
+  if (!el) { el = document.createElement('div'); el.id = 'remote-toast'; document.body.appendChild(el) }
+  el.textContent = msg
+  el.classList.add('show')
+  clearTimeout(remoteToast._t)
+  remoteToast._t = setTimeout(() => el.classList.remove('show'), 4000)
+}
+function onRemoteChange(ev) {
+  try {
+    if (ev.key === 'sessions') { refreshSessions().catch(() => {}); if (state.teamLoaded) refreshTeamSessions(state.teamSessionId).catch(() => {}) }
+    else if (ev.key === 'tasks') refreshTasks()
+    else if (ev.key === 'art') refreshArtGallery()
+    else if (ev.key === 'stats') refreshStats()
+    else if (['settings', 'roles', 'providers', 'devices'].includes(ev.key) && Date.now() - lastLocalWrite > 3000) remoteToast('另一台设备更新了配置，刷新页面后生效')
+  } catch { /* ignore */ }
+}
+/* ★ TAT：手机端配对（PIN 输入或扫码自动配对后的兜底界面） */
+function showPairGate(msg) {
+  if (document.getElementById('pair-gate')) { if (msg) document.getElementById('pair-gate-msg').textContent = msg; return }
+  const el = document.createElement('div')
+  el.id = 'pair-gate'
+  el.innerHTML = `<div class="pg-box">
+    <h2>Open Agent Team</h2>
+    <p class="dim small">${esc(msg || '手机尚未与电脑配对。请在电脑端打开：设置 → 手机连接 → 生成配对码，然后在下方输入 6 位配对码。')}</p>
+    <input id="pg-pin" inputmode="numeric" maxlength="6" placeholder="6 位配对码" />
+    <input id="pg-name" placeholder="设备名称（可选，如：我的手机）" />
+    <button id="pg-btn" class="btn primary">配对连接</button>
+    <p id="pair-gate-msg" class="dim small"></p>
+  </div>`
+  document.body.appendChild(el)
+  document.getElementById('pg-btn').onclick = async () => {
+    const code = document.getElementById('pg-pin').value.trim()
+    if (!/^\d{6}$/.test(code)) { document.getElementById('pair-gate-msg').textContent = '请输入 6 位数字配对码'; return }
+    document.getElementById('pair-gate-msg').textContent = '正在配对…'
+    const r = await fetch('/api/pair', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code, deviceName: document.getElementById('pg-name').value.trim() || detectDeviceName() }) }).then((x) => x.json()).catch(() => ({}))
+    if (r.ok) { localStorage.setItem('oat-token', r.token); location.reload() }
+    else document.getElementById('pair-gate-msg').textContent = r.error || '配对失败'
+  }
+}
 const providerById = (id) =>state.providers.find((p) =>p.id === id)
 const roleById = (id) =>state.roles.find((r) =>r.id === id)
 const isChatCapable = (m) => !(m.tags || []).some((x) =>NON_CHAT.includes(x))
@@ -395,7 +470,7 @@ function setMsgStatus(bodyEl, st) {
  el.dataset.st = st
  el.textContent = st === 'done' ? t('stDone') : st === 'failed' ? t('stFailed') : st === 'answering' ? t('stAnswering') + '…' : t('stThinking') + '…'
 }
-// ★ 上下文占用环形指示器（悬停显示 成本/使用率/Token），用于对话消息与团队角色块
+// ★ 上下文占用环形指示器（悬停显示 费用/使用率/Token/缓存命中），用于对话消息与团队角色块
 function setCtxBadge(host, pct, cost, tokens, cacheHit) {
  if (!host) return
  const head = host.querySelector('.agent-head') || host
@@ -545,6 +620,108 @@ function renderSettings() {
  $('changelog').innerHTML = `<div class="dim small" style="margin-bottom:6px">v${APP_VERSION}</div>` + CHANGELOG.map(([v, date, items]) => `
  <div class="cl-block"><div class="cl-head"><b>${esc(v)}</b><span class="dim small">${esc(date)}</span></div>
  <ul>${items.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>`).join('')
+ renderMobileCard()
+}
+// ★ TAT：设置页「手机连接」面板（局域网监听 / 配对码+二维码 / 设备管理）
+async function renderMobileCard() {
+ const tgl = $('set-lan-listen')
+ if (!tgl) return
+ const info = await api('GET', '/api/net/info').catch(() => ({}))
+ tgl.checked = !!state.settings.lanListen
+ // ★ 优先真实网卡（WLAN/以太网），排除虚拟网卡（VirtualBox/VMware/VPN 等）
+ const NOISY = /virtualbox|vmware|hyper-v|radmin|loopback|vpn|zerotier|tailscale|hamachi|docker/i
+ const ips = (info.ips || []).filter((x) => x.family === 'IPv4')
+ const cands = ips.filter((x) => !NOISY.test(x.iface || ''))
+ $('mob-ips').textContent = ips.length ? `本机地址：${ips.map((x) => `${x.iface || ''} ${x.address}`.trim()).join('、')}（端口 ${info.port || 3411}）` : '未检测到局域网地址'
+ $('btn-mob-restart').classList.toggle('hidden', state.settings.lanListen === info.listeningAll)
+ tgl.onchange = async () => {
+  state.settings.lanListen = tgl.checked
+  await api('PUT', '/api/settings', { lanListen: tgl.checked })
+  renderMobileCard()
+ }
+ $('btn-mob-restart').onclick = async () => {
+  if (!confirm('重启服务？正在运行的团队任务会中断。')) return
+  await api('POST', '/api/restart')
+  $('mob-pair-msg').textContent = '正在重启…几秒后刷新页面'
+ }
+ $('btn-mob-pair').onclick = async () => {
+  const pc = await api('GET', '/api/pair/new')
+  if (!pc.ok) { $('mob-pair-msg').textContent = pc.error || '生成失败'; return }
+  $('mob-pair-msg').textContent = ''
+  $('mob-pair-box').classList.remove('hidden')
+  $('mob-pin').textContent = pc.code
+  const pool = cands.length ? cands : ips
+  // ★ 优先默认路由主 IP（真正联网的网卡），保证手机扫码地址可用
+  const privateRe = /^192\.168\.|^10\.|^172\.(1[6-9]|2\d|3[01])\./
+  const ipv4 = (info.primary && privateRe.test(info.primary) ? info.primary : null) || pool.map((x) => x.address).find(privateRe) || pool[0]?.address || '127.0.0.1'
+  const url = `http://${ipv4}:${info.port || 3411}/?pair=${pc.token}`
+  try { const qr = qrcode(0, 'M'); qr.addData(url); qr.make(); $('mob-qr').innerHTML = qr.createSvgTag({ cellSize: 4, margin: 2 }) } catch { $('mob-qr').innerHTML = '' }
+  $('mob-urls').textContent = url
+  clearInterval(renderMobileCard._timer)
+  const tick = () => {
+   const left = Math.max(0, Math.round((pc.expires - Date.now()) / 1000))
+   $('mob-pair-exp').textContent = left > 0 ? `剩余有效时间 ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` : '配对码已过期，请重新生成'
+   if (left <= 0) clearInterval(renderMobileCard._timer)
+  }
+  tick(); renderMobileCard._timer = setInterval(tick, 1000)
+ }
+ const dv = await api('GET', '/api/devices').catch(() => ({}))
+ const list = dv.devices || []
+ $('mob-device-list').innerHTML = list.length ? list.map((d) => `
+ <div class="mob-dev-row" data-id="${d.id}">
+ <b>${esc(d.name)}</b>
+ <select class="mini-sel mob-perm"><option value="read">只读</option><option value="operate">可对话/操作</option><option value="approve">可批准</option><option value="config">可配置</option></select>
+ <span class="dim small">${d.lastSeen ? '最近在线 ' + new Date(d.lastSeen).toLocaleString() : '从未在线'}</span>
+ <button class="btn danger tiny mob-revoke">撤销</button>
+ </div>`).join('') : t('mobNoDevices')
+ $('mob-device-list').querySelectorAll('.mob-dev-row').forEach((row) => {
+  const id = row.dataset.id
+  const sel = row.querySelector('.mob-perm')
+  sel.value = list.find((x) => x.id === id)?.perm || 'approve'
+  sel.onchange = () => api('PUT', '/api/devices/' + id, { perm: sel.value }).then(() => renderMobileCard())
+  row.querySelector('.mob-revoke').onclick = async () => {
+   if (!confirm('撤销该设备？手机将立即失去访问权限。')) return
+   await api('DELETE', '/api/devices/' + id)
+   renderMobileCard()
+  }
+ })
+ // ★ EasyTier 组网（检测/下载/启动/停止）
+ const et = await api('GET', '/api/easytier/status').catch(() => ({}))
+ const ecfg = { ...(et.config || {}), ...(state.settings.easytier || {}) }
+ if ($('et-name')) {
+  $('et-name').value = ecfg.networkName || ''
+  $('et-secret').value = ecfg.networkSecret || ''
+  $('et-ip').value = ecfg.virtualIp || '10.126.126.1'
+  const saveEt = async () => {
+   state.settings.easytier = { ...ecfg, networkName: $('et-name').value.trim(), networkSecret: $('et-secret').value.trim(), virtualIp: $('et-ip').value.trim() }
+   await api('PUT', '/api/settings', { easytier: state.settings.easytier })
+  }
+  $('et-name').onchange = saveEt; $('et-secret').onchange = saveEt; $('et-ip').onchange = saveEt
+  $('et-msg').textContent = `${et.installed ? '已安装' : '未安装'} · ${et.running ? '运行中' : '未运行'}`
+  $('btn-et-download').onclick = async () => {
+   $('et-msg').textContent = '正在从官方 Release 下载（视网络情况可能需几分钟）…'
+   const r = await api('POST', '/api/easytier/download')
+   $('et-msg').textContent = r.ok ? r.message : (r.error || '下载失败')
+   renderMobileCard()
+  }
+  $('btn-et-start').onclick = async () => {
+   await saveEt()
+   $('et-msg').textContent = '正在请求启动（请在电脑上确认管理员授权）…'
+   const r = await api('POST', '/api/easytier/start')
+   $('et-msg').textContent = r.ok ? (r.message || '已启动') : (r.error || '启动失败')
+   setTimeout(renderMobileCard, 3000)
+  }
+  $('btn-et-stop').onclick = async () => {
+   const r = await api('POST', '/api/easytier/stop')
+   $('et-msg').textContent = r.running ? '仍在运行' : '已停止'
+  }
+ }
+ // ★ 防火墙提示（复制命令）
+ if ($('btn-fw-hint')) $('btn-fw-hint').onclick = async () => {
+  const cmd = `netsh advfirewall firewall add rule name="Open Agent Team" dir=in action=allow protocol=TCP localport=${info.port || 3411}`
+  try { await navigator.clipboard.writeText(cmd) } catch { /* ignore */ }
+  alert('手机连不上时，请检查 Windows 防火墙：\n\n① 首次启动时若弹出"允许访问"提示，请勾选「专用网络」并允许；\n② 或右键"以管理员身份"运行命令提示符，粘贴并执行（已复制到剪贴板）：\n\n' + cmd)
+ }
 }
 async function saveToolLimit(key, sel, num) {
  const v = sel.value === 'custom' ? Math.max(1, Math.min(999, Number(num.value) || 50)) : Number(sel.value)
@@ -1021,7 +1198,7 @@ async function sendChat() {
  }
  $('btn-send').disabled = true
  try {
- const res = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: state.activeSession?.id, providerId, model, content, tools }) })
+ const res = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ sessionId: state.activeSession?.id, providerId, model, content, tools }) })
  const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = ''
  while (true) {
  const { done, value } = await reader.read()
@@ -1413,7 +1590,7 @@ function attachTeamRun(runMeta) {
  state.runPaused = !!runMeta.paused
  updatePauseUI()
  if (state.teamSessionId) refreshTeamSessions(state.teamSessionId)
- const src = new EventSource(`/api/team/attach?taskId=${encodeURIComponent(runMeta.id)}`)
+ const src = new EventSource(`/api/team/attach?taskId=${encodeURIComponent(runMeta.id)}&token=${encodeURIComponent(AUTH_TOKEN)}`)
  let run = null, ref = null
  src.onmessage = (e) => {
  let ev
@@ -1548,7 +1725,7 @@ async function roleChatSend() {
  setMsgStatus(target, 'thinking') // ★ 状态：思考中
  let first = true, finished = false
  try {
-  const res = await fetch('/api/role/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ roleId, message: text, sessionId: state.teamSessionId || '' }) })
+  const res = await fetch('/api/role/chat', { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ roleId, message: text, sessionId: state.teamSessionId || '' }) })
   if (!res.ok) { const er = await res.json().catch(() => ({})); target.textContent = t('failure') + ': ' + (er.error || res.status); setMsgStatus(target, 'failed'); return }
   const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = ''
   while (true) {
@@ -1628,7 +1805,7 @@ async function runTeam() {
  const run = createRunBox(task)
  const runRef = { id: null, stepBoxes: {}, leaderBox: null, finalBox: null }
  try {
- const res = await fetch('/api/team/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ task, sessionId: state.teamSessionId }) })
+  const res = await fetch('/api/team/run', { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ task, sessionId: state.teamSessionId }) })
  const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = ''
  while (true) {
  const { done, value } = await reader.read()
@@ -1764,14 +1941,14 @@ function handleTeamEvent(ev, run, ref) {
     } catch { /* ignore */ }
     const last = Object.values(ref.stepBoxes).filter((s) =>s.agent === ev.agent).pop()
     if (last?.body) last.body.parentElement.insertAdjacentHTML('beforeend', `<div class="dim small"> ${fmtNum(ev.usage?.prompt_tokens)}/${fmtNum(ev.usage?.completion_tokens)} · ${t('cache')} ${fmtNum(ev.cacheHit)} · ${fmtCost(ev.cost)}</div>`)
-    // ★ 每个角色块的上下文占用环形指示器
-    if (ev.usage && ev.contextLimit) {
-     const pct = Math.min(999, Math.round((ev.usage.prompt_tokens || 0) / ev.contextLimit * 100))
-     const host = last?.body ? last.body.parentElement : (ev.agent === 'leader' && ref.finalBox ? ref.finalBox.parentElement : null)
-     setCtxBadge(host, pct, ev.cost, (ev.usage.prompt_tokens || 0) + (ev.usage.completion_tokens || 0), ev.cacheHit)
-    }
-    return
+   // ★ 每个角色块的上下文占用环形指示器
+   if (ev.usage && ev.contextLimit) {
+    const pct = Math.min(999, Math.round((ev.usage.prompt_tokens || 0) / ev.contextLimit * 100))
+    const host = last?.body ? last.body.parentElement : (ev.agent === 'leader' && ref.finalBox ? ref.finalBox.parentElement : null)
+    setCtxBadge(host, pct, ev.cost, (ev.usage.prompt_tokens || 0) + (ev.usage.completion_tokens || 0), ev.cacheHit)
    }
+   return
+  }
  if (ev.type === 'limit') {
  if (ev.agent) roleSetStatus(ev.agent, 'failed', { sub: ev.message })
  const box = document.createElement('div')
@@ -2343,6 +2520,7 @@ async function removeWorkspace() {
 
 /* ══════════════ 视图 ══════════════ */
 function switchView(name) {
+ document.body.classList.remove('rail-open') // ★ TAT 移动端：切换页面时收起侧栏抽屉
  document.querySelectorAll('.tab').forEach((x) =>x.classList.toggle('active', x.dataset.view === name))
  document.querySelectorAll('.view').forEach((v) =>v.classList.toggle('active', v.id === `view-${name}`))
  $('sidebar-providers').classList.toggle('hidden', name !== 'chat')
@@ -2675,6 +2853,14 @@ async function loadState() {
  if (!state.activeSession && last && state.sessions.some((s) =>s.id === last)) await openSession(last)
 }
 async function main() {
+ // ★ TAT 手机端：扫码自动配对（?pair=）/ 未配对时显示配对门（电脑本机跳过）
+ const pairToken = new URLSearchParams(location.search).get('pair')
+ if (pairToken && !IS_LOCAL_HOST) {
+  const r = await fetch('/api/pair', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pairToken, deviceName: detectDeviceName() }) }).then((x) => x.json()).catch(() => ({}))
+  if (r.ok) { AUTH_TOKEN = r.token; localStorage.setItem('oat-token', AUTH_TOKEN); history.replaceState(null, '', location.pathname) }
+ }
+ if (!IS_LOCAL_HOST && !AUTH_TOKEN) { showPairGate(); return }
+ setupStateStream()
  const tpl = await api('GET', '/api/templates')
  if (tpl.ok) state.templates = tpl.templates
  $('f-template').innerHTML = Object.entries(state.templates).map(([k, v]) => `<option value="${k}">${esc(v.label)}</option>`).join('')
@@ -2895,6 +3081,9 @@ async function main() {
  $('btn-ts-cancel').onclick = () => $('team-session-modal').classList.add('hidden')
  $('btn-ts-create').onclick = createTeamSessionFromModal
  $('btn-sidebar-add-api').onclick = () => openModal(null)
+ // ★ TAT 移动端：侧栏抽屉开关 + 新建会话快捷按钮
+ if ($('btn-mobile-menu')) $('btn-mobile-menu').onclick = () => document.body.classList.toggle('rail-open')
+ if ($('chat-new-session')) $('chat-new-session').onclick = () => openSessionModal($('chat-provider').value)
  $('btn-team-session-rename').onclick = async () => {
  if (!state.teamSessionId) return
  const cur = state.teamSessions.find((s) =>s.id === state.teamSessionId)

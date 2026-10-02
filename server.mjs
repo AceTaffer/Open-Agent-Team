@@ -10,9 +10,10 @@
  * ★ 安全：只监听 127.0.0.1；API Key / GitHub Token 均 AES-256-GCM 加密存储
  */
 import http from 'node:http'
-import { readFile, writeFile, mkdir, readdir, rm, copyFile, cp, stat } from 'node:fs/promises'
+import { readFile, writeFile, mkdir, readdir, rm, copyFile, cp, stat, appendFile } from 'node:fs/promises'
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import os from 'node:os'
+import dgram from 'node:dgram'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import crypto from 'node:crypto'
@@ -53,8 +54,12 @@ const SKILLS_FILE = path.join(DATA_DIR, 'skills.json')
 const STATS_FILE = path.join(DATA_DIR, 'stats.json')
 const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json')
 const JS_PLUGINS_DIR = path.join(DATA_DIR, 'plugins-js')
+const DEVICES_FILE = path.join(DATA_DIR, 'devices.json')   // ★ TAT 手机设备（已配对）
+const AUDIT_FILE = path.join(DATA_DIR, 'audit.jsonl')      // ★ TAT 远程操作审计日志
 const PORT = Number(process.env.PORT || 3410)
 const HOST = process.env.HOST || '127.0.0.1'
+// ★ 设备权限档：read=只读 / operate=可对话+任务操作 / approve=可批准权限与回答 / config=可改配置
+const DEVICE_PERMS = ['read', 'operate', 'approve', 'config']
 
 /* ═══════════════════════════════════════════════════════════════
  * 一、内置厂商模板
@@ -136,7 +141,36 @@ let roles = []          // ★ 角色为数组，可增删改（Open Agent Team�
 let plugins = []        // HTTP API 插件
 let skills = []         // ★ Agent 技能预设 [{id,name,description,prompt}]
 let sessions = []       // ★ 会话：每个 API 下可多个独立会话（含消息、工作区、模型）
-let settings = { developerMode: false, exeEnabled: false, exeAllowlist: [], githubLogin: '', workspaces: [], activeWorkspace: '', language: '', taskBudgetCost: 0, chatTools: true, defaultPermission: 'modify', reasoningEffort: 'low', artProvider: '', artModel: '', videoProvider: '', videoModel: '', updateRepo: 'AceTaffer/Open-Agent-Team', updateBranch: 'main', toolLimits: { chat: 0, team: 0, roleChat: 0 }, ui: { theme: 'dark', accent: '#2f9e8f', fontSize: 13, spacing: 'normal', teamInputPos: 'bottom' } }
+let devices = []        // ★ TAT：已配对的手机设备 [{id,name,tokenHash,perm,revoked,createdAt,lastSeen,lastIp}]
+let settings = { developerMode: false, exeEnabled: false, exeAllowlist: [], githubLogin: '', workspaces: [], activeWorkspace: '', language: '', taskBudgetCost: 0, chatTools: true, defaultPermission: 'modify', reasoningEffort: 'low', artProvider: '', artModel: '', videoProvider: '', videoModel: '', updateRepo: 'AceTaffer/Open-Agent-Team', updateBranch: 'main', toolLimits: { chat: 0, team: 0, roleChat: 0 }, lanListen: false, pauseOnDisconnect: false, easytier: { networkName: '', networkSecret: '', virtualIp: '10.126.126.1', peerUrl: 'tcp://public.easytier.cn:11010' }, ui: { theme: 'dark', accent: '#2f9e8f', fontSize: 13, spacing: 'normal', teamInputPos: 'bottom' } }
+
+/* ═══════════════════════════════════════════════════════════════
+ * ★ TAT 手机互联基础：事件流（rev）、审计、设备配对
+ * ═══════════════════════════════════════════════════════════════ */
+const streamClients = new Set()          // /api/stream 监听器
+let listenAll = false                    // ★ 当前是否监听 0.0.0.0（服务启动时确定）
+const revs = {}                          // 各数据域版本号（客户端增量同步用）
+function bumpRev(key) {
+  revs[key] = (revs[key] || 0) + 1
+  const ev = { type: 'changed', key, rev: revs[key], at: Date.now() }
+  for (const fn of streamClients) { try { fn(ev) } catch { /* ignore */ } }
+}
+const sha256 = (s) => crypto.createHash('sha256').update(String(s)).digest('hex')
+function audit(req, action, detail) {
+  try {
+    const line = JSON.stringify({ t: Date.now(), ip: req?.socket?.remoteAddress || '', device: req?.device ? { id: req.device.id, name: req.device.name, perm: req.device.perm } : null, action, detail })
+    appendFile(AUDIT_FILE, line + '\n').catch(() => {})
+  } catch { /* ignore */ }
+}
+// ★ 一次性配对码（5 分钟有效，PIN 或二维码 token 二选一提交）
+const pairCodes = new Map() // code -> { token, expires }
+function genPairCode() {
+  for (const [k, v] of pairCodes) if (v.expires < Date.now()) pairCodes.delete(k)
+  const code = String(crypto.randomInt(100000, 1000000))
+  const token = crypto.randomBytes(16).toString('hex')
+  pairCodes.set(code, { token, expires: Date.now() + 5 * 60 * 1000 })
+  return { code, token, expires: Date.now() + 5 * 60 * 1000 }
+}
 
 // ★ 技能市场：内置技能（可一键导入到技能库）
 const BUILTIN_SKILLS = [
@@ -148,6 +182,7 @@ const BUILTIN_SKILLS = [
   { id: 'mk_doc_cn', name: '中文技术文档', description: '结构化简体中文文档', tags: ['文档'], prompt: '撰写文档时使用简体中文：结构化小标题、先结论后细节、附可复制的命令与示例；避免空话与营销腔。' },
   { id: 'mk_refactor', name: '最简有效重构', description: '小步重构，保持行为不变', tags: ['质量'], prompt: '重构时坚持最简有效原则：能少写一行绝不多写；一次只做一类改动；每步改动后运行验证确保行为不变；不做与任务无关的“顺手优化”。' },
   { id: 'mk_research', name: '资料研究', description: '联网检索并给出处', tags: ['研究'], prompt: '研究问题时：先用 web_search/web_fetch 检索多个来源交叉验证；输出结论时要标注来源链接与关键原文摘要；找不到可靠来源要明确说明。' },
+  { id: 'mk_security_audit', name: '安全审计（多阶段）', description: '侦察→覆盖排查→验证→报告（借鉴 Cloudflare security-audit-skill）', tags: ['安全', '质量'], prompt: '进行安全审计时按六阶段执行：1) 侦察：梳理架构、信任边界、输入面与历史证据，输出覆盖清单；2) 覆盖式排查：逐项检查注入、越权/鉴权绕过、路径穿越、命令注入、密钥与敏感信息泄露、依赖与配置风险，记录检查证据；3) 候选验证：每个可疑点交由独立验证者尝试证伪，确认可利用性与影响；4) 结构化输出：分为 confirmed / needs_validation / rejected 三类，写清 文件:行、复现步骤、影响；5) 独立复核：对最终结论逐条复核来源引用；6) 报告：输出结论、证据、修复建议与遗留问题。禁止无证据断言。' },
   { id: 'mk_pixel_asset', name: '游戏像素素材规范', description: '三视图→动作帧→PNG 标准化流程', tags: ['游戏', '美术'], prompt: '制作游戏素材时严格遵守：1) 先确认角色/场景设定，角色需产出正面/侧面/背面三视图；2) 依据三视图逐动作生成帧素材：待机、向左走、向右走、起跳、下落、下蹲、攻击、受击；3) 所有素材必须是 PNG（用 generate_image 生成，自动为 PNG）；4) 文件命名规范：角色ID_动作_序号.png（如 qianxia_run_01.png），场景命名：场景_分层_序号.png；5) 生成后用 list_files 核对文件确实存在，再汇总路径清单交给程序。' },
   { id: 'mk_game_qa', name: '游戏测试清单', description: '操作/碰撞/边界/性能全项验证', tags: ['游戏', '质量'], prompt: '测试游戏时按清单逐项真实验证并记录结果：1) 启动与加载无报错（浏览器控制台）；2) 键盘/鼠标操作响应正确；3) 移动、跳跃、碰撞、得分、胜负等核心机制；4) 边界情况：卡墙、出界、连续输入、暂停恢复；5) 素材加载：所有引用的 PNG 是否存在且能显示；6) 性能：帧率与内存无明显异常。发现问题要给出复现步骤与期望/实际结果，修复后必须回归重测。' },
   { id: 'mk_asset_org', name: '素材归档与命名', description: 'assets 目录结构与索引清单', tags: ['游戏', '流程'], prompt: '整理素材时：1) 统一放入工作区 assets/ 目录，按角色/场景/UI 分子目录；2) 文件名只使用小写字母、数字、下划线；3) 生成 assets/README.md 或 manifest.json 索引：文件名→用途→来源/生成提示词；4) 引用素材的代码必须使用清单中的路径，禁止出现找不到的文件。' },
@@ -213,7 +248,7 @@ function statsAdd({ role = '', model = '', usage = null, cost = 0, toolCalls = 0
 let statsTimer = null
 function saveStatsDebounced() {
   clearTimeout(statsTimer)
-  statsTimer = setTimeout(() => { writeFile(STATS_FILE, JSON.stringify(stats, null, 2), 'utf8').catch(() => {}) }, 1200)
+  statsTimer = setTimeout(() => { writeFile(STATS_FILE, JSON.stringify(stats, null, 2), 'utf8').then(() => bumpRev('stats')).catch(() => {}) }, 1200)
 }
 
 // ★ OAT JS 插件运行时（data/plugins-js/*.mjs）
@@ -322,13 +357,16 @@ async function loadData() {
   await loadRoleChats()
   await loadCustomPresets()
   await loadJsPlugins()
+  devices = await readJson(DEVICES_FILE, [])
+  if (!Array.isArray(devices)) devices = []
 }
-const saveProviders = () => writeFile(PROVIDERS_FILE, JSON.stringify(providers, null, 2), 'utf8')
-const saveRoles = () => writeFile(ROLES_FILE, JSON.stringify(roles, null, 2), 'utf8')
-const saveSkills = () => writeFile(SKILLS_FILE, JSON.stringify(skills, null, 2), 'utf8')
-const saveSessions = () => writeFile(SESSIONS_FILE, JSON.stringify(sessions, null, 2), 'utf8')
-const savePlugins = () => writeFile(PLUGINS_FILE, JSON.stringify(plugins, null, 2), 'utf8')
-const saveSettings = () => writeFile(SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf8')
+const saveProviders = async () => { await writeFile(PROVIDERS_FILE, JSON.stringify(providers, null, 2), 'utf8'); bumpRev('providers') }
+const saveRoles = async () => { await writeFile(ROLES_FILE, JSON.stringify(roles, null, 2), 'utf8'); bumpRev('roles') }
+const saveSkills = async () => { await writeFile(SKILLS_FILE, JSON.stringify(skills, null, 2), 'utf8'); bumpRev('skills') }
+const saveSessions = async () => { await writeFile(SESSIONS_FILE, JSON.stringify(sessions, null, 2), 'utf8'); bumpRev('sessions') }
+const savePlugins = async () => { await writeFile(PLUGINS_FILE, JSON.stringify(plugins, null, 2), 'utf8'); bumpRev('plugins') }
+const saveSettings = async () => { await writeFile(SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf8'); bumpRev('settings') }
+const saveDevices = async () => { await writeFile(DEVICES_FILE, JSON.stringify(devices, null, 2), 'utf8'); bumpRev('devices') }
 
 /* ═══════════════════════════════════════════════════════════════
  * 四、调试事件环形缓冲（开发者面板）
@@ -1213,6 +1251,10 @@ function runEmit(run, event) {
     run.buffer.push(event)
     if (run.buffer.length > 600) run.buffer.splice(0, run.buffer.length - 600)
     for (const fn of run.listeners) { try { fn(event) } catch { /* ignore */ } }
+    // ★ TAT：任务事件落盘（跳过 delta/reasoning 大流量），断线/重启后仍可回放
+    if (run.id && !['delta', 'reasoning'].includes(event.type)) {
+      appendFile(path.join(TASKS_DIR, `${run.id}.events.jsonl`), JSON.stringify(event) + '\n').catch(() => {})
+    }
   } catch { /* ignore */ }
 }
 function notifyRun(run) { run.resumeWaiters.splice(0).forEach((f) => { try { f() } catch { /* ignore */ } }) }
@@ -1245,6 +1287,7 @@ async function recordArt(urls, meta = {}) {
     list.unshift({ url: u, path: rel, file: path.basename(rel), root: getActiveRoot(), kind: 'image', ...meta, t: Date.now() })
   }
   await writeFile(ART_META_FILE, JSON.stringify(list.slice(0, 1000), null, 2), 'utf8')
+  bumpRev('art')
 }
 async function deleteArtFiles(files, deleteFileToo) {
   const list = await readArtMeta()
@@ -1492,7 +1535,7 @@ async function runTeam(task, opts = {}) {
   // ★ 任务索引：先登记 running 状态（支持并发运行多个任务）
   const idxFile = path.join(TASKS_DIR, 'index.json')
   const readTaskIndex = async () => { try { return existsSync(idxFile) ? JSON.parse(await readFile(idxFile, 'utf8')) : [] } catch { return [] } }
-  const writeTaskIndex = async (list) => { await writeFile(idxFile, JSON.stringify(list.slice(0, 200), null, 2), 'utf8') }
+  const writeTaskIndex = async (list) => { await writeFile(idxFile, JSON.stringify(list.slice(0, 200), null, 2), 'utf8'); bumpRev('tasks') }
   await writeTaskIndex([{ id: taskId, task, sessionId: sess?.id || '', summary: '', steps: 0, startedAt, status: 'running' }, ...(await readTaskIndex()).filter((x) => x.id !== taskId)])
   let totalCost = 0
   let taskToolCalls = 0
@@ -1687,7 +1730,8 @@ async function runTeam(task, opts = {}) {
         }
         if (sess) saveSessions().catch(() => {})
         // ★ 空正文重试时关闭思考（reasoning_effort=none）：避免再次把全部输出预算烧在思考里
-        const effortOverride = emptyRetried ? 'none' : (sess?.effort || undefined) // ★ 推理等级跟随团队会话滑块
+        // ★ 推理等级：优先用该团队会话的滑块设置（sess.effort）
+        const effortOverride = emptyRetried ? 'none' : (sess?.effort || undefined)
         const turnText = await chatComplete(agent.provider, agent.model, messages, { stream: true, temperature: 0.4, reasoningEffort: effortOverride, onDelta: (d) => send({ type: 'delta', agent: roleId, text: d, turn }), onReasoning: (r) => send({ type: 'reasoning', agent: roleId, text: r, turn }), onUsage: trackUsage(roleId, agent.provider, agent.model) })
         stepText += turnText
         // ★ 推理模型可能把输出预算全耗在思考里（正文为空）：只重试一次，且关闭思考
@@ -1941,6 +1985,148 @@ async function handleApi(req, res, url) {
   const method = req.method
   dbg('http', { method, path: pathname })
 
+  /* ═══ ★ TAT 手机互联：鉴权与公开端点 ═══ */
+  const clientIp = req.socket.remoteAddress || ''
+  const isLoopback = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp === '::ffff:127.0.0.1'
+  // 健康检查（公开，用于手机端探测连通性）
+  if (pathname === '/api/ping' && method === 'GET') return sendJson(res, 200, { ok: true, app: 'Open Agent Team', version: appVersion(), time: Date.now() })
+  // 配对（公开，凭一次性配对码/PIN 换设备 token）
+  if (pathname === '/api/pair' && method === 'POST') {
+    const b = await readBody(req)
+    const code = String(b.code || '').trim()
+    const pToken = String(b.pairToken || '').trim()
+    let entryKey = null
+    for (const [k, v] of pairCodes) { if ((code && k === code) || (pToken && v.token === pToken)) { entryKey = k; break } }
+    if (!entryKey) { audit(req, 'pair.fail', { reason: 'invalid-code' }); return sendJson(res, 200, { ok: false, error: '配对码无效或已过期，请在电脑端重新生成' }) }
+    const entry = pairCodes.get(entryKey)
+    if (entry.expires < Date.now()) { pairCodes.delete(entryKey); return sendJson(res, 200, { ok: false, error: '配对码已过期' }) }
+    pairCodes.delete(entryKey) // 一次性使用
+    const token = crypto.randomBytes(24).toString('hex')
+    const dev = { id: crypto.randomUUID(), name: String(b.deviceName || '手机设备').slice(0, 30), tokenHash: sha256(token), perm: 'approve', revoked: false, createdAt: Date.now(), lastSeen: Date.now(), lastIp: clientIp }
+    devices.push(dev); await saveDevices()
+    audit(req, 'pair.ok', { device: dev.name })
+    return sendJson(res, 200, { ok: true, token, device: { id: dev.id, name: dev.name, perm: dev.perm } })
+  }
+  // 其余 /api/* 需鉴权（本机回环免鉴权 = 桌面端自身）
+  if (!isLoopback) {
+    const h = req.headers.authorization || ''
+    // ★ Bearer 头优先；SSE（EventSource 不支持自定义头）允许 ?token= 传参
+    const token = h.startsWith('Bearer ') ? h.slice(7).trim() : (url.searchParams.get('token') || '')
+    const dev = token ? devices.find((d) => d.tokenHash === sha256(token) && !d.revoked) : null
+    if (!dev) { audit(req, 'auth.deny', { path: pathname }); return sendJson(res, 401, { ok: false, error: '未授权：请先在电脑端「手机连接」完成配对' }) }
+    dev.lastSeen = Date.now(); dev.lastIp = clientIp
+    saveDevices().catch(() => {})
+    req.device = dev
+    const CONFIG_RE = /^\/api\/(settings|roles|providers|plugins|jsplugins|skills|presets|vault|devices|update|github|workspaces|cleanup|debug|exe|restart|easytier)(\/|$)/
+    if (dev.perm === 'read' && method !== 'GET') { audit(req, 'perm.deny', { path: pathname, perm: dev.perm }); return sendJson(res, 403, { ok: false, error: '当前设备为「只读」权限，禁止修改' }) }
+    if (dev.perm !== 'config' && method !== 'GET' && CONFIG_RE.test(pathname)) { audit(req, 'perm.deny', { path: pathname, perm: dev.perm }); return sendJson(res, 403, { ok: false, error: '当前设备无权修改配置（可在电脑端「手机连接」中提升权限）' }) }
+    if (method !== 'GET') audit(req, 'api', { path: pathname })
+  }
+  // 生成配对码（仅电脑端）
+  if (pathname === '/api/pair/new' && method === 'GET') {
+    if (!isLoopback && req.device?.perm !== 'config') return sendJson(res, 403, { ok: false, error: '仅电脑端可生成配对码' })
+    const pc = genPairCode()
+    return sendJson(res, 200, { ok: true, ...pc })
+  }
+  // 网络信息（局域网 IP 列表 / 监听状态 / 默认路由主 IP）
+  if (pathname === '/api/net/info' && method === 'GET') {
+    const ips = []
+    for (const [name, list] of Object.entries(os.networkInterfaces())) {
+      for (const a of list || []) { if (a.internal) continue; ips.push({ iface: name, address: a.address, family: a.family }) }
+    }
+    // ★ 默认路由主 IP：发一个不发包的 UDP“连接”，操作系统会选出实际联网网卡的地址（手机扫码应使用它）
+    let primary = ''
+    try {
+      primary = await new Promise((resolve) => {
+        const s = dgram.createSocket('udp4')
+        const done = (v) => { try { s.close() } catch { /* ignore */ } resolve(v) }
+        s.connect(53, '223.5.5.5', () => done(s.address().address))
+        setTimeout(() => done(''), 1500)
+      })
+    } catch { primary = '' }
+    return sendJson(res, 200, { ok: true, port: PORT, lanListen: !!settings.lanListen, listeningAll: listenAll, ips, primary, version: appVersion() })
+  }
+  // 设备管理
+  if (pathname === '/api/devices' && method === 'GET') return sendJson(res, 200, { ok: true, devices: devices.map((d) => ({ id: d.id, name: d.name, perm: d.perm, revoked: !!d.revoked, createdAt: d.createdAt, lastSeen: d.lastSeen, lastIp: d.lastIp })) })
+  const mdev = pathname.match(/^\/api\/devices\/([^/]+)$/)
+  if (mdev) {
+    const d = devices.find((x) => x.id === mdev[1])
+    if (!d) return sendJson(res, 404, { ok: false, error: '设备不存在' })
+    if (method === 'PUT') {
+      const b = await readBody(req)
+      if (typeof b.name === 'string' && b.name.trim()) d.name = b.name.trim().slice(0, 30)
+      if (DEVICE_PERMS.includes(b.perm)) d.perm = b.perm
+      await saveDevices()
+      return sendJson(res, 200, { ok: true })
+    }
+    if (method === 'DELETE') { devices = devices.filter((x) => x.id !== d.id); await saveDevices(); audit(req, 'device.revoke', { device: d.name }); return sendJson(res, 200, { ok: true }) }
+  }
+  // ★ EasyTier 异地组网（可选组件：官方下载 + 独立进程调用，LGPL-3.0）
+  const ET_DIR = path.join(__dirname, 'tools', 'easytier')
+  const ET_EXE = path.join(ET_DIR, 'easytier-core.exe')
+  const etRunning = async () => { try { const { stdout } = await execAsync('tasklist /FI "IMAGENAME eq easytier-core.exe" /NH', { windowsHide: true, timeout: 10000 }); return /easytier-core/i.test(stdout) } catch { return false } }
+  if (pathname === '/api/easytier/status' && method === 'GET') return sendJson(res, 200, { ok: true, installed: existsSync(ET_EXE), running: await etRunning(), config: settings.easytier || {}, exePath: ET_EXE })
+  if (pathname === '/api/easytier/download' && method === 'POST') {
+    try {
+      const rel = await (await fetch('https://api.github.com/repos/EasyTier/EasyTier/releases/latest', { headers: { 'User-Agent': 'open-agent-team', Accept: 'application/vnd.github+json' } })).json()
+      const asset = (rel.assets || []).find((a) => /windows.*(x86_64|amd64)/i.test(a.name) && /\.zip$/i.test(a.name))
+      if (!asset) return sendJson(res, 200, { ok: false, error: '未找到 Windows 安装包，请到 GitHub Releases 手动下载后放入 tools/easytier/\nhttps://github.com/EasyTier/EasyTier/releases' })
+      await mkdir(ET_DIR, { recursive: true })
+      const zip = path.join(ET_DIR, 'easytier.zip')
+      await execAsync(`powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '${asset.browser_download_url}' -OutFile '${zip}' -UseBasicParsing -Headers @{'User-Agent'='open-agent-team'}"`, { timeout: 600000, windowsHide: true })
+      try { await execAsync(`tar -xf "${zip}" -C "${ET_DIR}"`, { timeout: 120000, windowsHide: true }) }
+      catch { await execAsync(`powershell -NoProfile -Command "Expand-Archive -LiteralPath '${zip}' -DestinationPath '${ET_DIR}' -Force"`, { timeout: 180000, windowsHide: true }) }
+      const { stdout: found } = await execAsync(`cmd /c dir /s /b "${ET_DIR}\\easytier-core.exe"`, { windowsHide: true }).catch(() => ({ stdout: '' }))
+      const exePath = found.split(/\r?\n/).map((s) => s.trim()).filter(Boolean)[0]
+      if (exePath && exePath.toLowerCase() !== ET_EXE.toLowerCase()) { try { await copyFile(exePath, ET_EXE) } catch { /* ignore */ } }
+      if (!existsSync(ET_EXE)) return sendJson(res, 200, { ok: false, error: '解压后未找到 easytier-core.exe，请手动放入 tools/easytier/' })
+      audit(req, 'easytier.download', { tag: rel.tag_name })
+      return sendJson(res, 200, { ok: true, message: `EasyTier 已安装（${rel.tag_name}）` })
+    } catch (e) { return sendJson(res, 200, { ok: false, error: '下载失败：' + e.message + '（可到官方 Releases 手动下载放入 tools/easytier/）' }) }
+  }
+  if (pathname === '/api/easytier/start' && method === 'POST') {
+    if (!existsSync(ET_EXE)) return sendJson(res, 200, { ok: false, error: '尚未安装 EasyTier，请先「一键下载安装」或手动放入 tools/easytier/' })
+    const cfg = settings.easytier || {}
+    if (!cfg.networkName || !cfg.networkSecret) return sendJson(res, 200, { ok: false, error: '请先填写网络名称与密码（手机端需填写相同内容）' })
+    if (await etRunning()) return sendJson(res, 200, { ok: true, running: true, message: 'EasyTier 已在运行' })
+    const args = ['--network-name', cfg.networkName, '--network-secret', cfg.networkSecret, '-p', cfg.peerUrl || 'tcp://public.easytier.cn:11010']
+    if (cfg.virtualIp) args.push('--ipv4', cfg.virtualIp)
+    const psArgs = args.map((a) => `'${String(a).replace(/'/g, "''")}'`).join(',')
+    try {
+      await execAsync(`powershell -NoProfile -Command "Start-Process -FilePath '${ET_EXE}' -ArgumentList @(${psArgs}) -WorkingDirectory '${ET_DIR}' -Verb RunAs"`, { timeout: 30000, windowsHide: true })
+    } catch (e) { return sendJson(res, 200, { ok: false, error: '启动失败（可能取消了管理员授权）：' + e.message }) }
+    await new Promise((r) => setTimeout(r, 3500))
+    const running = await etRunning()
+    audit(req, 'easytier.start', { running })
+    return sendJson(res, 200, { ok: true, running, message: running ? 'EasyTier 已启动（P2P 组网中）' : '已请求启动：请在电脑上确认管理员授权（UAC 弹窗）后再次查看状态' })
+  }
+  if (pathname === '/api/easytier/stop' && method === 'POST') {
+    await execAsync('taskkill /IM easytier-core.exe /F', { windowsHide: true }).catch(() => {})
+    audit(req, 'easytier.stop', {})
+    return sendJson(res, 200, { ok: true, running: await etRunning() })
+  }
+  // 统一事件流（任何数据变更广播 rev；手机端增量同步）
+  if (pathname === '/api/stream' && method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' })
+    const write = (o) => { try { res.write(`data: ${JSON.stringify(o)}\n\n`) } catch { /* ignore */ } }
+    write({ type: 'hello', app: 'Open Agent Team', version: appVersion(), revs, time: Date.now() })
+    const fn = (ev) => write(ev)
+    streamClients.add(fn)
+    const hb = setInterval(() => write({ ping: Date.now() }), 15000)
+    res.on('close', () => { streamClients.delete(fn); clearInterval(hb) })
+    return
+  }
+  // 重启服务（改监听设置后生效）
+  if (pathname === '/api/restart' && method === 'POST') {
+    sendJson(res, 200, { ok: true, message: '服务即将重启，几秒后自动恢复' })
+    audit(req, 'service.restart', {})
+    setTimeout(() => {
+      try { spawn('cmd.exe', ['/c', `timeout /t 1 /nobreak >nul & "${process.execPath}" server.mjs`], { cwd: __dirname, detached: true, stdio: 'ignore', windowsHide: true }).unref() } catch { /* ignore */ }
+      process.exit(0)
+    }, 300)
+    return
+  }
+
   if (pathname === '/api/templates' && method === 'GET') return sendJson(res, 200, { ok: true, templates: TEMPLATES, roles: ROLE_META, prices: DEFAULT_PRICES, contextLimits: DEFAULT_CONTEXT_LIMITS, skills, jsPlugins: jsPluginMeta })
   if (pathname === '/api/state' && method === 'GET') {
     const list = []
@@ -1960,6 +2146,11 @@ async function handleApi(req, res, url) {
       }
       b.toolLimits = { ...(settings.toolLimits || {}), ...tl }
     }
+    // ★ TAT：布尔开关（局域网监听 / 断线暂停）规范化
+    if (b.lanListen != null) b.lanListen = !!b.lanListen
+    if (b.pauseOnDisconnect != null) b.pauseOnDisconnect = !!b.pauseOnDisconnect
+    // ★ TAT：EasyTier 组网配置合并
+    if (b.easytier && typeof b.easytier === 'object') b.easytier = { ...(settings.easytier || {}), ...b.easytier }
     settings = { ...settings, ...b }
     await saveSettings()
     return sendJson(res, 200, { ok: true, settings })
@@ -2395,6 +2586,15 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
     return sendJson(res, 200, { ok: true, session: s })
   }
   const mss = pathname.match(/^\/api\/sessions\/([^/]+)$/)
+  // ★ TAT：会话消息增量拉取（?after=毫秒时间戳），手机端断线重连只补差量
+  const mmsg = pathname.match(/^\/api\/sessions\/([^/]+)\/messages$/)
+  if (mmsg && method === 'GET') {
+    const s = sessions.find((x) => x.id === mmsg[1])
+    if (!s) return sendJson(res, 404, { ok: false, error: '会话不存在' })
+    const after = Number(url.searchParams.get('after') || 0) || 0
+    const msgs = (s.messages || []).filter((m) => (m.t || 0) > after)
+    return sendJson(res, 200, { ok: true, messages: msgs, total: (s.messages || []).length, rev: revs.sessions || 0 })
+  }
   if (mss) {
     const s = sessions.find((x) => x.id === mss[1])
     if (!s) return sendJson(res, 404, { ok: false, error: '会话不存在' })
@@ -2434,7 +2634,7 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
           try { list = JSON.parse(await readFile(idxFile, 'utf8')) } catch { list = [] }
           const keep = []
           for (const t of list) {
-            if (t.sessionId && t.sessionId === s.id) { try { await rm(path.join(TASKS_DIR, `${t.id}.json`), { force: true }) } catch { /* ignore */ } }
+            if (t.sessionId && t.sessionId === s.id) { try { await rm(path.join(TASKS_DIR, `${t.id}.json`), { force: true }); await rm(path.join(TASKS_DIR, `${t.id}.events.jsonl`), { force: true }) } catch { /* ignore */ } }
             else keep.push(t)
           }
           if (keep.length !== list.length) await writeFile(idxFile, JSON.stringify(keep, null, 2), 'utf8')
@@ -2503,9 +2703,9 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
       run.listeners.delete(listener)
       clearInterval(hb)
       if (run.finished) return
-      // ★ 断线（刷新/断网）：宽限 4 秒无重连则自动暂停，等待用户回来决定是否继续
+      // ★ TAT：默认「断线不暂停」（手机切后台/地铁断网不会再打断任务）；可在设置里开启「断线时暂停」
       setTimeout(() => {
-        if (!run.finished && run.listeners.size === 0 && !run.paused) {
+        if (!run.finished && run.listeners.size === 0 && !run.paused && settings.pauseOnDisconnect === true) {
           run.paused = true
           run.pausedReasons.add('disconnect')
           runEmit(run, { type: 'paused', paused: true, reason: 'disconnect', message: '连接已断开，任务已自动暂停；重新打开后请选择是否继续' })
@@ -2522,10 +2722,23 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
   }
   // ★ 重新接入正在运行/已暂停的团队任务（回放缓冲事件）
   if (pathname === '/api/team/attach' && method === 'GET') {
-    const run = teamRuns.get(url.searchParams.get('taskId') || '')
+    const taskId = url.searchParams.get('taskId') || ''
+    const run = teamRuns.get(taskId)
     res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' })
     const write = (o) => { try { res.write(`data: ${JSON.stringify(o)}\n\n`) } catch { /* ignore */ } }
-    if (!run) { write({ type: 'error', message: '任务不存在或已结束' }); write({ type: 'done', taskId: '', aborted: false }) ; res.end(); return }
+    if (!run) {
+      // ★ TAT：任务已结束/服务重启后，从落盘事件文件回放（手机断线久了也能补全）
+      const evFile = path.join(TASKS_DIR, `${taskId}.events.jsonl`)
+      if (taskId && existsSync(evFile)) {
+        write({ type: 'attached', taskId, task: '', finished: true })
+        const txt = await readFile(evFile, 'utf8')
+        for (const line of txt.split('\n')) { if (line.trim()) { try { write(JSON.parse(line)) } catch { /* ignore */ } } }
+        write({ type: 'done', taskId, fromReplay: true, cost: 0, toolCalls: 0, aborted: false, budgetStopped: false })
+      } else {
+        write({ type: 'error', message: '任务不存在或已结束' }); write({ type: 'done', taskId: '', aborted: false })
+      }
+      res.end(); return
+    }
     write({ type: 'attached', taskId: run.id, task: run.task, sessionId: run.sessionId, paused: run.paused, pausedAgents: [...run.pausedAgents], reasons: [...run.pausedReasons] })
     for (const ev of run.buffer) write(ev)
     const listener = (o) => write(o)
@@ -2709,15 +2922,17 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
       const keep = []
       for (const t of list) {
         if (t.sessionId && !sessIds.has(t.sessionId)) {
-          try { await rm(path.join(TASKS_DIR, `${t.id}.json`), { force: true }) } catch { /* ignore */ }
+          try { await rm(path.join(TASKS_DIR, `${t.id}.json`), { force: true }); await rm(path.join(TASKS_DIR, `${t.id}.events.jsonl`), { force: true }) } catch { /* ignore */ }
           result.tasks++
         } else keep.push(t)
       }
       if (keep.length !== list.length) await writeFile(idxFile, JSON.stringify(keep, null, 2), 'utf8')
-      // 不在索引里的任务明细文件（历史残留）
+      // 不在索引里的任务明细文件 / 事件回放文件（历史残留）
       const files = await readdir(TASKS_DIR).catch(() => [])
       for (const f of files) {
-        if (f === 'index.json' || !f.endsWith('.json')) continue
+        if (f === 'index.json') continue
+        if (f.endsWith('.events.jsonl')) { const id = f.replace(/\.events\.jsonl$/, ''); if (!keep.some((t) => t.id === id)) { try { await rm(path.join(TASKS_DIR, f), { force: true }); result.taskFiles++ } catch { /* ignore */ } } ; continue }
+        if (!f.endsWith('.json')) continue
         const id = f.replace(/\.json$/, '')
         if (!keep.some((t) => t.id === id)) { try { await rm(path.join(TASKS_DIR, f), { force: true }); result.taskFiles++ } catch { /* ignore */ } }
       }
@@ -2927,9 +3142,13 @@ const server = http.createServer(async (req, res) => {
   catch (e) { dbg('server.error', { message: String(e?.message || e) }); sendJson(res, 500, { ok: false, error: String(e?.message || e) }) }
 })
 await loadData()
-server.listen(PORT, HOST, () => {
-  const addr = `http://${HOST}:${PORT}`
+// ★ TAT：监听地址——「手机连接」开启局域网监听时绑 0.0.0.0（所有网卡），否则仅本机
+const bindHost = process.env.HOST || (settings.lanListen ? '0.0.0.0' : '127.0.0.1')
+listenAll = bindHost === '0.0.0.0'
+server.listen(PORT, bindHost, () => {
+  const addr = `http://127.0.0.1:${PORT}`
   console.log(`★ Open Agent Team 已启动：${addr}`)
+  console.log(`★ 监听：${bindHost}:${PORT}${settings.lanListen ? '（局域网已开放，手机可连接）' : '（仅本机；可在设置→手机连接中开启局域网监听）'}`)
   console.log(`★ 数据目录：${DATA_DIR}　工作区：${getActiveRoot()}`)
   if (process.platform === 'win32' && process.env.NO_OPEN !== '1') spawn('cmd', ['/c', 'start', '', addr], { detached: true, stdio: 'ignore' }).unref()
 })

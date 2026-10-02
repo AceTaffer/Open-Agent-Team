@@ -5,8 +5,8 @@
  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
  <title>Open Agent Team</title>
  <link rel="icon" href="/oat.png" />
- <link rel="stylesheet" href="/style.css?v=1.0.8" />
- <link rel="stylesheet" href="/team.css?v=1.0.8" />
+ <link rel="stylesheet" href="/style.css?v=1.1.0" />
+ <link rel="stylesheet" href="/team.css?v=1.1.0" />
 </head>
 <body>
  <!-- ═══ 顶栏 ═══ -->
@@ -53,6 +53,8 @@
  </div>
 
  <div class="layout">
+ <!-- ★ TAT 移动端：侧栏抽屉开关（仅窄屏显示） -->
+ <button id="btn-mobile-menu" class="mobile-only" title="菜单">≡</button>
  <!-- ═══ 左侧栏 ═══ -->
  <aside class="sidebar">
  <div id="sidebar-providers">
@@ -102,6 +104,7 @@
  <span id="chat-context" class="dim small"></span>
  <button id="btn-rail-toggle" class="btn ghost" title="显示/隐藏历史栏"><span data-i18n="chatHistory">历史对话</span></button>
  <button id="btn-clear-chat" class="btn ghost" data-i18n="clearChat">清空对话</button>
+ <button id="chat-new-session" class="btn primary tiny mobile-only" data-i18n="newSession">新建会话</button>
  </div>
   <div class="chat-body">
   <div class="chat-main">
@@ -560,6 +563,52 @@
   <p class="dim small" data-i18n="toolLimitDesc">控制每个请求内 AI 可调用工具的次数量：默认无限；达到上限时会自动停止并提示（可在角色栏单独为该角色设置，角色设置优先）。</p>
   </div>
   <div class="set-card">
+  <h3 data-i18n="mobTitle">手机连接（Turing 手机端）</h3>
+  <label class="set-row"><span data-i18n="mobLan">局域网监听</span><input type="checkbox" id="set-lan-listen" /></label>
+  <p class="dim small" data-i18n="mobLanDesc">开启后，同一 Wi-Fi 下的手机可连接本机使用（修改后需重启服务生效）。异地连接可用 EasyTier 组网（后续版本提供一键引导）。</p>
+  <p class="dim small" id="mob-ips"></p>
+  <div class="gh-row">
+  <button id="btn-mob-pair" class="btn primary" data-i18n="mobGenPair">生成配对码</button>
+  <button id="btn-mob-restart" class="btn danger hidden" data-i18n="mobRestart">重启服务使监听生效</button>
+  <span id="mob-pair-msg" class="dim small"></span>
+  </div>
+  <div id="mob-pair-box" class="hidden" style="margin-top:10px">
+  <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+  <div>
+  <div class="dim small" data-i18n="mobPinLabel">配对码（手机端输入）：</div>
+  <div id="mob-pin" style="font-size:30px;font-weight:700;letter-spacing:6px">------</div>
+  <div id="mob-pair-exp" class="dim small"></div>
+  </div>
+  <div style="text-align:center">
+  <div id="mob-qr" style="background:#fff;padding:6px;border-radius:8px;display:inline-block"></div>
+  <div class="dim small" data-i18n="mobQrLabel">手机系统相机扫码自动配对</div>
+  </div>
+  </div>
+  <div class="dim small" style="margin-top:6px" data-i18n="mobPairHint">手机与电脑在同一 Wi-Fi 时：打开下面的地址，输入配对码即可（也可直接扫码）：</div>
+  <div id="mob-urls" class="small" style="word-break:break-all;margin-top:4px"></div>
+  </div>
+  <h4 style="margin-top:14px" data-i18n="mobDevices">已配对设备</h4>
+  <div id="mob-device-list" class="dim small" data-i18n="mobNoDevices">（暂无设备，生成配对码后手机即可加入）</div>
+  <h4 style="margin-top:16px" data-i18n="etTitle">EasyTier 异地组网（可选）</h4>
+  <p class="dim small" data-i18n="etDesc">让手机在任意网络（流量/异地 Wi-Fi）也能连回本机：电脑与手机都加入同一个 EasyTier 网络即可（P2P 直连；共享节点仅作引荐与兜底）。启动需要管理员权限，电脑会弹 UAC 授权框。</p>
+  <div class="gh-row">
+  <input id="et-name" placeholder="网络名称（自定义）" style="max-width:150px" />
+  <input id="et-secret" type="password" placeholder="网络密码" style="max-width:130px" />
+  <input id="et-ip" placeholder="本机虚拟IP" style="max-width:120px" />
+  </div>
+  <div class="gh-row">
+  <button id="btn-et-download" class="btn ghost" data-i18n="etDownload">一键下载安装</button>
+  <button id="btn-et-start" class="btn primary" data-i18n="etStart">启动组网</button>
+  <button id="btn-et-stop" class="btn danger" data-i18n="etStop">停止</button>
+  <span id="et-msg" class="dim small"></span>
+  </div>
+  <p class="dim small" data-i18n="etPhoneHint">手机端：安装 EasyTier 官方 Android 客户端并加入相同网络名/密码，然后手机浏览器访问「http://本机虚拟IP:3411」即可（与局域网访问用法相同）。</p>
+  <p class="dim small" data-i18n="etLicense">EasyTier 为 LGPL-3.0 开源项目（github.com/EasyTier/EasyTier）。本软件仅从官方 Release 下载并以独立进程方式调用，不修改其代码；详见《第三方声明与许可》。</p>
+  <div class="gh-row">
+  <button id="btn-fw-hint" class="btn ghost tiny" data-i18n="fwBtn">手机连不上？防火墙设置</button>
+  </div>
+  </div>
+  <div class="set-card">
   <h3 data-i18n="cleanupTitle">数据清理</h3>
   <p class="dim small" data-i18n="cleanupDesc">清理残留数据：已删除会话遗留的任务记录、孤儿任务文件、从未产生消息的空会话，以及已删除角色的对话记忆。不会删除工作区里的文件。</p>
   <div class="gh-row">
@@ -814,6 +863,7 @@
  </div>
  </div>
 
- <script src="/app.js?v=1.0.8"></script>
+ <script src="/vendor/qrcode.js"></script>
+ <script src="/app.js?v=1.1.0"></script>
 </body>
 </html>
