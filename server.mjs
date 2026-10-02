@@ -2493,9 +2493,10 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
     if (sess) rec({ kind: 'role-chat', agent: role.id, side: 'user', content: String(b.message || '').slice(0, 4000) })
     try {
       // ★ 单角色对话也支持工具（含 ask_role 联系队友、读写工作区等）：多轮工具循环
-      const root = getActiveRoot()
+      // ★ 工具根目录跟随该团队会话自己的工作区（缺省才用全局激活工作区）
+      const root = sess?.workspace && existsSync(sess.workspace) ? sess.workspace : getActiveRoot()
       const autoState = { approvedAll: false }
-      const userMsg = `【与用户的单独对话】${String(b.message || '').slice(0, 4000)}\n你可以调用工具（如用 ask_role 询问其他队友、读写工作区文件等）。请以你的角色身份直接回复用户（简洁、专业）。`
+      const userMsg = `【与用户的单独对话】${String(b.message || '').slice(0, 4000)}\n（当前工作区目录：${root}）\n你可以调用工具（如用 ask_role 询问其他队友、读写工作区文件等）。请以你的角色身份直接回复用户（简洁、专业）。`
       const messages = [
         { role: 'system', content: roleSystemPrompt(role) },
         ...roleChatHistory(role.id, 12), // ★ 角色自己的对话记忆（含队友协作询问的记录）
