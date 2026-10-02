@@ -539,7 +539,9 @@ const BASE_TOOL_PROTOCOL = `
 \`\`\`tool
 {"tool":"generate_video","prompt":"英文视频提示词","name":"可选英文文件名（MP4，自动保存到工作区 artifacts/）"}
 \`\`\`
-工具在沙箱 workspace/ 内执行（联网工具除外），结果下一轮以【工具结果】发给你。`
+工具在沙箱 workspace/ 内执行（联网工具除外），结果下一轮以【工具结果】发给你。
+【运行环境】本软件运行在 Windows（run_command 通过 cmd 执行）：列目录用 dir、读文件用 type、搜索用 findstr；读取与列目录请优先用 read_file / list_files 工具，禁止使用 cat / ls / grep / head / tail 等 Linux 命令。
+【JSON 转义】工具块必须是严格合法的 JSON：字符串里的双引号写成 \\"，Windows 路径的反斜杠写成 \\\\（如 "E:\\\\project\\\\a.txt"）；解析失败的工具块不会被执行。`
 function pluginToolDoc() {
   if (!plugins.length) return ''
   const lines = plugins.map((p) => `- ${p.name}：${p.description || '外部 API'}　调用示例：{"tool":"http_call","plugin":"${p.name}","args":{${(p.params || []).map((x) => `"${x}":"..."`).join(',')}}}`)
@@ -784,6 +786,10 @@ async function runTool(call, opts = {}) {
     if (call.tool === 'run_command') {
       const cmd = String(call.command || '')
       if (BLOCKED_CMD.some((re) => re.test(cmd))) return `已拒绝执行（命中安全黑名单）：${cmd}`
+      // ★ Windows 环境：模型常误用 Linux 命令，直接给出可执行的替代方案（避免"结果像丢了"）
+      const first = cmd.trim().split(/\s+/)[0].replace(/^.*[\\/]/, '').toLowerCase()
+      const unixHint = { cat: '读取文件请直接用 read_file 工具（或 Windows 命令 type）', ls: '列目录请直接用 list_files 工具（或 Windows 命令 dir）', grep: '搜索文本可用 Windows 命令 findstr，或先 read_file 再分析', head: '可用 read_file 工具读取（超长内容会截断）', tail: '可用 read_file 工具读取（超长内容会截断）', pwd: '可用 list_files 工具查看当前工作区，或 Windows 命令 cd', rm: '删除文件请说明原因并征得用户同意，或使用 Windows 命令 del' }[first]
+      if (unixHint) return `未执行：${first} 是 Linux 命令，Windows 环境不可用。${unixHint}。`
       const { stdout, stderr } = await execAsync(cmd, { cwd: root, timeout: Math.min(Number(call.timeoutMs) || 30000, 120000), maxBuffer: 4 * 1024 * 1024, windowsHide: true })
       return (`$ ${cmd}\n${stdout || ''}${stderr ? '\n[stderr]\n' + stderr : ''}`).slice(0, 8000) || `$ ${cmd}\n(无输出)`
     }
@@ -2104,6 +2110,13 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
         }
         if (!toolsEnabled) break
         const calls = extractToolCalls(text)
+        // ★ 工具块 JSON 解析失败检测：提示模型重发，避免"以为执行了其实没执行"
+        const blockCount = (text.match(/```tool\s*[\s\S]*?```/g) || []).length
+        if (blockCount > calls.length) {
+          history.push({ role: 'assistant', content: text })
+          history.push({ role: 'user', content: `你上一条回复里有 ${blockCount - calls.length} 个工具块 JSON 解析失败（通常是路径/命令里的引号、反斜杠未转义）。请重发这些操作：确保 JSON 严格合法（字符串内的双引号写成 \\"，Windows 路径的反斜杠写成 \\\\）；读取文件用 read_file、列目录用 list_files，不要用 cat/ls 等 Linux 命令。` })
+          continue
+        }
         if (!calls.length) break
         history.push({ role: 'assistant', content: text })
         const toolResults = []
@@ -2363,7 +2376,7 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
       // ★ 权限：优先用该角色自己的权限设置，未设置则跟随全局默认
       const rolePerm = PERMISSIONS.includes(role.permission) ? role.permission : (settings.defaultPermission || 'modify')
       let lastText = ''
-      for (let turn = 0; turn < 6; turn++) {
+      for (let turn = 0; turn < 8; turn++) {
         const text = await chatComplete(target.provider, target.model, messages, {
           stream: true, temperature: 0.5,
           onDelta: (d) => emit({ delta: d, turn }),
@@ -2373,6 +2386,13 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
         if (!text.trim()) break
         lastText = text
         const calls = extractToolCalls(text)
+        // ★ 工具块 JSON 解析失败检测：提示模型重发（此前会被静默丢弃，模型误报"结果未回传"）
+        const blockCount = (text.match(/```tool\s*[\s\S]*?```/g) || []).length
+        if (blockCount > calls.length) {
+          messages.push({ role: 'assistant', content: text })
+          messages.push({ role: 'user', content: `你上一条回复里有 ${blockCount - calls.length} 个工具块 JSON 解析失败（通常是路径/命令里的引号、反斜杠未转义）。请重发这些操作：确保 JSON 严格合法（字符串内的双引号写成 \\"，Windows 路径的反斜杠写成 \\\\）；读取文件用 read_file、列目录用 list_files，不要用 cat/ls 等 Linux 命令。` })
+          continue
+        }
         if (!calls.length) break
         messages.push({ role: 'assistant', content: text })
         const outs = []
