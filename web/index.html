@@ -5,8 +5,8 @@
  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
  <title>Open Agent Team</title>
  <link rel="icon" href="/oat.png" />
- <link rel="stylesheet" href="/style.css?v=1.0.5" />
- <link rel="stylesheet" href="/team.css?v=1.0.5" />
+ <link rel="stylesheet" href="/style.css?v=1.0.5b" />
+ <link rel="stylesheet" href="/team.css?v=1.0.5b" />
 </head>
 <body>
  <!-- ═══ 顶栏 ═══ -->
@@ -268,9 +268,11 @@
  <h2 data-i18n="teamConfigTitle">团队配置</h2>
  <div class="gh-row" style="margin-top:10px">
  <span data-i18n="presetTitle">团队预设：</span>
- <select id="preset-select" style="max-width:260px"></select>
- <button id="btn-apply-preset" class="btn primary" data-i18n="applyPreset">应用预设（导入角色+技能）</button>
- <span id="preset-msg" class="dim small"></span>
+  <select id="preset-select" style="max-width:260px"></select>
+  <button id="btn-apply-preset" class="btn primary" data-i18n="applyPreset">应用预设（导入角色+技能）</button>
+  <button id="btn-save-preset" class="btn ghost" data-i18n="saveAsPreset">保存为自定义预设</button>
+  <button id="btn-del-preset" class="btn danger hidden" data-i18n="delPreset">删除该预设</button>
+  <span id="preset-msg" class="dim small"></span>
  </div>
  <h3 style="margin-top:14px" data-i18n="rolesTitle">角色（可增删改）</h3>
  <div id="roles-list" class="roles-editor"></div>
@@ -698,10 +700,12 @@
  <div class="form">
  <label data-i18n="sessionTitle">会话名称（可空）</label>
  <input id="ts-title" placeholder="例如：马里奥复刻 / 官网改版" />
- <label data-i18n="sessionWorkspace">工作区（默认当前工作区）</label>
- <select id="ts-workspace"></select>
- <label data-i18n="teamRoles">参与本会话的团队角色</label>
- <div id="ts-roles" class="ts-roles"></div>
+  <label data-i18n="sessionWorkspace">工作区（默认当前工作区）</label>
+  <select id="ts-workspace"></select>
+  <label data-i18n="teamPresetPick">团队预设（可选，选中后自动带出角色）</label>
+  <select id="ts-preset"></select>
+  <label data-i18n="teamRoles">参与本会话的团队角色</label>
+  <div id="ts-roles" class="ts-roles"></div>
  </div>
  <div class="modal-actions">
  <span id="ts-msg" class="modal-msg"></span>
@@ -777,6 +781,6 @@
  </div>
  </div>
 
- <script src="/app.js?v=1.0.5"></script>
+ <script src="/app.js?v=1.0.5b"></script>
 </body>
 </html>

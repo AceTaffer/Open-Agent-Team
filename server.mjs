@@ -320,6 +320,7 @@ async function loadData() {
   for (const p of providers) p.models = normalizeModels(p.models)
   await loadVault()
   await loadRoleChats()
+  await loadCustomPresets()
   await loadJsPlugins()
 }
 const saveProviders = () => writeFile(PROVIDERS_FILE, JSON.stringify(providers, null, 2), 'utf8')
@@ -557,7 +558,9 @@ function skillTextFor(role) {
   return (role.skills || []).map((sid) => skills.find((s) => s.id === sid)).filter(Boolean).map((s) => `【技能：${s.name}】\n${s.prompt}`).join('\n\n')
 }
 function withSkillsAndTools(role, base) {
-  return [base, skillTextFor(role), BASE_TOOL_PROTOCOL + pluginToolDoc() + vaultToolDoc() + jsToolDoc()].filter(Boolean).join('\n\n')
+  // ★ 协作规则：队友之间直接沟通立即回复，只有重大/无法判断的事项才交给用户
+  const collabRule = '【协作规则】需要队友的信息、确认或配合时，直接用 ask_role 联系对方（对方会立即自动回复），不要停下来等用户转达；只有涉及重大决策、需求冲突或信息不足以判断时才用 ask_user 请用户裁决。'
+  return [base, skillTextFor(role), collabRule, BASE_TOOL_PROTOCOL + pluginToolDoc() + vaultToolDoc() + jsToolDoc()].filter(Boolean).join('\n\n')
 }
 function chatSystemPrompt(root = getActiveRoot()) {
   // ★ 单智能体对话：允许直接操作工作区（写文件/跑命令），避免只返回文本
@@ -1300,6 +1303,14 @@ function roleChatAppend(roleId, role, content) {
 }
 
 /* ═══════════════════════════════════════════════════════════════
+ * 10.5c ★ 自定义团队预设（用户保存自己的角色配置，可套用/删除）
+ * ═══════════════════════════════════════════════════════════════ */
+const PRESETS_FILE = path.join(DATA_DIR, 'presets.json')
+let customPresets = {}
+async function loadCustomPresets() { try { customPresets = JSON.parse(await readFile(PRESETS_FILE, 'utf8')) } catch { customPresets = {} } }
+const saveCustomPresets = () => writeFile(PRESETS_FILE, JSON.stringify(customPresets, null, 2), 'utf8').catch(() => {})
+
+/* ═══════════════════════════════════════════════════════════════
  * 10.6 ★ 凭据保险箱（本地加密保存非 AI 类 API；查看需密码）
  * ═══════════════════════════════════════════════════════════════ */
 const VAULT_FILE = path.join(DATA_DIR, 'vault.json')
@@ -1932,6 +1943,18 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
     rebuildRoleMeta(); await saveRoles()
     return sendJson(res, 200, { ok: true, roles: ROLE_META })
   }
+  // ★ 自定义团队预设：保存 / 列表 / 删除
+  if (pathname === '/api/presets' && method === 'GET') return sendJson(res, 200, { ok: true, presets: customPresets })
+  if (pathname === '/api/presets' && method === 'POST') {
+    const b = await readBody(req)
+    if (!Array.isArray(b.roles) || !b.roles.length) return sendJson(res, 200, { ok: false, error: '缺少角色配置' })
+    const key = 'custom_' + Date.now()
+    customPresets[key] = { label: String(b.label || '自定义预设').slice(0, 40), roles: b.roles, createdAt: Date.now() }
+    await saveCustomPresets()
+    return sendJson(res, 200, { ok: true, key })
+  }
+  const mpre = pathname.match(/^\/api\/presets\/([^/]+)$/)
+  if (mpre && method === 'DELETE') { delete customPresets[mpre[1]]; await saveCustomPresets(); return sendJson(res, 200, { ok: true }) }
   // ★ Agent 技能（预设，可增删改 / 导入导出）
   if (pathname === '/api/skills' && method === 'GET') return sendJson(res, 200, { ok: true, skills })
   if (pathname === '/api/skills' && method === 'POST') {

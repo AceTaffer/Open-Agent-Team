@@ -240,6 +240,13 @@ body.hide-tools .tool-box, body.hide-tools .tool-note { display: none !important
 .ctx-tip-row { display: flex; justify-content: space-between; gap: 18px; line-height: 1.8; }
 .ctx-tip-row i { font-style: normal; color: var(--text-dim); }
 .ctx-tip-row b { color: var(--text); }
+/* ★ 消息/角色块状态标签（思考中→回答中→已完成；点击可折叠/展开思考过程） */
+.msg-status { font-size: 11px; margin-left: 8px; color: var(--text-dim); cursor: pointer; user-select: none; }
+.msg-status[data-st="thinking"] { animation: oat-blink 1.2s ease infinite; }
+.msg-status[data-st="answering"] { color: var(--accent); }
+.msg-status[data-st="done"] { color: #43d17c; }
+.msg-status[data-st="failed"] { color: #e05656; }
+@keyframes oat-blink { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
 body.theme-light .ask-box { background: #e8f4fa; border-color: #7fb3cf; }
 body.theme-light .ask-box.done { background: #e9f6ee; border-color: #86bfa0; }
 body.theme-light .question-box { background: var(--info-bg); }

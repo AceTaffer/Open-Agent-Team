@@ -79,6 +79,8 @@ const I18N = {
  regenTitle: '重新绘画', regenReplace: '替换原图（同名覆盖）', regenNew: '生成新图（保留原图）', regenPromptPh: '提示词（单张重画可修改；多张各自使用原提示词）',
  reviewTitle: '出图审核', keepImg: '保留', reviewHint: '这张图是否保留？（可修改提示词后重画）', regenDone: '重画完成',
  presetTitle: '团队预设：', applyPreset: '应用预设（导入角色+技能）', presetApplied: '预设已应用（已保留各角色的 API/模型选择）', presetConfirm: '应用预设将覆盖当前角色配置（同 id 角色的 API/模型选择会保留），确定继续？',
+ presetCustomPrefix: '自定义：', presetCustomGroup: '自定义预设', presetNameAsk: '给这个自定义预设起个名字：', presetCustomDefault: '我的团队', presetSaved: '已保存为自定义预设', presetDeleteConfirm: '删除该自定义预设？', presetDeleted: '自定义预设已删除', presetCurrent: '（当前角色配置）', saveAsPreset: '保存为自定义预设', delPreset: '删除该预设', teamPresetPick: '团队预设（可选，选中后自动带出角色）',
+ stAnswering: '回答中', noReply: '没有收到回复',
  answerTitle: '队长向你确认需求', answerTitleSuffix: '向你确认需求', answerSubmit: '提交回答', skip: '跳过', optionOr: '也可自行填写（填写后将优先采用你写的内容）',
  uiSpacing: '界面间距', spCompact: '紧凑', spNormal: '标准', spRelaxed: '宽松', teamInputPos: '团队输入框位置', posTop: '上方', posBottom: '下方',
  roleChatAsk: '与该角色直接对话（任务进行中将作为中途指令发送）…', detach: '弹出', detachTitle: '弹出为独立窗口',
@@ -173,6 +175,8 @@ const I18N = {
  regenTitle: 'Regenerate', regenReplace: 'Replace original (same name)', regenNew: 'New file (keep original)', regenPromptPh: 'Prompt (single regen editable; batch uses each original prompt)',
  reviewTitle: 'Image review', keepImg: 'Keep', reviewHint: 'Keep this image? You can edit the prompt and regenerate.', regenDone: 'Regenerated',
  presetTitle: 'Team presets:', applyPreset: 'Apply preset (roles + skills)', presetApplied: 'Preset applied (API/model choices kept)', presetConfirm: 'Applying a preset overwrites current roles (API/model per role id is kept). Continue?',
+ presetCustomPrefix: 'Custom: ', presetCustomGroup: 'Custom presets', presetNameAsk: 'Name this custom preset:', presetCustomDefault: 'My team', presetSaved: 'Saved as custom preset', presetDeleteConfirm: 'Delete this custom preset?', presetDeleted: 'Custom preset deleted', presetCurrent: '(current roles)', saveAsPreset: 'Save as custom preset', delPreset: 'Delete preset', teamPresetPick: 'Team preset (optional; brings in its roles)',
+ stAnswering: 'Replying', noReply: 'no reply received',
     answerTitle: 'The leader asks for your confirmation', answerSubmit: 'Submit', skip: 'Skip', optionOr: 'or type your own (yours takes priority)',
     answerTitleSuffix: 'asks for confirmation', uiSpacing: 'UI spacing', spCompact: 'Compact', spNormal: 'Normal', spRelaxed: 'Relaxed', teamInputPos: 'Team input position', posTop: 'Top', posBottom: 'Bottom',
     roleChatAsk: 'Chat with this role directly (sent as a mid-run instruction during tasks)…', detach: 'Detach', detachTitle: 'Open in a separate window',
@@ -268,7 +272,7 @@ const TEAM_PRESETS = {
 /* 版本迭代记录（设置页展示） */
 const APP_VERSION = '1.0.5'
 const CHANGELOG = [
-  ['P8.5', '2026-10', ['修复工具执行可靠性：对话与单角色对话新增「工具块 JSON 解析失败自动重发」（此前失败块被静默丢弃，AI 会误报「读取结果未回传」）', '工具协议补充运行环境：Windows 下 run_command 用 cmd（dir/type/findstr），禁止 cat/ls 等 Linux 命令；误用时直接返回替代方案（read_file/list_files/type/dir）', '单角色对话工具循环轮数 6 → 8（为重发与补读留出余量）']],
+  ['P8.5', '2026-10', ['修复工具执行可靠性：对话与单角色对话新增「工具块 JSON 解析失败自动重发」（此前失败块被静默丢弃，AI 会误报「读取结果未回传」）', '工具协议补充运行环境：Windows 下 run_command 用 cmd（dir/type/findstr），禁止 cat/ls 等 Linux 命令；误用时直接返回替代方案（read_file/list_files/type/dir）', '单角色对话工具循环轮数 6 → 8（为重发与补读留出余量）', '修复团队配置：点「添加角色」不再清空未保存的编辑内容（先收集当前输入再追加）', '团队预设支持自定义：可把当前角色配置保存为自定义预设（持久化），支持套用与删除；新建团队会话弹窗新增预设下拉，选中即带出对应角色', '套用内置预设时，新增角色自动继承队长的 API/模型配置（修复写手/校对等新角色无模型可用）', '团队任务与单角色对话新增状态标签：思考中（闪烁）→ 回答中 → 已完成/失败；点击状态可折叠/展开思考过程', '协作规则：队友间的问题优先用 ask_role 直接沟通（对方立即自动回复），仅重大决策/无法判断时才交给用户']],
   ['P8.4', '2026-10', ['团队预算栏新增实时显示：本次任务已花费 + 预算剩余（修改预算数字即时预览，超支变红；切换会话自动恢复上次花费）', '上下文占用升级为环形进度指示器：直接显示在对话消息内与团队每个角色块头部，悬停弹出「成本 / 使用率 / Token」卡片，≥60% 变黄、≥85% 变红', '修复环形指示器在消息重绘（发送完成/刷新）后消失的问题：会话现在持久化上下文上限，历史消息同样显示环形占用']],
   ['P8.3', '2026-10', ['修复 ask_user 提问卡片：自己填写的内容现在优先于预设选项（此前选了预设再填写，结果仍采用预设的问题）', '新增「小说写作团队」预设：主编 / 大纲策划 / 写手 / 校对 + 配套技能（世界观大纲、文风控制、章节写作规范、校对规范）', '问题卡片输入框提示更新：填写后将优先采用你写的内容']],
   ['P8.2', '2026-10', ['单独对话气泡：用户消息独立显示、不再被 AI 回复覆盖，颜色可在 设置 → 外观 →「我的气泡颜色」调整', '角色对话记忆同步：被询问的角色会保存队友的问询记录（之后单独对话能回忆）；协作询问/回复在双方角色视图都可见，气泡使用各自角色颜色', '单独角色对话也遵循该角色自己的权限设置', '新建团队会话不再显示消息条数后缀（避免误认为会话序号）', '更新源仓库默认填入 AceTaffer/Open-Agent-Team（新安装/分享包即自带）', 'API 弹窗新增提示：测试连通性使用「已保存」配置，未保存点击时会明确提醒先保存', '设置 → 外观新增显示开关：思维链（推理过程）、工具使用情况，默认开启，可随时隐藏', 'AI 回复不再显示原始工具调用代码块（```tool 片段），工具过程统一由工具盒/开关呈现', 'OpenCode Go 模型库扩充至 30 个（千问 Qwen / GLM / GPT-6 Luna / Grok / Kimi / MiniMax / Mimo 等，可直接在模型下拉选择）', '删除对话/团队会话时可选择：仅删除对话（保留文件）或连同工作区文件夹一起彻底删除', '设置新增「数据清理」：清理已删除会话遗留的任务记录、孤儿任务文件、空会话与已删除角色的对话记忆（不动工作区文件）', '对话工具栏与团队每个角色块显示上下文占用百分比（≥60% 变黄、≥85% 变红）']],
@@ -297,7 +301,8 @@ const state = {
  sessions: [], activeSession: null, expanded: new Set(), showArchived: false,
  balances: {}, workspaces: [], activeWorkspace: '',
  chatImage: null, lastUsage: null, runs: [],
- teamSessions: [], teamSessionId: '', roleLive: {}, teamLoaded: false, teamFocus: '', currentTeamTaskId: '', teamTaskCost: 0,
+  teamSessions: [], teamSessionId: '', roleLive: {}, teamLoaded: false, teamFocus: '', currentTeamTaskId: '', teamTaskCost: 0,
+  customPresets: {},
  runPaused: false, agentPaused: new Set(),
  artItems: [], artSel: new Set(), artMulti: false, viewerItem: null, delTargets: [], regenTargets: [],
  vault: { hasPassword: false, items: [] }, vaultPending: null,
@@ -360,6 +365,24 @@ function styleAskBox(el, colorRoleId) {
  const c = roleColor(colorRoleId)
  if (c) el.style.borderLeft = '4px solid ' + c
  return el
+}
+// ★ 消息/角色块状态标签：思考中 → 回答中 → 已完成/失败；点击可折叠/展开思考过程
+function setMsgStatus(bodyEl, st) {
+ if (!bodyEl) return
+ const block = bodyEl.parentElement
+ const head = block?.querySelector('.agent-head')
+ if (!head) return
+ let el = head.querySelector('.msg-status')
+ if (!el) {
+  el = document.createElement('span')
+  el.className = 'msg-status'
+  el.title = t('thinking')
+  el.onclick = () => { const d = block.querySelector('.reasoning'); if (d) d.open = !d.open }
+  head.appendChild(el)
+ }
+ if (el.dataset.st === st) return
+ el.dataset.st = st
+ el.textContent = st === 'done' ? t('stDone') : st === 'failed' ? t('stFailed') : st === 'answering' ? t('stAnswering') + '…' : t('stThinking') + '…'
 }
 // ★ 上下文占用环形指示器（悬停显示 成本/使用率/Token），用于对话消息与团队角色块
 function setCtxBadge(host, pct, cost, tokens) {
@@ -1311,9 +1334,11 @@ async function roleChatSend() {
  // 任务进行中：同时作为中途指令发给该角色（它会真正采纳）
  if (state.currentTeamTaskId) api('POST', '/api/team/steer', { taskId: state.currentTeamTaskId, agent: roleId, message: text }).catch(() => {})
  const target = box.querySelector('.rc-ai')
- let first = true
+ setMsgStatus(target, 'thinking') // ★ 状态：思考中
+ let first = true, finished = false
  try {
   const res = await fetch('/api/role/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ roleId, message: text }) })
+  if (!res.ok) { const er = await res.json().catch(() => ({})); target.textContent = t('failure') + ': ' + (er.error || res.status); setMsgStatus(target, 'failed'); return }
   const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = ''
   while (true) {
    const { done, value } = await reader.read(); if (done) break
@@ -1323,8 +1348,9 @@ async function roleChatSend() {
     const s = line.trim(); if (!s.startsWith('data:')) continue
     try {
      const j = JSON.parse(s.slice(5))
-     if (j.delta) { if (first) { first = false } appendStreamText(target, j.delta); scrollIfNearBottom($('team-stream')) }
-     if (j.error) target.textContent = t('failure') + ': ' + j.error
+     if (j.delta) { if (first) { first = false } appendStreamText(target, j.delta); setMsgStatus(target, 'answering'); scrollIfNearBottom($('team-stream')) }
+     if (j.error) { target.textContent = t('failure') + ': ' + j.error; setMsgStatus(target, 'failed'); finished = true }
+     if (j.done) { setMsgStatus(target, 'done'); finished = true }
      // ★ 单角色对话中的工具与协作事件（ask_role 联系队友等）
      if (j.question) appendQuestionCard(box, j.question, roleId)
      if (j.confirm) appendConfirmCard(box, j.confirm)
@@ -1356,8 +1382,13 @@ async function roleChatSend() {
      if (j.question || j.confirm || j.ask || j.ask_done || j.tool) scrollIfNearBottom($('team-stream'))
     } catch { /* ignore */ }
    }
-  }
- } catch (e) { target.textContent = t('failure') + ': ' + e.message }
+   }
+   // ★ 流结束但未收到 done/error：有正文视为完成，否则标记失败（避免状态卡在"思考中"）
+   if (!finished) {
+    if (target.textContent.trim()) setMsgStatus(target, 'done')
+    else { target.textContent = t('failure') + ': ' + t('noReply'); setMsgStatus(target, 'failed') }
+   }
+  } catch (e) { target.textContent = t('failure') + ': ' + e.message; setMsgStatus(target, 'failed') }
 }
 
 
@@ -1432,9 +1463,10 @@ function handleTeamEvent(ev, run, ref) {
  }
  if (ev.type === 'agent_start') {
  roleSetStatus(ev.agent, ev.final ? 'final' : 'thinking', { model: ev.model || '', sub: '' })
- const body = runBlock(run, ev.agent, (ev.label || roleLabel(ev.agent)) + (ev.final ? ' · final' : ''), ev.model)
- if (ev.final) ref.finalBox = body; else if (ev.agent === 'leader') ref.leaderBox = body
- return
+  const body = runBlock(run, ev.agent, (ev.label || roleLabel(ev.agent)) + (ev.final ? ' · final' : ''), ev.model)
+  setMsgStatus(body, 'thinking') // ★ 状态：思考中
+  if (ev.final) ref.finalBox = body; else if (ev.agent === 'leader') ref.leaderBox = body
+  return
  }
  if (ev.type === 'plan') {
  const box = document.createElement('div')
@@ -1470,6 +1502,7 @@ function handleTeamEvent(ev, run, ref) {
  const rEl = target.parentElement.querySelector('.reasoning')
  if (rEl && !rEl.dataset.done) { rEl.dataset.done = '1'; rEl.open = false; rEl.querySelector('summary').textContent = ` ${t('thoughtDone')}（${rEl.querySelector('.reasoning-body').textContent.length}）` }
   appendStreamText(target, ev.text)
+  setMsgStatus(target, 'answering') // ★ 状态：回答中
   scrollIfNearBottom(document.getElementById('team-stream'))
   }
   roleAppend(ev.agent, ev.text)
@@ -1507,7 +1540,7 @@ function handleTeamEvent(ev, run, ref) {
  box.innerHTML = `<div class="agent-head"><span class="agent-name"> ${t('stopped')}</span></div><div class="agent-body">${esc(ev.message)}</div>`
  run.body.appendChild(box); applyTeamFilter(); return
  }
- if (ev.type === 'step_done') { roleSetStatus(ev.agent, 'done', { sub: ev.title || '' }) }
+  if (ev.type === 'step_done') { roleSetStatus(ev.agent, 'done', { sub: ev.title || '' }); setMsgStatus(ref.stepBoxes[ev.index]?.body, 'done') }
  if (ev.type === 'step_done' && ev.agent === 'artist') {
  const prompts = (ev.result || '').split('\n').filter((l) =>l.includes('IMAGE_PROMPT:')).map((l) =>l.split('IMAGE_PROMPT:')[1].trim()).filter(Boolean)
  for (const pr of prompts) {
@@ -1521,18 +1554,21 @@ function handleTeamEvent(ev, run, ref) {
  applyTeamFilter()
  return
  }
- if (ev.type === 'error') {
- const box = document.createElement('div')
- box.className = 'agent-block err'
- box.dataset.agent = ev.agent || 'leader'
- box.innerHTML = `<div class="agent-head"><span class="agent-name">ERROR</span></div><div class="agent-body">${esc(ev.message)}</div>`
- run.body.appendChild(box); applyTeamFilter(); return
- }
+  if (ev.type === 'error') {
+  const box = document.createElement('div')
+  box.className = 'agent-block err'
+  box.dataset.agent = ev.agent || 'leader'
+  box.innerHTML = `<div class="agent-head"><span class="agent-name">ERROR</span></div><div class="agent-body">${esc(ev.message)}</div>`
+  run.body.appendChild(box); applyTeamFilter()
+  if (ev.agent) { const last = Object.values(ref.stepBoxes).filter((s) => s.agent === ev.agent).pop(); setMsgStatus(last?.body, 'failed') }
+  return
+  }
  if (ev.type === 'done') {
   if (ev.cost != null) { state.teamTaskCost = Number(ev.cost) || 0; renderTeamBudget() }
   run.status.textContent = ev.budgetStopped || ev.aborted ? t('stopped') : `${t('done')} · ${t('toolCalls')} ${ev.toolCalls || 0}`
- run.foot.textContent = ` ${fmtCost(ev.cost)} · ${t('tokens')} ${fmtNum((ev.usage?.prompt_tokens || 0) + (ev.usage?.completion_tokens || 0))} · ${t('cache')} ${fmtNum(ev.cacheHitTokens)}`
- if (!ev.budgetStopped && !ev.aborted) roleSetStatus('leader', 'done')
+  run.foot.textContent = ` ${fmtCost(ev.cost)} · ${t('tokens')} ${fmtNum((ev.usage?.prompt_tokens || 0) + (ev.usage?.completion_tokens || 0))} · ${t('cache')} ${fmtNum(ev.cacheHitTokens)}`
+  if (ref.finalBox) setMsgStatus(ref.finalBox, ev.budgetStopped || ev.aborted ? 'failed' : 'done')
+  if (!ev.budgetStopped && !ev.aborted) roleSetStatus('leader', 'done')
  if (state.currentTeamTaskId === ev.taskId) { state.currentTeamTaskId = ''; state.runPaused = false; state.agentPaused = new Set(); updatePauseUI() }
  refreshTasks()
  }
@@ -1713,28 +1749,85 @@ async function refreshTasks() {
 }
 
 /* ══════════════ 团队配置（预设/角色/技能/市场） ══════════════ */
+// ★ 预设选择项解析：内置 + 自定义
+function presetOf(value) {
+ if (!value) return null
+ if (value.startsWith('custom:')) {
+  const cp = (state.customPresets || {})[value.slice(7)]
+  return cp ? { custom: true, key: value.slice(7), label: cp.label, roles: cp.roles } : null
+ }
+ const p = TEAM_PRESETS[value]
+ return p ? { custom: false, key: value, label: p.label, roles: p.roles, skillIds: p.skillIds } : null
+}
+function presetOptionsHtml(includeCurrent) {
+ const built = Object.entries(TEAM_PRESETS).map(([k, p]) => `<option value="${k}">${esc(p.label)}</option>`).join('')
+ const cust = Object.entries(state.customPresets || {}).map(([k, p]) => `<option value="custom:${k}">${t('presetCustomPrefix')}${esc(p.label)}</option>`).join('')
+ return `${includeCurrent ? `<option value="">${t('presetCurrent')}</option>` : ''}${built}${cust ? `<optgroup label="${t('presetCustomGroup')}">${cust}</optgroup>` : ''}`
+}
 function renderPresetSelect() {
  const sel = $('preset-select')
- if (sel) sel.innerHTML = Object.entries(TEAM_PRESETS).map(([k, p]) => `<option value="${k}">${esc(p.label)}</option>`).join('')
+ if (!sel) return
+ const cur = sel.value
+ sel.innerHTML = presetOptionsHtml(false)
+ if (cur && [...sel.options].some((o) => o.value === cur)) sel.value = cur
+ syncPresetButtons()
 }
-async function applyTeamPreset() {
- const p = TEAM_PRESETS[$('preset-select').value]
- if (!p) return
- if (!confirm(t('presetConfirm'))) return
- $('preset-msg').textContent = '…'
- // 1) 导入配套技能（技能市场 → 技能库）
- await api('POST', '/api/skills/market/import', { ids: p.skillIds })
- const [mk, all] = await Promise.all([api('GET', '/api/skills/market'), api('GET', '/api/skills')])
- const mkList = mk.skills || []
- const localByName = new Map((all.skills || []).map((s) => [s.name, s.id]))
- const skillIdOf = (mid) =>localByName.get((mkList.find((x) =>x.id === mid) || {}).name)
- // 2) 合并角色：预设文案 + 保留同 id 已配置的 API/模型
- const newRoles = p.roles.map((pr) => {
- const old = roleById(pr.id)
- return { ...pr, providerId: old?.providerId || '', model: old?.model || '', skills: (pr.skills || []).map(skillIdOf).filter(Boolean) }
- })
+function syncPresetButtons() {
+ const isCustom = ($('preset-select')?.value || '').startsWith('custom:')
+ if ($('btn-del-preset')) $('btn-del-preset').classList.toggle('hidden', !isCustom)
+}
+async function applyTeamPreset(opts = {}) {
+ const p = presetOf(opts.value != null ? opts.value : $('preset-select').value)
+ if (!p) return false
+ if (!opts.silent && !confirm(t('presetConfirm'))) return false
+ if ($('preset-msg')) $('preset-msg').textContent = '…'
+ let newRoles
+ if (p.custom) {
+  // 自定义预设：按保存的原样应用（含保存时的 API/模型）
+  newRoles = (p.roles || []).map((r) => ({ ...r }))
+ } else {
+  // 1) 导入配套技能（技能市场 → 技能库）
+  await api('POST', '/api/skills/market/import', { ids: p.skillIds })
+  const [mk, all] = await Promise.all([api('GET', '/api/skills/market'), api('GET', '/api/skills')])
+  const mkList = mk.skills || []
+  const localByName = new Map((all.skills || []).map((s) => [s.name, s.id]))
+  const skillIdOf = (mid) => localByName.get((mkList.find((x) => x.id === mid) || {}).name)
+  // 2) 合并角色：保留同 id 已配置的 API/模型；★ 新角色继承队长已配置的 API/模型
+  const leaderOld = roleById('leader')
+  const fbProvider = leaderOld?.providerId || ''
+  const fbModel = leaderOld?.model || ''
+  newRoles = p.roles.map((pr) => {
+   const old = roleById(pr.id)
+   return { ...pr, providerId: old?.providerId || fbProvider, model: old?.model || fbModel, skills: (pr.skills || []).map(skillIdOf).filter(Boolean) }
+  })
+ }
  const r = await api('PUT', '/api/roles', newRoles)
- if (r.ok) { $('preset-msg').textContent = t('presetApplied'); await loadState(); renderRolesEditor(); renderRoleSummary() } else $('preset-msg').textContent = r.error || 'fail'
+ if (r.ok) {
+  if ($('preset-msg')) $('preset-msg').textContent = t('presetApplied')
+  await loadState(); renderRolesEditor(); renderRoleSummary(); renderPresetSelect()
+ } else if ($('preset-msg')) $('preset-msg').textContent = r.error || 'fail'
+ return !!r.ok
+}
+// ★ 把当前编辑器的角色配置保存为自定义预设
+async function saveCustomPreset() {
+ if (!$('roles-list')?.querySelector('.role-edit-row')) return
+ const label = prompt(t('presetNameAsk'), '')
+ if (label == null) return
+ const roles = collectRolesEditor()
+ const r = await api('POST', '/api/presets', { label: label.trim() || t('presetCustomDefault'), roles })
+ if (!r.ok) { if ($('preset-msg')) $('preset-msg').textContent = r.error || 'fail'; return }
+ await loadState(); renderPresetSelect()
+ $('preset-select').value = 'custom:' + r.key
+ syncPresetButtons()
+ if ($('preset-msg')) $('preset-msg').textContent = t('presetSaved')
+}
+async function deleteCustomPreset() {
+ const v = $('preset-select')?.value || ''
+ if (!v.startsWith('custom:')) return
+ if (!confirm(t('presetDeleteConfirm'))) return
+ await api('DELETE', '/api/presets/' + v.slice(7))
+ await loadState(); renderPresetSelect()
+ if ($('preset-msg')) $('preset-msg').textContent = t('presetDeleted')
 }
 function renderRoleSummary() {
  $('role-summary').innerHTML = state.roles.filter((r) =>r.enabled !== false).map((r) => {
@@ -1788,23 +1881,27 @@ function renderRolesEditor() {
  }
  })
 }
-async function saveRolesEditor() {
- const out = [...$('roles-list').querySelectorAll('.role-edit-row')].map((row) => {
- const old = state.roles[Number(row.dataset.i)] || {}
- return {
- id: old.id || crypto.randomUUID(),
- label: row.querySelector('.re-label').value.trim() || 'Role',
- color: row.querySelector('.re-color').value,
- desc: row.querySelector('.re-desc').value.trim(),
- enabled: row.querySelector('.re-enabled').checked,
- budgetCost: Number(row.querySelector('.re-budget').value) || 0,
- providerId: row.querySelector('.re-provider').value,
- model: row.querySelector('.re-model').value,
- permission: row.querySelector('.re-perm').value,
- systemPrompt: row.querySelector('.re-prompt').value,
- skills: [...row.querySelectorAll('.re-skill:checked')].map((cb) =>cb.value),
- }
+// ★ 从编辑器收集当前（可能未保存）的角色配置
+function collectRolesEditor() {
+ return [...$('roles-list').querySelectorAll('.role-edit-row')].map((row) => {
+  const old = state.roles[Number(row.dataset.i)] || {}
+  return {
+   id: old.id || crypto.randomUUID(),
+   label: row.querySelector('.re-label').value.trim() || 'Role',
+   color: row.querySelector('.re-color').value,
+   desc: row.querySelector('.re-desc').value.trim(),
+   enabled: row.querySelector('.re-enabled').checked,
+   budgetCost: Number(row.querySelector('.re-budget').value) || 0,
+   providerId: row.querySelector('.re-provider').value,
+   model: row.querySelector('.re-model').value,
+   permission: row.querySelector('.re-perm').value,
+   systemPrompt: row.querySelector('.re-prompt').value,
+   skills: [...row.querySelectorAll('.re-skill:checked')].map((cb) => cb.value),
+  }
  })
+}
+async function saveRolesEditor() {
+ const out = collectRolesEditor()
  const r = await api('PUT', '/api/roles', out)
  $('roles-msg').textContent = r.ok ? t('savedOk') : (r.error || 'fail')
  $('roles-msg').className = 'modal-msg ' + (r.ok ? 'ok' : 'err')
@@ -2130,8 +2227,7 @@ function appendMediaCard(container, text) {
 }
 
 /* ══════════════ 新建团队会话（角色配置 + 工作区 + 名称） ══════════════ */
-function openTeamSessionModal() {
-  $('ts-workspace').innerHTML = state.workspaces.map((w) => `<option value="${esc(w.path)}" ${w.path === state.activeWorkspace ? 'selected' : ''}>${esc(w.path)}</option>`).join('') || `<option value="">${esc(state.activeWorkspace)}</option>`
+function renderTsRoles() {
   $('ts-roles').innerHTML = state.roles.map((r) => `
     <label class="ts-role">
       <input type="checkbox" class="ts-role-ck" data-id="${r.id}" ${r.enabled !== false ? 'checked' : ''} />
@@ -2139,6 +2235,21 @@ function openTeamSessionModal() {
       <b>${esc(r.label)}</b>
       <span class="dim small">${esc((providerById(r.providerId)?.name || '').split('（')[0] || t('notConfigured'))}${r.model ? ' / ' + esc(r.model) : ''}</span>
     </label>`).join('')
+}
+function openTeamSessionModal() {
+  $('ts-workspace').innerHTML = state.workspaces.map((w) => `<option value="${esc(w.path)}" ${w.path === state.activeWorkspace ? 'selected' : ''}>${esc(w.path)}</option>`).join('') || `<option value="">${esc(state.activeWorkspace)}</option>`
+  // ★ 预设下拉：选中后直接套用该预设的角色（含自定义预设），并刷新角色勾选列表
+  $('ts-preset').innerHTML = presetOptionsHtml(true)
+  $('ts-preset').value = ''
+  $('ts-preset').onchange = async () => {
+    const v = $('ts-preset').value
+    if (!v) { renderTsRoles(); return }
+    $('ts-msg').textContent = '…'
+    const ok = await applyTeamPreset({ silent: true, value: v })
+    $('ts-msg').textContent = ok ? t('presetApplied') : t('failure')
+    renderTsRoles()
+  }
+  renderTsRoles()
   $('ts-title').value = ''
   $('ts-msg').textContent = ''
   $('team-session-modal').classList.remove('hidden')
@@ -2308,7 +2419,8 @@ async function loadState() {
  const r = await api('GET', '/api/state')
  if (r.ok) {
  state.providers = r.providers; state.roles = r.roles || []; state.settings = r.settings || {}; state.plugins = r.plugins || []
- state.skills = r.skills || []; state.jsPlugins = r.jsPlugins || []
+  state.skills = r.skills || []; state.jsPlugins = r.jsPlugins || []
+  try { const pr = await api('GET', '/api/presets'); state.customPresets = pr.presets || {} } catch { state.customPresets = {} }
  if (!state.selectedId && state.providers.length) state.selectedId = state.providers[0].id
  }
  await refreshSessions()
@@ -2549,7 +2661,10 @@ async function main() {
   }
  // 团队预设
  renderPresetSelect()
- $('btn-apply-preset').onclick = applyTeamPreset
+ $('btn-apply-preset').onclick = () => applyTeamPreset()
+ $('btn-save-preset').onclick = saveCustomPreset
+ $('btn-del-preset').onclick = deleteCustomPreset
+ $('preset-select').onchange = syncPresetButtons
  // 设置页
  $('set-theme').onchange = () =>saveUi({ theme: $('set-theme').value })
  $('set-accent').oninput = () =>document.documentElement.style.setProperty('--accent', $('set-accent').value)
@@ -2600,7 +2715,12 @@ async function main() {
  $('btn-art-gen').onclick = btnArtGen
  $('btn-code-refresh').onclick = refreshWorkspace
  // 团队配置
- $('btn-add-role').onclick = () => { state.roles.push({ id: 'role' + Date.now(), label: 'New Role', color: '#888888', desc: '', enabled: true, budgetCost: 0, providerId: '', model: '', systemPrompt: '', skills: [] }); renderRolesEditor() }
+ $('btn-add-role').onclick = () => {
+  // ★ 先收集当前编辑框内容（未保存的修改不丢），再追加新角色
+  if ($('roles-list')?.querySelector('.role-edit-row')) state.roles = collectRolesEditor()
+  state.roles.push({ id: 'role' + Date.now(), label: 'New Role', color: '#888888', desc: '', enabled: true, budgetCost: 0, providerId: '', model: '', systemPrompt: '', skills: [] })
+  renderRolesEditor()
+ }
  $('btn-save-roles').onclick = saveRolesEditor
  $('btn-skill-add').onclick = addSkill
  $('btn-skill-import-url').onclick = () =>importSkills($('sk-import-url').value.trim())
