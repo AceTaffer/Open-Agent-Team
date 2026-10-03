@@ -295,8 +295,14 @@ const TEAM_PRESETS = {
 }
 
 /* 版本迭代记录（设置页展示） */
-const APP_VERSION = '1.5.0'
+const APP_VERSION = '1.6.0'
 const CHANGELOG = [
+  ['P9.5', '2026-10', [
+    '本地声音引擎（VoiceStudio）接入：设置页一键「下载安装包 / 运行安装包 / 检测连接」；「声音后端」可切到本地——配音全部在本机完成（OpenAI 兼容 TTS，默认 127.0.0.1:3900）',
+    '新增 clone_voice 工具：少样本音色克隆（10 秒~2 分钟参考人声 → 音色档案），克隆记录保存在本机，配音时直接引用；配音师角色与配音技能同步升级',
+    '安装包下载支持国内镜像回退（直连失败自动走 ghproxy 系镜像），并做 sha256 校验',
+    '设置页布局统一：所有卡片控件高度/行距/按钮尺寸一致，新增卡片全部改为对齐的行式布局，同排卡片等高（修复"长长短短"的观感）',
+  ]],
   ['P9.4', '2026-10', [
     '短视频流水线（重大更新）：团队预设「短视频制作组」升级为 7 角色——导演 / 编剧 / 视频美术 / 配音师 / 配乐师 / 剪辑合成 / 质检，从一句需求到成片全自动',
     '新增媒体工具：generate_speech（云端 TTS 配音，百炼 qwen-tts，返回实测时长）、generate_music（优先选用工作区 bgm/ 的音乐，也可用内置合成氛围乐，无版权负担）、make_subtitles（按配音时长自动生成 SRT）、compose_video（ffmpeg 一步完成归一化/转场/混音/烧字幕/响度标准化）、media_probe（时长/分辨率/音视频轨/响度，质检证据）',
@@ -2966,6 +2972,21 @@ async function renderMedia() {
   }
   if ($('media-tts-model')) $('media-tts-model').value = r.ttsModel || ''
   if ($('media-tts-voice')) $('media-tts-voice').value = r.ttsVoice || ''
+  if ($('vs-url')) $('vs-url').value = r.vsUrl || 'http://127.0.0.1:3900'
+  if ($('vs-voice')) $('vs-voice').value = r.vsVoice || ''
+  // VoiceStudio 运行状态
+  const st = await api('GET', '/api/voicestudio/status').catch(() => ({ ok: false }))
+  const box2 = $('vs-status')
+  if (box2) {
+    if (st.ok && st.running) {
+      const n = st.voicesCount || 0
+      box2.textContent = `VoiceStudio：运行中（${st.url}${st.protocol ? ' · ' + st.protocol : ''}）｜可用音色 ${n} 个${st.cloned && st.cloned.length ? `（OAT 克隆 ${st.cloned.length} 个）` : ''}`
+      box2.classList.add('ok-text')
+    } else {
+      box2.textContent = `VoiceStudio：未连接（${(st && st.url) || 'http://127.0.0.1:3900'}）——安装并启动后点「检测连接」`
+      box2.classList.remove('ok-text')
+    }
+  }
  } catch { /* ignore */ }
 }
 /* ★ 本地知识库（RAG）：设置页状态渲染（文件数/分块数/更新时间） */
@@ -3384,9 +3405,23 @@ async function main() {
       renderMedia()
     }
     $('btn-media-save').onclick = async () => {
-      const body = { voiceBackend: $('media-voice-backend').value, ttsProviderId: $('media-tts-provider').value, ttsModel: $('media-tts-model').value.trim(), ttsVoice: $('media-tts-voice').value.trim() }
+      const body = { voiceBackend: $('media-voice-backend').value, ttsProviderId: $('media-tts-provider').value, ttsModel: $('media-tts-model').value.trim(), ttsVoice: $('media-tts-voice').value.trim(), vsVoice: $('vs-voice') ? $('vs-voice').value.trim() : '', voiceStudio: { url: ($('vs-url') ? $('vs-url').value.trim() : '') || 'http://127.0.0.1:3900' } }
       const r = await api('PUT', '/api/settings', body).catch(() => ({ ok: false }))
       $('media-msg').textContent = r.ok ? t('savedOk') : (r.error || t('failure'))
+      renderMedia()
+    }
+  }
+  // ★ VoiceStudio：检测连接 / 下载安装包 / 运行安装包
+  if ($('btn-vs-check')) {
+    $('btn-vs-check').onclick = async () => { $('vs-msg').textContent = '检测中…'; await renderMedia(); $('vs-msg').textContent = '' }
+    $('btn-vs-download').onclick = async () => {
+      $('vs-msg').textContent = '下载中（约 205MB，请稍候）…'
+      const r = await api('POST', '/api/voicestudio/download', {}).catch(() => ({ ok: false }))
+      $('vs-msg').textContent = r.ok ? `已下载：${r.path}（${Math.round((r.size || 0) / 1048576)}MB，${r.version}）` : (r.error || '下载失败')
+    }
+    $('btn-vs-launch').onclick = async () => {
+      const r = await api('POST', '/api/voicestudio/launch-installer', {}).catch(() => ({ ok: false }))
+      $('vs-msg').textContent = r.ok ? '安装程序已启动，请按向导完成安装' : (r.error || '启动失败')
     }
   }
   // ★ 本地知识库：重建索引 / 检索测试 / 自动注入开关

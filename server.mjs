@@ -218,7 +218,7 @@ const BUILTIN_SKILLS = [
   // ★ 短视频流水线技能（project.json 工程规范 / 图生视频 / 配音 / 配乐 / 合成与媒体质检）
   { id: 'mk_video_project', name: '短视频工程规范（project.json）', description: '分镜工程单一事实源：场景表结构与时序约定', tags: ['视频', '规范'], prompt: '短视频项目以 video-project/project.json 为唯一事实源，所有角色都读写它、不要各自发明格式。结构：{"meta":{"title":"","aspect":"9:16 或 16:9","width":1080,"height":1920,"fps":30,"style":"风格关键词","music":{"file":"audio/bgm.mp3","volumeDb":-18},"subtitle":true},"scenes":[{"id":1,"dur":5,"narration":"中文文案（用于配音与字幕）","subtitleText":"可选覆盖字幕文本","visualPrompt":"可直接用于出图/视频的英文提示词","negative":"负面提示词","mode":"i2v","keyframe":"keyframes/k01.png","shot":"shots/shot01.mp4","voice":"audio/vo01.mp3"}]}。路径规范（重要）：project.json 内字段一律写「工程内相对路径」，直接以 shots/、audio/、keyframes/ 开头，**不要带 video-project/ 前缀**（如 "shots/shot01.mp4"、"audio/vo01.mp3"、"keyframes/k01.png"）；调用工具时一律用「工作区相对路径」（带 video-project/ 前缀）。工作纪律：先写全场景表再开工；每完成一个产物立即回写对应字段；时长以配音实测时长为准（合成工具会自动对齐全片时间线）。' },
   { id: 'mk_i2v', name: '图生视频规范', description: '关键帧先行、镜头风格一致性与重试策略', tags: ['视频', '生成'], prompt: '短视频镜头生成策略：1) 先用 generate_image 生成关键帧，必须带 out 参数写入工程目录，如 out:"video-project/keyframes/k01.png"（工具参数一律用「工作区相对路径」= video-project/ 开头；project.json 内字段才用工程内相对路径如 keyframes/k01.png）；画幅与 meta 一致（9:16 用 720x1280、16:9 用 1280x720），全片共用同一风格前缀；2) 再用 generate_video 携带 image:"video-project/keyframes/k01.png" 走图生视频（out 写 "video-project/shots/shot01.mp4"；被拒会自动回退文生视频；关键帧缺失会明确报错）；3) 多镜可用 shots:[...] 一次批量（默认 2 路并发）；4) 失败镜头先改提示词再重试，最多 3 次，仍失败要报告缺哪一镜并给替代方案；5) 完成后用 list_files 核对文件真实存在，并把「工程内相对路径」写回 project.json.shot。' },
-  { id: 'mk_dubbing', name: '配音规范', description: '音色一致、语速与镜头时长匹配、旁白节奏', tags: ['视频', '配音'], prompt: '配音工作规范：1) 全片使用同一音色（设置页「媒体引擎」的 TTS 音色，或先 clone_voice 克隆后指定 voice）；2) 逐镜用 generate_speech 生成配音，out 用「工作区相对路径」如 "video-project/audio/vo01.mp3"（工具参数 = video-project/ 开头），并在 project.json.voice 写「工程内相对路径」如 audio/vo01.mp3；3) 语速与镜头时长相配：文案预计朗读超过 scene.dur - 0.5s 时先精简文案而不是硬加速；4) 数字、英文缩写、多音字改写为口语化表达避免读错；5) 配音完成后用 media_probe（path 用 video-project/audio/vo01.mp3）核对时长与音轨。' },
+  { id: 'mk_dubbing', name: '配音规范', description: '音色一致、少样本克隆、语速与镜头时长匹配', tags: ['视频', '配音'], prompt: '配音工作规范：1) 先确定音色：云端后端用设置页的 TTS 音色；本地 VoiceStudio 后端可用 clone_voice 少样本克隆（sample 指向工作区里 10 秒~2 分钟干净人声，如 uploads/voice-ref.wav；先 clone_voice list:true 查看已有音色），克隆返回的 profile_id 作为后续 generate_speech 的 voice；2) 逐镜用 generate_speech 生成配音，out 用「工作区相对路径」如 "video-project/audio/vo01.mp3"（工具参数 = video-project/ 开头），并在 project.json.voice 写「工程内相对路径」如 audio/vo01.mp3；3) 语速与镜头时长相配：文案预计朗读超过 scene.dur - 0.5s 时先精简文案而不是硬加速；4) 数字、英文缩写、多音字改写为口语化表达避免读错；5) 配音完成后用 media_probe（path 用 video-project/audio/vo01.mp3）核对时长与音轨。' },
   { id: 'mk_music', name: '配乐规范', description: 'BGM 选择/生成、音量包络与对白避让', tags: ['视频', '配乐'], prompt: '配乐工作规范：1) 先 generate_music list:true 查看工作区 bgm/ 已有音乐，有合适的直接 pick:"文件名"；没有就用 generate_music style 合成氛围配乐（calm/warm/tense/uplift），out 用 "video-project/audio/bgm.mp3"；2) project.json.meta.music.file 写工程内相对路径 "audio/bgm.mp3"，volumeDb 默认 -18（对白为主，音乐垫底）；3) 风格与情绪匹配：舒缓 calm、温情 warm、紧张 tense、高潮 uplift；4) 成片后如质检指出音乐盖住人声，把 volumeDb 调低 2~4dB 后重新合成。' },
   { id: 'mk_compose', name: '合成与媒体验收规范', description: 'ffmpeg 合成参数标准与成片验收清单', tags: ['视频', '质量'], prompt: '合成与验收规范：1) 合成前先 make_subtitles 生成字幕（会同时产出 ASS 与 SRT，ASS 用于烧录）；2) compose_video 一步完成归一化/转场/混音/烧字幕，输出 video-project/cut/final.mp4；缺镜头会黑场占位并在结果中警告，出现该警告一律不通过、必须补生成镜头后重新合成；3) 成片验收硬指标（全部用 media_probe 取证据）：分辨率符合 meta、有音轨、时长≈Σ镜头时长-转场重叠、响度约 -16 LUFS（±3）、**平均亮度 avgY ≥ 25（黑屏不通过；夜景等暗调题材 ≥ 18 且报告需说明）**、black 字段不得为 true；4) shot 与 final 都要探测；5) 字幕必须与配音逐句对齐（对照 subs/final.srt 与 scenes 文案），缺句/错句算不通过；6) 不通过时明确列出「哪个镜头/哪条配音/哪段字幕」需要返工，返工后重新合成再复审。' },
 ]
@@ -387,6 +387,7 @@ async function loadData() {
   await loadCustomPresets()
   await loadJsPlugins()
   await loadSchedules()
+  await loadLocalVoices()
   devices = await readJson(DEVICES_FILE, [])
   if (!Array.isArray(devices)) devices = []
 }
@@ -663,7 +664,11 @@ const BASE_TOOL_PROTOCOL = `
 \`\`\`tool
 {"tool":"generate_speech","text":"要配音的文案","out":"audio/vo01.mp3","voice":"Cherry"}
 \`\`\`
-（云端 TTS 配音；返回音频时长。out/voice 可省略）
+（TTS 配音；返回音频时长。out/voice 可省略。声音后端为 VoiceStudio 时，voice 传 profile_id 或音色名）
+\`\`\`tool
+{"tool":"clone_voice","name":"我的声音","sample":"uploads/voice-ref.wav","refText":"可选：样本对应的文字","language":"Auto"}
+\`\`\`
+（本地声音引擎少样本克隆音色；list:true 查看已有音色。克隆成功后把返回的 profile_id 传给 generate_speech 的 voice）
 \`\`\`tool
 {"tool":"generate_music","style":"calm","dur":30,"out":"audio/bgm.mp3"}
 \`\`\`
@@ -985,6 +990,7 @@ async function runTool(call, opts = {}) {
       return JSON.stringify(info, null, 2)
     }
     if (call.tool === 'generate_speech') return await generateSpeech(call, { root })
+    if (call.tool === 'clone_voice') return await toolCloneVoice(call, { root })
     if (call.tool === 'generate_music') return await generateMusic(call, { root })
     if (call.tool === 'make_subtitles') return await makeSubtitles(call, { root })
     if (call.tool === 'compose_video') return await composeVideo(call, { root }, opts.onProgress)
@@ -1003,7 +1009,7 @@ async function runTool(call, opts = {}) {
  * ═══════════════════════════════════════════════════════════════ */
 const PERMISSIONS = ['view', 'modify', 'limited', 'full']
 const READ_TOOLS = new Set(['read_file', 'list_files', 'web_search', 'web_fetch', 'kb_search', 'media_probe'])
-const WRITE_TOOLS = new Set(['write_file', 'generate_speech', 'generate_music', 'make_subtitles', 'compose_video'])
+const WRITE_TOOLS = new Set(['write_file', 'generate_speech', 'generate_music', 'make_subtitles', 'compose_video', 'clone_voice'])
 const EXEC_TOOLS = new Set(['run_command', 'run_exe'])
 function toolCategory(call) {
   if (READ_TOOLS.has(call.tool)) return 'read'
@@ -2120,6 +2126,68 @@ async function buildSrt(root, proj, tl) {
   }
   return parts.join('\n')
 }
+/* ★ VoiceStudio 本地声音引擎（OpenAI 兼容 TTS：POST /v1/audio/speech；克隆：POST /api/profiles；默认 127.0.0.1:3900） */
+const VOICES_FILE = path.join(DATA_DIR, 'voices.json')
+let localVoices = [] // OAT 侧克隆记录 [{id,name,engine,sample,createdAt}]
+async function loadLocalVoices() { try { localVoices = JSON.parse(await readFile(VOICES_FILE, 'utf8')); if (!Array.isArray(localVoices)) localVoices = [] } catch { localVoices = [] } }
+const saveLocalVoices = () => writeFile(VOICES_FILE, JSON.stringify(localVoices, null, 2), 'utf8').catch(() => {})
+function vsUrl() { return String((settings.voiceStudio && settings.voiceStudio.url) || 'http://127.0.0.1:3900').replace(/\/+$/, '') }
+async function vsHealth(timeoutMs = 2500) {
+  try {
+    const r = await fetch(vsUrl() + '/.well-known/voicestudio-speech', { signal: AbortSignal.timeout(timeoutMs) })
+    if (r.ok) { const j = await r.json().catch(() => null); return { ok: true, protocol: (j && j.protocol) || 'voicestudio.speech.v1' } }
+  } catch { /* ignore */ }
+  try { const r2 = await fetch(vsUrl() + '/v1/models', { signal: AbortSignal.timeout(timeoutMs) }); if (r2.ok) return { ok: true } } catch { /* ignore */ }
+  return { ok: false }
+}
+async function vsListVoices() {
+  const r = await fetch(vsUrl() + '/v1/audio/voices', { signal: AbortSignal.timeout(8000) })
+  if (!r.ok) throw new Error(`HTTP ${r.status}`)
+  const j = await r.json().catch(() => null)
+  const arr = Array.isArray(j) ? j : ((j && (j.data || j.voices)) || [])
+  return arr.map((v) => ({ id: String(v.id || v.profile_id || ''), name: String(v.name || v.label || v.id || '') })).filter((v) => v.id)
+}
+// 允许用「音色名」或 profile_id；未命中则原样传递（'default' 为引擎默认音色）
+async function vsResolveVoice(v) {
+  const raw = String(v || '').trim()
+  if (!raw || raw === 'default') return 'default'
+  try { const list = await vsListVoices(); const hit = list.find((x) => x.id === raw) || list.find((x) => x.name === raw); if (hit) return hit.id } catch { /* ignore */ }
+  return raw
+}
+// 克隆音色：参考音频 → VoiceStudio 音色档案（少样本克隆）
+async function toolCloneVoice(call, ctx) {
+  const h = await vsHealth()
+  if (!h.ok) return `本地声音引擎（VoiceStudio）未运行：请先启动 VoiceStudio（默认 ${vsUrl()}），或在 设置 → 媒体引擎 中修改地址。`
+  if (call.list || call.action === 'list') {
+    try {
+      const list = await vsListVoices()
+      const mine = localVoices.filter((v) => v.engine === 'voicestudio')
+      return `VoiceStudio 音色（共 ${list.length}）：\n${list.map((v) => `- ${v.name}｜voice:"${v.id}"`).join('\n') || '（无）'}${mine.length ? `\n本机通过 OAT 克隆的记录：\n${mine.slice(0, 20).map((v) => `- ${v.name}｜voice:"${v.id}"（${new Date(v.createdAt).toLocaleString('zh-CN', { hour12: false })}）`).join('\n')}` : ''}`
+    } catch (e) { return `读取音色列表失败：${e.message}` }
+  }
+  const sample = String(call.sample || call.path || '').trim()
+  if (!sample) return '缺少 sample（参考音频路径，工作区内；建议 10 秒 ~ 2 分钟的干净人声，wav/mp3 均可）'
+  const abs = resolveInWorkspace(sample, ctx.root)
+  if (!existsSync(abs)) return `参考音频不存在：${sample}`
+  const name = String(call.name || 'OAT克隆音色').slice(0, 30)
+  try {
+    const form = new FormData()
+    form.append('name', name)
+    form.append('kind', 'clone')
+    form.append('ref_text', String(call.refText || ''))
+    form.append('language', String(call.language || 'Auto'))
+    form.append('ref_audio', new Blob([await readFile(abs)]), path.basename(abs))
+    const r = await fetch(vsUrl() + '/api/profiles', { method: 'POST', body: form, signal: AbortSignal.timeout(600000) })
+    const j = await r.json().catch(() => null)
+    if (!r.ok) return `克隆失败：HTTP ${r.status} ${JSON.stringify(j).slice(0, 220)}`
+    const id = (j && (j.id || j.profile_id || (j.profile && j.profile.id))) || ''
+    if (!id) return `克隆接口未返回 profile_id：${JSON.stringify(j).slice(0, 220)}`
+    localVoices.unshift({ id, name, engine: 'voicestudio', sample, createdAt: Date.now() })
+    while (localVoices.length > 200) localVoices.pop()
+    await saveLocalVoices()
+    return `已克隆音色「${name}」→ voice:"${id}"\n之后调用 generate_speech 时把 voice 设为 "${id}"（或音色名「${name}」）即可用该音色配音。`
+  } catch (e) { return `克隆调用失败：${e.message}` }
+}
 // 云端 TTS（百炼 qwen-tts / OpenAI 兼容 /audio/speech）
 async function generateSpeech(call, ctx) {
   const text = String(call.text || '').trim()
@@ -2130,7 +2198,22 @@ async function generateSpeech(call, ctx) {
   await mkdir(path.dirname(abs), { recursive: true })
   const backend = settings.voiceBackend === 'voicestudio' ? 'voicestudio' : 'cloud'
   if (backend === 'voicestudio') {
-    return '本地声音引擎（VoiceStudio）尚未接入（规划中）：请把 设置 → 媒体引擎 → 声音后端 切回「云端」，或等后续版本支持。'
+    // ★ 本地引擎：OpenAI 兼容 TTS（VoiceStudio 默认 127.0.0.1:3900；音色可用 profile_id 或音色名）
+    const h = await vsHealth()
+    if (!h.ok) return `本地声音引擎（VoiceStudio）未运行：请先启动 VoiceStudio（默认 ${vsUrl()}），或在 设置 → 媒体引擎 中修改地址后重试。`
+    const voiceRaw = String(call.voice || settings.vsVoice || 'default')
+    try {
+      const voice = await vsResolveVoice(voiceRaw)
+      const r = await fetch(vsUrl() + '/v1/audio/speech', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: settings.vsModel || 'omnivoice', input: String(text).slice(0, 4000), voice, response_format: out.endsWith('.wav') ? 'wav' : 'mp3' }),
+        signal: AbortSignal.timeout(900000),
+      })
+      if (!r.ok) return `VoiceStudio 合成失败：HTTP ${r.status} ${(await r.text().catch(() => '')).slice(0, 220)}`
+      await writeFile(abs, Buffer.from(await r.arrayBuffer()))
+    } catch (e) { return `VoiceStudio 调用失败：${e.message}` }
+    const info = await probeMedia(abs).catch(() => ({ duration: 0, hasAudio: false }))
+    return `已生成本地配音：${out}（${info.duration}s${info.hasAudio ? '，含音轨' : ''}；引擎 VoiceStudio，音色 ${voiceRaw}）\n请把路径登记到 project.json 对应场景的 voice 字段。`
   }
   const provider = providers.find((p) => p.id === settings.ttsProviderId) || providers.find((p) => (p.baseUrl || '').includes('dashscope')) || providers.find((p) => /api\.openai\.com|openai/i.test(p.baseUrl || ''))
   if (!provider) return '未找到可用的 TTS 提供方：请在 API 仓库添加「百炼」或 OpenAI 兼容接口，并在 设置 → 媒体引擎 中指定。'
@@ -3114,6 +3197,7 @@ async function handleApi(req, res, url) {
     if (b.pauseOnDisconnect != null) b.pauseOnDisconnect = !!b.pauseOnDisconnect
     if (b.kbAuto != null) b.kbAuto = !!b.kbAuto // ★ 知识库自动检索注入开关
     if (b.voiceBackend != null) b.voiceBackend = b.voiceBackend === 'voicestudio' ? 'voicestudio' : 'cloud' // ★ 声音后端
+    if (b.voiceStudio && typeof b.voiceStudio === 'object') b.voiceStudio = { ...(settings.voiceStudio || {}), ...b.voiceStudio } // ★ 本地声音引擎配置合并
     // ★ TAT：EasyTier 组网配置合并
     if (b.easytier && typeof b.easytier === 'object') b.easytier = { ...(settings.easytier || {}), ...b.easytier }
     settings = { ...settings, ...b }
@@ -3971,8 +4055,78 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
       ok: true, ffmpeg: ffmpegReady(),
       voiceBackend: settings.voiceBackend === 'voicestudio' ? 'voicestudio' : 'cloud',
       ttsProviderId: settings.ttsProviderId || '', ttsModel: settings.ttsModel || '', ttsVoice: settings.ttsVoice || '',
+      vsUrl: vsUrl(), vsVoice: settings.vsVoice || '', vsModel: settings.vsModel || 'omnivoice',
       bgmDir: path.join(getActiveRoot(), 'bgm'),
     })
+  }
+  // ★ VoiceStudio 本地声音引擎：状态 / 检测 / 下载安装包 / 运行安装包
+  if (pathname === '/api/voicestudio/status' && method === 'GET') {
+    const h = await vsHealth()
+    let voices = []
+    if (h.ok) { try { voices = await vsListVoices() } catch { /* ignore */ } }
+    return sendJson(res, 200, { ok: true, url: vsUrl(), running: h.ok, protocol: h.protocol || '', voices: voices.slice(0, 50), voicesCount: voices.length, cloned: localVoices.filter((v) => v.engine === 'voicestudio').slice(0, 50) })
+  }
+  if (pathname === '/api/voicestudio/download' && method === 'POST') {
+    try {
+      let tag = '', asset = null
+      if (process.platform === 'win32') {
+        // ★ Windows 走 PowerShell 通道（与热更新下载一致，规避 Node fetch 的 TLS/代理问题）
+        const meta = await execAsync(`powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; (Invoke-WebRequest -Uri 'https://api.github.com/repos/debpalash/VoiceStudio/releases/latest' -UseBasicParsing -Headers @{'User-Agent'='open-agent-team'}).Content"`, { timeout: 60000, maxBuffer: 16 * 1024 * 1024, windowsHide: true })
+        const j2 = JSON.parse(meta.stdout)
+        tag = j2.tag_name || 'latest'
+        asset = (j2.assets || []).find((a) => /win-x64\.exe$/i.test(a.name))
+      } else {
+        const r = await fetch('https://api.github.com/repos/debpalash/VoiceStudio/releases/latest', { headers: { 'User-Agent': 'open-agent-team' }, signal: AbortSignal.timeout(30000) })
+        const j2 = await r.json()
+        tag = j2.tag_name || 'latest'
+        asset = (j2.assets || []).find((a) => /win-x64\.exe$/i.test(a.name))
+      }
+      if (!asset) return sendJson(res, 200, { ok: false, error: '未找到 Windows 安装包，请到 GitHub Releases 手动下载' })
+      await mkdir(path.join(__dirname, 'tools'), { recursive: true })
+      const dest = path.join(__dirname, 'tools', `VoiceStudio-Setup-${tag}.exe`)
+      if (!existsSync(dest)) {
+        // ★ 直连失败时走国内镜像回退（ghproxy 系）
+        const urls = [
+          asset.browser_download_url,
+          `https://ghproxy.net/${asset.browser_download_url}`,
+          `https://gh-proxy.com/${asset.browser_download_url}`,
+          `https://ghfast.top/${asset.browser_download_url}`,
+        ]
+        let ok = false; let lastErr = ''
+        for (const u of urls) {
+          try {
+            if (process.platform === 'win32') {
+              await execAsync(`powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '${u}' -OutFile '${dest}' -UseBasicParsing -Headers @{'User-Agent'='open-agent-team'}"`, { timeout: 1800000, maxBuffer: 4 * 1024 * 1024, windowsHide: true })
+            } else {
+              const buf = Buffer.from(await (await fetch(u, { signal: AbortSignal.timeout(1800000) })).arrayBuffer())
+              await writeFile(dest, buf)
+            }
+            ok = true; dbg('voicestudio.download_ok', { url: String(u).slice(0, 80) }); break
+          } catch (e) { lastErr = String(e.message || e).slice(0, 200); try { await rm(dest, { force: true }) } catch { /* ignore */ } }
+        }
+        if (!ok) return sendJson(res, 200, { ok: false, error: `下载失败（直连与镜像均失败）：${lastErr}` })
+      }
+      // ★ 官方 Release 提供 sha256 摘要时校验完整性
+      if (typeof asset.digest === 'string' && asset.digest.startsWith('sha256:')) {
+        const buf = await readFile(dest)
+        const got = crypto.createHash('sha256').update(buf).digest('hex')
+        if (got !== asset.digest.slice(7).toLowerCase()) { try { await rm(dest, { force: true }) } catch { /* ignore */ } return sendJson(res, 200, { ok: false, error: '安装包 sha256 校验失败，已删除，请重试' }) }
+      }
+      audit(req, 'voicestudio.download', { version: tag })
+      const size = existsSync(dest) ? (await stat(dest)).size : 0
+      return sendJson(res, 200, { ok: true, path: dest, version: tag, size })
+    } catch (e) { return sendJson(res, 200, { ok: false, error: String(e.message || e).slice(0, 300) }) }
+  }
+  if (pathname === '/api/voicestudio/launch-installer' && method === 'POST') {
+    try {
+      const toolsDir = path.join(__dirname, 'tools')
+      const files = (await readdir(toolsDir).catch(() => [])).filter((f) => /^VoiceStudio-Setup-.*\.exe$/i.test(f)).sort()
+      if (!files.length) return sendJson(res, 200, { ok: false, error: '未找到安装包：请先点「下载安装包」' })
+      const exe = path.join(toolsDir, files[files.length - 1])
+      spawn(exe, [], { detached: true, stdio: 'ignore' }).unref()
+      audit(req, 'voicestudio.launch_installer', { file: files[files.length - 1] })
+      return sendJson(res, 200, { ok: true, path: exe })
+    } catch (e) { return sendJson(res, 200, { ok: false, error: e.message }) }
   }
   if (pathname === '/api/media/install-ffmpeg' && method === 'POST') {
     try { await ensureFfmpeg(); audit(req, 'media.ffmpeg_install', {}); return sendJson(res, 200, { ok: true }) }

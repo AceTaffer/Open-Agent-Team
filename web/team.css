@@ -442,6 +442,24 @@ body[data-spacing="relaxed"] .provider-cards, body[data-spacing="relaxed"] .sett
   background: var(--bg-soft); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 5px 8px; font-size: 12px;
 }
 .set-row input[type=color] { width: 44px; height: 30px; padding: 2px; }
+/* ★ 设置页对齐统一：卡片内控件高度、行距、按钮尺寸一致；同排卡片等高 */
+.settings-grid { align-items: stretch; }
+.set-card { min-height: 100%; }
+.set-card .set-row { min-height: 32px; }
+.set-card .set-row > span:first-child { flex: 0 0 110px; }
+.set-card .set-row select,
+.set-card .set-row input:not([type=checkbox]):not([type=color]):not([type=range]) {
+  flex: 1 1 auto; min-width: 0; height: 30px; box-sizing: border-box;
+}
+.set-card textarea {
+  width: 100%; box-sizing: border-box; background: var(--input-bg, #12151c); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; font-size: 12px; resize: vertical;
+}
+.set-card .gh-row { row-gap: 8px; }
+.set-card .gh-row input:not([type=checkbox]), .set-card .gh-row select { flex: 0 1 200px; min-width: 120px; height: 30px; box-sizing: border-box; }
+.set-card .btn { height: 30px; padding: 0 14px; font-size: 12.5px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
+.set-card .btn.tiny { height: 26px; padding: 0 10px; font-size: 12px; }
+.set-card p.dim.small, .set-card .dim.small { line-height: 1.6; }
 .changelog { display: flex; flex-direction: column; gap: 8px; max-height: 420px; overflow-y: auto; }
 .cl-block { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; }
 .cl-head { display: flex; gap: 8px; align-items: baseline; }
