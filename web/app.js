@@ -295,8 +295,15 @@ const TEAM_PRESETS = {
 }
 
 /* 版本迭代记录（设置页展示） */
-const APP_VERSION = '1.6.0'
+const APP_VERSION = '1.7.0'
 const CHANGELOG = [
+  ['P9.6', '2026-10', [
+    'Android 手机端 v1.7.0（随 Release 提供 APK，arm64）：远程模式（连电脑）+ 本地模式（JNI 内嵌引擎，手机离线可聊天/任务）；手机端热更新（本地引擎文件从 GitHub 更新，重启应用生效）；状态栏/手势条适配',
+    '手机端 UI 简约化：顶栏极简（功能收纳进左侧抽屉：九宫格导航/工作区/新建文件）；团队页单行角色条（带实时状态，可单独查看或总览）；对话/团队输入框上方新增「推理等级」可折叠条（点击展开/再点击折叠，与桌面滑块同源）',
+    '手机上传与双端作业：对话「＋」支持图片/文件，团队任务「＋」上传文件并把路径写进任务；新增 /api/fs/write 支持手机端直接新建文件，随后向 AI 下达加工指令',
+    '移除「另一台设备更新了配置」提示：改为来源回声抑制 + 非编辑态静默同步，根治多设备互相刷屏（此前两台设备会互相提示）',
+    '设置页布局统一（控件高度/行距/按钮对齐、同排卡片等高）',
+  ]],
   ['P9.5', '2026-10', [
     '本地声音引擎（VoiceStudio）接入：设置页一键「下载安装包 / 运行安装包 / 检测连接」；「声音后端」可切到本地——配音全部在本机完成（OpenAI 兼容 TTS，默认 127.0.0.1:3900）',
     '新增 clone_voice 工具：少样本音色克隆（10 秒~2 分钟参考人声 → 音色档案），克隆记录保存在本机，配音时直接引用；配音师角色与配音技能同步升级',
@@ -375,7 +382,15 @@ const esc = (s) =>String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<
 /* ★ TAT：手机端设备 token（配对后保存在本机浏览器；电脑本机无需 token） */
 let AUTH_TOKEN = localStorage.getItem('oat-token') || ''
 const IS_LOCAL_HOST = ['127.0.0.1', 'localhost', '::1', ''].includes(location.hostname)
-const authHeaders = () => (AUTH_TOKEN ? { Authorization: 'Bearer ' + AUTH_TOKEN } : {})
+// ★ 每标签页唯一客户端标识：随写请求上报，服务端广播时回带 —— 用于忽略"自己发起的变更"回声
+const CLIENT_ID = (() => {
+ try {
+  let v = sessionStorage.getItem('oat-client-id')
+  if (!v) { v = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()) + '-' + Math.random().toString(16).slice(2); sessionStorage.setItem('oat-client-id', v) }
+  return v
+ } catch { return 'tab-' + String(Date.now()) }
+})()
+const authHeaders = () => ({ ...(AUTH_TOKEN ? { Authorization: 'Bearer ' + AUTH_TOKEN } : {}), 'X-OAT-Client': CLIENT_ID })
 const detectDeviceName = () => /Android/i.test(navigator.userAgent) ? 'Android 手机' : /iPhone|iPad/i.test(navigator.userAgent) ? 'iPhone/iPad' : '手机浏览器'
 let lastLocalWrite = 0
 const api = async (method, url, body) => {
@@ -443,13 +458,20 @@ function remoteToast(msg) {
   remoteToast._t = setTimeout(() => el.classList.remove('show'), 4000)
 }
 function onRemoteChange(ev) {
-  try {
-    if (ev.key === 'sessions') { refreshSessions().catch(() => {}); if (state.teamLoaded) refreshTeamSessions(state.teamSessionId).catch(() => {}); checkActiveRuns(true).catch(() => {}) }
-    else if (ev.key === 'tasks') { refreshTasks(); checkActiveRuns(true).catch(() => {}); renderSchedules().catch(() => {}) }
-    else if (ev.key === 'art') refreshArtGallery()
-    else if (ev.key === 'stats') refreshStats()
-    else if (['settings', 'roles', 'providers', 'devices'].includes(ev.key) && Date.now() - lastLocalWrite > 3000) remoteToast('另一台设备更新了配置，刷新页面后生效')
-  } catch { /* ignore */ }
+ try {
+  if (!ev || !ev.key) return
+  // ★ 自己发起的变更：忽略回声（服务端广播回带 origin）
+  if (ev.origin && ev.origin === CLIENT_ID) return
+  if (ev.key === 'sessions') { refreshSessions().catch(() => {}); if (state.teamLoaded) refreshTeamSessions(state.teamSessionId).catch(() => {}); checkActiveRuns(true).catch(() => {}) }
+  else if (ev.key === 'tasks') { refreshTasks(); checkActiveRuns(true).catch(() => {}); renderSchedules().catch(() => {}) }
+  else if (ev.key === 'art') refreshArtGallery()
+  else if (ev.key === 'stats') refreshStats()
+  else if (['settings', 'roles', 'providers', 'devices'].includes(ev.key)) {
+   // ★ 按要求：不再弹"另一台设备更新了配置"提示；仅在非编辑态静默同步一次运行态配置（不打断正在编辑的表单）
+   const v = document.querySelector('.view.active')?.id || ''
+   if (!['view-settings', 'view-teamconfig', 'view-providers', 'view-plugins'].includes(v)) loadState().catch(() => {})
+  }
+ } catch { /* ignore */ }
 }
 /* ★ TAT：手机端配对（PIN 输入或扫码自动配对后的兜底界面） */
 function showPairGate(msg) {
@@ -621,7 +643,23 @@ function setupEffortControl(id, getValue, onPick) {
   const v = pick(e.clientX)
   try { await onPick(v) } catch { /* ignore */ }
  })
- el.addEventListener('pointercancel', () => { dragging = false })
+  el.addEventListener('pointercancel', () => { dragging = false })
+}
+// ★ 推理等级折叠条（窄屏）：点击标题展开/再点折叠；展开时同步当前等级与滑块位置
+function setupEffortFold(foldId, curId, ctlId, getValue) {
+ const fold = $(foldId)
+ if (!fold) return
+ const body = fold.querySelector('.effort-fold-body')
+ fold.querySelector('.effort-fold-btn').onclick = () => {
+  const hidden = body.classList.toggle('hidden')
+  fold.classList.toggle('open', !hidden)
+  if (!hidden) {
+   const v = getValue()
+   setEffortVisual(ctlId, v)
+   const b = $(curId)
+   if (b) b.textContent = (EFFORT_LEVELS.find(([x]) => x === v) || EFFORT_LEVELS[2])[1]
+  }
+ }
 }
 // ★ 一键到底：滚动容器 + 浮动按钮（有内容且不在底部时显示）
 function setupToBottom(streamId, btnId) {
@@ -1788,7 +1826,6 @@ function applyTeamFilter() {
   })
  document.querySelectorAll('#team-activity .role-chip').forEach((el) => el.classList.toggle('active', el.dataset.role === state.teamFocus))
  document.querySelectorAll('#role-summary .role-item').forEach((el) => el.classList.toggle('active', el.dataset.role === state.teamFocus))
- document.querySelectorAll('#team-tabs .team-tab').forEach((el) => el.classList.toggle('active', el.dataset.role === (state.teamFocus || '')))
  const ov = $('btn-team-overview')
  if (ov) ov.classList.toggle('active', !state.teamFocus)
  // ★ 角色标签页激活时，底部显示"单独对话栏"
@@ -2615,6 +2652,8 @@ function renderWorkspaces() {
  $('workspace-select').innerHTML = (state.workspaces || []).map((w) => `<option value="${esc(w.path)}" ${w.path === state.activeWorkspace ? 'selected' : ''}> ${esc(w.path)}${w.exists ? '' : ' (missing)'}</option>`).join('') || '<option value="">--</option>'
  $('code-ws-path').textContent = t('workspace') + (state.activeWorkspace || '-')
  if ($('chat-ws')) $('chat-ws').textContent = state.activeWorkspace ? ` ${state.activeWorkspace}` : ''
+ // ★ 手机端抽屉里的工作区选择（与主选择同步）
+ if ($('ws-select-mobile')) $('ws-select-mobile').innerHTML = $('workspace-select').innerHTML
 }
 async function addWorkspace() {
  const btn = $('btn-workspace-add'); const old = btn.textContent
@@ -2646,6 +2685,7 @@ async function removeWorkspace() {
 function switchView(name) {
  document.body.classList.remove('rail-open') // ★ TAT 移动端：切换页面时收起侧栏抽屉
  document.querySelectorAll('.tab').forEach((x) =>x.classList.toggle('active', x.dataset.view === name))
+ document.querySelectorAll('.mnav').forEach((x) =>x.classList.toggle('active', x.dataset.view === name))
  document.querySelectorAll('.view').forEach((v) =>v.classList.toggle('active', v.id === `view-${name}`))
  $('sidebar-providers').classList.toggle('hidden', name !== 'chat')
  $('sidebar-roles').classList.toggle('hidden', name !== 'team')
@@ -3130,7 +3170,24 @@ async function main() {
  $('btn-add-provider').onclick = () =>openModal(null)
  $('btn-refresh-all').onclick = refreshAllBalances
  document.querySelectorAll('.tab').forEach((tab) => { tab.onclick = () =>switchView(tab.dataset.view) })
+ document.querySelectorAll('.mnav').forEach((b) => { b.onclick = () => switchView(b.dataset.view) }) // ★ 手机端抽屉导航
  document.querySelectorAll('.subtab').forEach((tab) => { tab.onclick = () =>switchSubtab(tab.dataset.panel) })
+ // ★ 手机端抽屉里的工作区切换（复用与主选择一致的逻辑）
+ if ($('ws-select-mobile')) $('ws-select-mobile').onchange = async () => {
+  const r = await api('PUT', '/api/workspaces/active', { path: $('ws-select-mobile').value })
+  if (!r.ok) return alert(r.error || 'fail')
+  state.activeWorkspace = r.active
+  renderWorkspaces(); refreshWorkspace(); refreshArtGallery()
+ }
+ // ★ 手机端「新建文件」：在工作区新建/覆盖一个文本文件（随后可直接向 AI 下达加工指令）
+ if ($('btn-mobile-new-file')) $('btn-mobile-new-file').onclick = async () => {
+  const p = prompt('新建文件：输入相对工作区的路径（如 notes/idea.md）')
+  if (!p) return
+  const content = prompt('文件内容（可留空，之后让 AI 补充）：', '')
+  if (content === null) return
+  const r = await api('POST', '/api/fs/write', { path: p, content }).catch(() => ({ ok: false }))
+  alert(r.ok ? `已创建：${p}\n提示：在对话/团队任务里直接说明要做什么，AI 可以继续加工这个文件。` : (r.error || '创建失败'))
+ }
  // API 弹窗
  $('btn-modal-cancel').onclick = () => $('modal').classList.add('hidden')
  $('btn-modal-save').onclick = saveModal
@@ -3213,13 +3270,42 @@ async function main() {
  }
  if (localStorage.getItem('oat-rail-hidden') === '1') $('chat-rail').classList.add('hidden')
  syncRailBtn()
- $('btn-attach').onclick = () => $('chat-image').click()
+ // ★ 附件菜单（图片 / 文件）——手机与桌面通用
+ function showAttachMenu(anchor, onImage, onFile) {
+  const old = document.getElementById('attach-menu')
+  if (old) old.remove()
+  const m = document.createElement('div')
+  m.id = 'attach-menu'
+  m.innerHTML = `<button data-k="img">图片</button><button data-k="file">文件</button>`
+  document.body.appendChild(m)
+  const r = anchor.getBoundingClientRect()
+  m.style.left = Math.max(8, Math.min(window.innerWidth - 150, r.left - 40)) + 'px'
+  m.style.top = Math.max(8, r.top - 100) + 'px'
+  const close = () => { m.remove(); document.removeEventListener('click', off, true) }
+  const off = (e) => { if (!m.contains(e.target) && e.target !== anchor) close() }
+  setTimeout(() => document.addEventListener('click', off, true), 0)
+  m.querySelector('[data-k="img"]').onclick = (e) => { e.stopPropagation(); close(); onImage() }
+  m.querySelector('[data-k="file"]').onclick = (e) => { e.stopPropagation(); close(); onFile() }
+ }
+ $('btn-attach').onclick = () => showAttachMenu($('btn-attach'), () => $('chat-image').click(), () => $('chat-file').click())
  $('chat-image').onchange = () => {
  const f = $('chat-image').files[0]; if (!f) return
  const fr = new FileReader(); fr.onload = () =>setChatImage(fr.result, f.name); fr.readAsDataURL(f); $('chat-image').value = ''
  }
+ $('chat-file').onchange = async () => {
+  const fs = [...$('chat-file').files]; $('chat-file').value = ''
+  if (fs.length) await uploadFiles(fs, $('chat-text'))
+ }
  // 团队
  $('btn-team-run').onclick = runTeam
+ // ★ 团队附件：上传到工作区并把路径插入任务输入框（聚焦角色时发给该角色）
+ if ($('btn-team-attach')) $('btn-team-attach').onclick = () => showAttachMenu($('btn-team-attach'), () => $('team-file').click(), () => $('team-file').click())
+ if ($('team-file')) $('team-file').onchange = async () => {
+  const fs = [...$('team-file').files]; $('team-file').value = ''
+  if (!fs.length) return
+  const ta = (state.teamFocus && $('team-role-bar') && !$('team-role-bar').classList.contains('hidden')) ? $('team-role-text') : $('team-task')
+  await uploadFiles(fs, ta)
+ }
  $('btn-role-chat-send').onclick = roleChatSend
  $('team-role-text').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); roleChatSend() } })
  $('btn-team-pause').onclick = async () => {
@@ -3240,6 +3326,17 @@ async function main() {
   else { state.settings.reasoningEffort = v; await api('PUT', '/api/settings', { reasoningEffort: v }) }
  })
  setupEffortControl('team-effort', () => ((state.teamSessions.find((s) => s.id === state.teamSessionId) || {}).effort || state.settings.reasoningEffort || 'default'), async (v) => {
+  if (state.teamSessionId) { await api('PUT', `/api/sessions/${state.teamSessionId}`, { effort: v }); await refreshTeamSessions(state.teamSessionId) }
+  else { state.settings.reasoningEffort = v; await api('PUT', '/api/settings', { reasoningEffort: v }) }
+ })
+ // ★ 窄屏：对话框/任务框上方的「推理等级」折叠条（与工具条滑块同源、同步写入）
+ setupEffortFold('chat-effort-fold', 'chat-effort-cur', 'chat-effort-m', () => (state.activeSession?.effort || state.settings.reasoningEffort || 'default'))
+ setupEffortControl('chat-effort-m', () => (state.activeSession?.effort || state.settings.reasoningEffort || 'default'), async (v) => {
+  if (state.activeSession) { state.activeSession.effort = v; await api('PUT', `/api/sessions/${state.activeSession.id}`, { effort: v }); refreshSessions() }
+  else { state.settings.reasoningEffort = v; await api('PUT', '/api/settings', { reasoningEffort: v }) }
+ })
+ setupEffortFold('team-effort-fold', 'team-effort-cur', 'team-effort-m', () => ((state.teamSessions.find((s) => s.id === state.teamSessionId) || {}).effort || state.settings.reasoningEffort || 'default'))
+ setupEffortControl('team-effort-m', () => ((state.teamSessions.find((s) => s.id === state.teamSessionId) || {}).effort || state.settings.reasoningEffort || 'default'), async (v) => {
   if (state.teamSessionId) { await api('PUT', `/api/sessions/${state.teamSessionId}`, { effort: v }); await refreshTeamSessions(state.teamSessionId) }
   else { state.settings.reasoningEffort = v; await api('PUT', '/api/settings', { reasoningEffort: v }) }
  })

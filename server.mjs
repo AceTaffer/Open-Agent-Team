@@ -152,10 +152,13 @@ let settings = { developerMode: false, exeEnabled: false, exeAllowlist: [], gith
  * ═══════════════════════════════════════════════════════════════ */
 const streamClients = new Set()          // /api/stream 监听器
 let listenAll = false                    // ★ 当前是否监听 0.0.0.0（服务启动时确定）
+let currentOrigin = ''                   // ★ 当前非 GET 请求的客户端标识（用于广播回显抑制）
 const revs = {}                          // 各数据域版本号（客户端增量同步用）
 function bumpRev(key) {
   revs[key] = (revs[key] || 0) + 1
-  const ev = { type: 'changed', key, rev: revs[key], at: Date.now() }
+  // ★ origin：本次变更由哪个客户端发起（客户端据此忽略自己的回声，避免"另一台设备更新"互相刷屏）
+  const ev = { type: 'changed', key, rev: revs[key], at: Date.now(), origin: currentOrigin || '' }
+  dbg('rev.bump', { key, by: currentOrigin || 'server' })
   for (const fn of streamClients) { try { fn(ev) } catch { /* ignore */ } }
 }
 const sha256 = (s) => crypto.createHash('sha256').update(String(s)).digest('hex')
@@ -1950,6 +1953,8 @@ const XFADE_DUR = 0.4 // 镜头间转场时长（秒）
 function ffmpegReady() { return existsSync(FFMPEG_EXE) }
 async function ensureFfmpeg() {
   if (ffmpegReady()) return FFMPEG_EXE
+  // ★ 手机端（Android 内嵌引擎）：不提供 ffmpeg，媒体探测/合成请回电脑端执行
+  if (process.platform === 'android') throw new Error('手机端暂不内置 ffmpeg：媒体探测/视频合成请在电脑端执行（本地模式可正常聊天、任务与文件操作）')
   // ★ 首次使用：官方镜像下载 essentials 构建（附 .sha256 校验；如需手动安装：把 ffmpeg.exe 放入 tools/ 即可）
   await mkdir(path.join(__dirname, 'tools'), { recursive: true })
   const zipUrl = 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip'
@@ -3166,8 +3171,15 @@ async function handleApi(req, res, url) {
   if (pathname === '/api/restart' && method === 'POST') {
     sendJson(res, 200, { ok: true, message: '服务即将重启，几秒后自动恢复' })
     audit(req, 'service.restart', {})
-    setTimeout(() => {
-      try { spawn('cmd.exe', ['/c', `timeout /t 1 /nobreak >nul & "${process.execPath}" server.mjs`], { cwd: __dirname, detached: true, stdio: 'ignore', windowsHide: true }).unref() } catch { /* ignore */ }
+    setTimeout(async () => {
+      // ★ Windows：脱离当前进程自拉起；Android：写"引擎已更新"标记，由手机壳提示重启应用
+      if (process.platform === 'android') {
+        try { await writeFile(path.join(DATA_DIR, '.engine-updated'), String(Date.now())) } catch { /* ignore */ }
+        return
+      }
+      if (process.platform === 'win32') {
+        try { spawn('cmd.exe', ['/c', `timeout /t 1 /nobreak >nul & "${process.execPath}" server.mjs`], { cwd: __dirname, detached: true, stdio: 'ignore', windowsHide: true }).unref() } catch { /* ignore */ }
+      }
       process.exit(0)
     }, 300)
     return
@@ -3203,6 +3215,21 @@ async function handleApi(req, res, url) {
     settings = { ...settings, ...b }
     await saveSettings()
     return sendJson(res, 200, { ok: true, settings })
+  }
+  // ★ 工作区内新建/覆盖文本文件（手机端「新建文件」与通用便捷写文件；限定工作区、≤2MB）
+  if (pathname === '/api/fs/write' && method === 'POST') {
+    const b = await readBody(req)
+    const rel = String(b.path || '').trim()
+    if (!rel) return sendJson(res, 200, { ok: false, error: '缺少 path（相对工作区的文件路径）' })
+    const content = String(b.content ?? '')
+    if (Buffer.byteLength(content) > 2 * 1024 * 1024) return sendJson(res, 200, { ok: false, error: '内容超过 2MB 限制' })
+    try {
+      const abs = resolveInWorkspace(rel, getActiveRoot())
+      await mkdir(path.dirname(abs), { recursive: true })
+      await writeFile(abs, content, 'utf8')
+      audit(req, 'fs.write', { path: rel, bytes: Buffer.byteLength(content) })
+      return sendJson(res, 200, { ok: true, path: rel })
+    } catch (e) { return sendJson(res, 200, { ok: false, error: e.message }) }
   }
   // ★ 工作区管理
   if (pathname === '/api/workspaces' && method === 'GET') {
@@ -4349,10 +4376,16 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
       let toVer = fromVer
       try { toVer = JSON.parse(await readFile(path.join(__dirname, 'package.json'), 'utf8')).version || fromVer } catch { /* ignore */ }
       dbg('update.applied', { repo, branch, from: fromVer, to: toVer, updated })
-      // 延迟自动重启服务（脱离当前进程，避免端口占用）
+      // 更新后重启：Windows 自拉起；Android 写标记由手机壳提示重启（内嵌引擎不能自杀退出）
       try {
-        spawn('cmd.exe', ['/c', `timeout /t 2 /nobreak >nul & "${process.execPath}" server.mjs`], { cwd: __dirname, detached: true, stdio: 'ignore', windowsHide: true }).unref()
-        setTimeout(() => process.exit(0), 800)
+        if (process.platform === 'android') {
+          await writeFile(path.join(DATA_DIR, '.engine-updated'), String(Date.now())).catch(() => {})
+        } else {
+          if (process.platform === 'win32') {
+            spawn('cmd.exe', ['/c', `timeout /t 2 /nobreak >nul & "${process.execPath}" server.mjs`], { cwd: __dirname, detached: true, stdio: 'ignore', windowsHide: true }).unref()
+          }
+          setTimeout(() => process.exit(0), 800)
+        }
       } catch { /* 重启失败也不影响已更新的文件 */ }
       return sendJson(res, 200, { ok: true, from: fromVer, to: toVer, updated, restart: true })
     } catch (e) { return sendJson(res, 200, { ok: false, error: e.message }) }
@@ -4396,8 +4429,10 @@ const server = http.createServer(async (req, res) => {
   req.on('error', () => { /* client abort */ })
   res.on('error', () => { /* client abort */ })
   const url = new URL(req.url, `http://${req.headers.host || HOST}`)
+  if (req.method !== 'GET') currentOrigin = String(req.headers['x-oat-client'] || '').slice(0, 64)
   try { if (url.pathname.startsWith('/api/')) await handleApi(req, res, url); else await serveStatic(res, url.pathname) }
   catch (e) { dbg('server.error', { message: String(e?.message || e) }); sendJson(res, e?.statusCode || 500, { ok: false, error: String(e?.message || e) }) }
+  finally { if (req.method !== 'GET') currentOrigin = '' }
 })
 await loadData()
 startScheduleTicker() // ★ 定时任务/心跳：每 30 秒检查一次到期任务

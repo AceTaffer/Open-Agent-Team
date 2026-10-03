@@ -10,8 +10,8 @@
  <link rel="manifest" href="/manifest.json" />
  <title>Open Agent Team</title>
  <link rel="icon" href="/oat.png" />
- <link rel="stylesheet" href="/style.css?v=1.6.0" />
- <link rel="stylesheet" href="/team.css?v=1.6.0" />
+ <link rel="stylesheet" href="/style.css?v=1.7.0" />
+ <link rel="stylesheet" href="/team.css?v=1.7.0" />
 </head>
 <body>
  <!-- ═══ 顶栏 ═══ -->
@@ -62,6 +62,24 @@
  <button id="btn-mobile-menu" class="mobile-only" title="菜单">≡</button>
  <!-- ═══ 左侧栏 ═══ -->
  <aside class="sidebar">
+ <!-- ★ 手机端简约导航（仅窄屏显示）：功能入口 + 工作区 + 新建文件 -->
+ <div id="mobile-nav" class="mobile-only-block">
+ <div class="sidebar-title">功能</div>
+ <div class="mnav-grid">
+ <button class="mnav" data-view="chat">对话</button>
+ <button class="mnav" data-view="team">团队任务</button>
+ <button class="mnav" data-view="providers">API 仓库</button>
+ <button class="mnav" data-view="teamconfig">团队配置</button>
+ <button class="mnav" data-view="plugins">插件</button>
+ <button class="mnav" data-view="github">项目</button>
+ <button class="mnav" data-view="stats">统计</button>
+ <button class="mnav" data-view="debug">调试</button>
+ <button class="mnav" data-view="settings">设置</button>
+ </div>
+ <div class="sidebar-title" style="margin-top:12px">工作区</div>
+ <select id="ws-select-mobile"></select>
+ <button id="btn-mobile-new-file" class="btn ghost" style="width:100%;margin-top:8px">＋ 新建文件…</button>
+ </div>
  <div id="sidebar-providers">
  <div class="sidebar-title"><span data-i18n="registeredApis">已登记 API</span>（<span id="provider-count">0</span>）</div>
  <div id="provider-list" class="provider-list"></div>
@@ -118,10 +136,25 @@
   </div>
   <button id="btn-chat-bottom" class="to-bottom hidden" data-i18n="toBottom">回到底部</button>
  <div id="cmd-palette" class="cmd-palette hidden"></div>
+ <!-- ★ 推理等级：对话框上方可折叠条（点击展开/再点折叠；窄屏显示） -->
+ <div class="effort-fold mobile-only-block" id="chat-effort-fold">
+ <button class="effort-fold-btn" type="button">推理等级：<b id="chat-effort-cur">默认</b> <span class="fold-arrow">▾</span></button>
+ <div class="effort-fold-body hidden">
+ <div class="effort-ctl" id="chat-effort-m" title="推理等级（拖动调节，越长越强）">
+ <div class="ec-track">
+ <div class="ec-fill"></div>
+ <div class="ec-knob"></div>
+ <span class="ec-spark"></span><span class="ec-spark"></span><span class="ec-spark"></span>
+ </div>
+ <span class="ec-label">默认</span>
+ </div>
+ </div>
+ </div>
  <div class="chat-input">
  <textarea id="chat-text" rows="3" data-i18n-ph="chatPlaceholder" placeholder="输入指令，/ 查看命令，Enter 发送"></textarea>
  <input type="file" id="chat-image" accept="image/*" class="hidden" />
- <button id="btn-attach" class="btn ghost" title="附带图片">图片</button>
+ <input type="file" id="chat-file" class="hidden" multiple />
+ <button id="btn-attach" class="btn ghost" title="添加图片 / 文件">＋</button>
  <button id="btn-send" class="btn primary" data-i18n="send">发送</button>
  </div>
  <div id="chat-attach-chip" class="attach-chip hidden"></div>
@@ -142,8 +175,24 @@
  <div class="team-grid">
  <div class="team-main">
  <div class="team-input">
+ <!-- ★ 推理等级：任务框上方可折叠条（点击展开/再点折叠；窄屏显示） -->
+ <div class="effort-fold mobile-only-block" id="team-effort-fold">
+ <button class="effort-fold-btn" type="button">推理等级：<b id="team-effort-cur">默认</b> <span class="fold-arrow">▾</span></button>
+ <div class="effort-fold-body hidden">
+ <div class="effort-ctl" id="team-effort-m" title="推理等级（拖动调节，越长越强）">
+ <div class="ec-track">
+ <div class="ec-fill"></div>
+ <div class="ec-knob"></div>
+ <span class="ec-spark"></span><span class="ec-spark"></span><span class="ec-spark"></span>
+ </div>
+ <span class="ec-label">默认</span>
+ </div>
+ </div>
+ </div>
  <textarea id="team-task" rows="2" data-i18n-ph="teamPlaceholder" placeholder="给团队下达任务…"></textarea>
+ <input type="file" id="team-file" class="hidden" multiple />
  <div class="team-input-actions">
+ <button id="btn-team-attach" class="btn ghost" title="添加文件到任务（会上传到工作区并附路径）">＋</button>
  <button id="btn-team-run" class="btn primary" data-i18n="startTask">开始任务</button>
  <button id="btn-team-pause" class="btn ghost" disabled> <span data-i18n="pause">暂停</span></button>
  <button id="btn-open-roles" class="btn ghost" data-i18n="configRoles">配置角色与模型</button>
@@ -181,7 +230,6 @@
  </div>
  <div id="team-resume-banner" class="team-resume hidden"></div>
  <div id="team-activity" class="team-activity"></div>
- <div id="team-tabs" class="team-tabs"></div>
   <div id="team-stream" class="team-stream">
   <div class="empty-tip" data-i18n="teamEmpty">队长先规划，再派给各角色执行；可调用工作区工具、联网搜索、插件。</div>
   </div>
@@ -926,6 +974,6 @@
  </div>
 
  <script src="/vendor/qrcode.js"></script>
- <script src="/app.js?v=1.6.0"></script>
+ <script src="/app.js?v=1.7.0"></script>
 </body>
 </html>
