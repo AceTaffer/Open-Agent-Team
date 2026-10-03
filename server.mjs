@@ -4570,7 +4570,7 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
     const sess = sessions.find((s) => s.id === b.sessionId && (s.kind || '') === 'game')
     if (!sess) return sendJson(res, 404, { ok: false, error: '游戏会话不存在' })
     if (b.game && typeof b.game === 'object') { sess.game = { ...(sess.game || {}), ...b.game }; await saveSessions() }
-    const engine = startGameSession(sess)
+    const engine = await startGameSession(sess)
     return sendJson(res, 200, { ok: true, state: gameViewFor(engine.state) })
   }
   // ★ 对局状态（刷新/手机端轮询兜底）
@@ -4592,9 +4592,33 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
     const sid = url.searchParams.get('sessionId') || ''
     const engine = gameEngines.get(sid)
     res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' })
-    const write = (o) => { try { res.write(`data: ${JSON.stringify(o)}\n\n`) } catch { /* ignore */ } }
     const st = engine ? engine.state : await gameLoad(sid)
-    if (!st) { write({ type: 'game-error', error: '对局不存在' }); try { res.end() } catch { /* ignore */ } return }
+    if (!st) { try { res.write(`data: ${JSON.stringify({ type: 'game-error', error: '对局不存在' })}\n\n`); res.end() } catch { /* ignore */ } return }
+    // ★ 双保险：SSE 写入前按用户身份过滤私密事件（与状态视图同一套可见性规则）
+    const canSeeNow = (ch) => {
+      const S = engine ? engine.state : st
+      const uid = S.userSeat
+      const isJudge = S.config.myRole === 'judge'
+      const isObserver = S.config.myRole === 'observer'
+      const me = uid != null ? S.players.find((p) => p.seat === uid) : null
+      const userDead = !!(me && !me.alive)
+      const userWolf = !!(me && me.team === 'wolf')
+      if (ch === 'public') return true
+      if (ch === 'judge') return isJudge || isObserver
+      if (ch === 'dead') return isJudge || isObserver || userDead
+      if (ch === 'wolf') return isJudge || isObserver || userWolf
+      if (ch.startsWith('note:')) return isJudge || ch === 'note:' + uid
+      if (ch.startsWith('whisper:')) return isJudge || isObserver || ch.split(':').includes(String(uid))
+      return false
+    }
+    const write = (o) => {
+      try {
+        if (o.type === 'game-msg' && !canSeeNow(o.channel)) return
+        if (o.type === 'delta' && !canSeeNow(o.channel || 'public')) return
+        if (o.type === 'game-note' && o.seat !== (engine ? engine.state.userSeat : st.userSeat)) return
+        res.write(`data: ${JSON.stringify(o)}\n\n`)
+      } catch { /* ignore */ }
+    }
     write({ type: 'game-state', state: gameViewFor(st) })
     if (engine) {
       // ★ 状态快照已包含全部频道与等待项，无需重放 buffer（避免消息重复）
@@ -4695,6 +4719,9 @@ async function gameSave(state) {
   } catch { /* ignore */ }
 }
 async function gameLoad(sid) { try { return JSON.parse(await readFile(gameStateFile(sid), 'utf8')) } catch { return null } }
+// ★ AI 经验档案：按会话累积（每座位保留最近 10 条），重新游戏后继承
+const gameExpFile = (sid) => path.join(gameDir(sid), 'experience.json')
+async function gameLoadExperience(sid) { try { const e = JSON.parse(await readFile(gameExpFile(sid), 'utf8')); return { games: Number(e.games) || 0, players: e.players || {} } } catch { return { games: 0, players: {} } } }
 
 // ★ 对局实例：内存中的运行引擎（进程重启后不自动续跑，但状态与事件可回放）
 const gameEngines = new Map() // sid → engine
@@ -4734,16 +4761,18 @@ function makeGameState(sess) {
 function gameViewFor(S) {
   const uid = S.userSeat
   const isJudge = S.config.myRole === 'judge'
+  const isObserver = S.config.myRole === 'observer'
   const me = uid != null ? S.players.find((p) => p.seat === uid) : null
   const userDead = !!(me && !me.alive)
   const userWolf = !!(me && me.team === 'wolf')
+  // ★ 观战 = 全知视角（与法官同级）：可看狼人夜聊/法官频道等全部信息
   const canSee = (ch) => {
     if (ch === 'public') return true
-    if (ch === 'judge') return isJudge
-    if (ch === 'dead') return isJudge || userDead || S.config.myRole === 'observer'
-    if (ch === 'wolf') return isJudge || userWolf
+    if (ch === 'judge') return isJudge || isObserver
+    if (ch === 'dead') return isJudge || isObserver || userDead
+    if (ch === 'wolf') return isJudge || isObserver || userWolf
     if (ch.startsWith('note:')) return isJudge || ch === 'note:' + uid
-    if (ch.startsWith('whisper:')) return isJudge || ch.split(':').includes(String(uid))
+    if (ch.startsWith('whisper:')) return isJudge || isObserver || ch.split(':').includes(String(uid))
     return false
   }
   const channels = {}
@@ -4751,8 +4780,8 @@ function gameViewFor(S) {
   const over = S.status === 'finished'
   const players = S.players.map((p) => ({
     seat: p.seat, name: p.name, kind: p.kind, alive: p.alive, revealed: !!p.revealed, canVote: p.canVote !== false, persona: p.persona || '',
-    role: over || isJudge || p.seat === uid ? p.role : '',
-    team: over || isJudge || p.seat === uid || (userWolf && p.team === 'wolf') ? p.team : '',
+    role: over || isJudge || isObserver || p.seat === uid ? p.role : '',
+    team: over || isJudge || isObserver || p.seat === uid || (userWolf && p.team === 'wolf') ? p.team : '',
     isSheriff: S.sheriff === p.seat,
   }))
   // ★ 等待用户操作：只有该用户（或法官输入）能看到并响应
@@ -4764,14 +4793,14 @@ function gameViewFor(S) {
     type: S.votes.current.type, day: S.votes.current.day, round: S.votes.current.round, deadline: S.votes.current.deadline || 0,
     voted: Object.keys(S.votes.current.ballots || {}).map(Number),
     // ★ 票型明细：法官或公布后才可见；投票中只给"谁投完了"进度
-    ballots: (isJudge || S.votes.current.revealed) ? S.votes.current.ballots : null,
+    ballots: (isJudge || isObserver || S.votes.current.revealed) ? S.votes.current.ballots : null,
   } : null
   return {
     sid: S.sid, mode: S.mode, board: S.board, title: S.title, status: S.status, day: S.day, phase: S.phase, phaseName: S.phaseName,
     config: { ...S.config, characters: S.config.characters }, players, channels, userSeat: uid, judge: isJudge ? 'user' : (S.config.myRole === 'observer' ? null : null),
     sheriff: S.sheriff, waiting, votes, speak: { current: S.speak?.current || null, order: S.speak?.order || [] },
     cost: Number((S.cost || 0).toFixed(4)), budget: S.config.budget, budgetStopped: !!S.budgetStopped,
-    result: S.result, review: S.review || '', updatedAt: S.updatedAt,
+    result: S.result, review: S.review || '', experienceGames: S.experience?.games || 0, updatedAt: S.updatedAt,
   }
 }
 
@@ -4814,7 +4843,8 @@ async function gameAsk(engine, seat, sys, userMsg, opts = {}) {
   const messages = [{ role: 'system', content: sys }, { role: 'user', content: userMsg }]
   const text = await chatComplete(provider, model, messages, {
     stream: true, temperature: opts.temperature != null ? opts.temperature : 0.8, reasoningEffort: 'none', sessionId: S.sid,
-    onDelta: (d) => gameEmit(engine, { type: 'delta', seat, text: d }),
+    // ★ 流式增量带频道标记；quiet=不对外流式（用于投票/夜间技能等纯动作决策，防私密内容泄露）
+    onDelta: opts.quiet ? null : (d) => gameEmit(engine, { type: 'delta', seat, text: d, channel: opts.deltaChannel || 'public' }),
     onUsage: (usage) => gameTrackUsage(engine, provider, model, usage),
   })
   return parseGameAction(text)
@@ -4905,12 +4935,16 @@ function wwRoleSystem(engine, seat) {
   const team = p.team === 'wolf' ? '狼人阵营' : '好人阵营'
   const wolves = p.team === 'wolf' ? S.players.filter((x) => x.team === 'wolf').map((x) => x.name).join('、') : ''
   const notes = (p.notes || []).slice(-8).join('\n')
+  // ★ 历史经验（同会话跨对局累积）：越玩越多，判断参考
+  const exp = S.experience?.players?.[seat] || []
+  const expTxt = exp.slice(-6).map((e) => `- 第${e.g}局（${e.role}）：${e.text}`).join('\n')
   const cfg = S.config
   return [
     `你在玩一局中文狼人杀（${WW_BOARDS[S.board].name}，${WW_BOARDS[S.board].desc}）。你是「${p.name}」，真实身份是【${WW_ROLES[p.role]?.label}】，属于${team}。`,
     `胜利条件：${p.team === 'wolf' ? '狼人获胜=' + (WW_BOARDS[S.board].win === 'side' ? '屠边（神职全死或村民全死）' : '屠城（好人全部出局）') : '好人获胜=放逐或杀死全部狼人'}。`,
     wolves && p.role === 'wolf' ? `你的狼队友：${wolves}。` : '',
     notes ? `你的私密笔记：\n${notes}` : '',
+    expTxt ? `你的历史对局经验（你已玩过 ${S.experience.games} 局，参考这些经验但不要机械照搬）：\n${expTxt}` : '',
     WW_MANNER,
     p.team === 'wolf' ? WW_STRATEGY_WOLF : WW_STRATEGY_GOOD,
     `当前是第${S.day}天。发言要求：直接说台词（用「${p.name}」的口吻），不要旁白描述动作。`,
@@ -4924,7 +4958,8 @@ async function wwAiTalk(engine, seat, situation, opts = {}) {
   return { text, action }
 }
 async function wwAiDiscuss(engine, seat, situation) {
-  const { text, action } = await wwAiTalk(engine, seat, situation)
+  // ★ 狼人夜聊的流式发言标记为 wolf 频道，只有狼人与法官能看到
+  const { text, action } = await wwAiTalk(engine, seat, situation, { deltaChannel: 'wolf' })
   if (text) gameSay(engine, 'wolf', seatName(engine.state, seat), text, { seat, wolf: true })
   return action
 }
@@ -4992,7 +5027,7 @@ async function wwNightWitch(engine) {
     return
   }
   const situation = `现在是第${S.day}夜女巫行动。今晚 ${seatName(S, target)} 被狼人袭击。你的解药${w.usedHeal ? '已经用过' : '还没用'}，毒药${w.usedPoison ? '已经用过' : '还没用'}。${canHeal ? `你可以救 ${seatName(S, target)}（不能自救，本局解药未用）` : '你无法使用解药'}；${canPoison ? '你可以毒任意一名存活玩家' : '毒药已用完'}。\n请输出动作（不救人毒人就选 none）：<<ACTION>>{"type":"heal"} 救人；<<ACTION>>{"type":"poison","target":座位号} 毒人；<<ACTION>>{"type":"none"} 不用药。`
-  const { action } = await gameAsk(engine, w.seat, wwRoleSystem(engine, w.seat), situation)
+  const { action } = await gameAsk(engine, w.seat, wwRoleSystem(engine, w.seat), situation, { quiet: true })
   if (action?.type === 'heal' && canHeal) { S.night.witchHeal = true; w.usedHeal = true; gameSay(engine, 'judge', '系统', `女巫使用解药救了 ${seatName(S, target)}`, { system: true }) }
   else if (action?.type === 'poison' && canPoison) { const t = Number(action.target); if (alive.includes(t)) { S.night.witchPoison = t; w.usedPoison = true; gameSay(engine, 'judge', '系统', `女巫使用毒药毒了 ${seatName(S, t)}`, { system: true }) } }
 }
@@ -5010,7 +5045,7 @@ async function wwNightSeer(engine) {
     target = Number(val?.target) || wwPickTarget(engine, alive)
   } else {
     const situation = `现在是第${S.day}夜预言家行动。存活玩家：${alive.map((x) => seatName(S, x)).join('、')}。选择一名玩家查验。\n请输出动作：<<ACTION>>{"type":"check","target":座位号}`
-    const { action } = await gameAsk(engine, p.seat, wwRoleSystem(engine, p.seat), situation)
+    const { action } = await gameAsk(engine, p.seat, wwRoleSystem(engine, p.seat), situation, { quiet: true })
     target = Number(action?.target)
     if (!alive.includes(target)) target = wwPickTarget(engine, alive)
   }
@@ -5097,7 +5132,7 @@ async function wwHunterShoot(engine, p) {
   } else {
     try {
       const situation = `你是猎人且已出局，可以开枪带走一名玩家。存活玩家：${alive.map((x) => seatName(S, x)).join('、')}。\n当前局势：\n${gamePublicBrief(engine, 24)}\n请输出动作：<<ACTION>>{"type":"shoot","target":座位号} 或 <<ACTION>>{"type":"none"} 放弃开枪。`
-      const { action } = await gameAsk(engine, p.seat, wwRoleSystem(engine, p.seat), situation)
+      const { action } = await gameAsk(engine, p.seat, wwRoleSystem(engine, p.seat), situation, { quiet: true })
       if (action?.type === 'shoot' && alive.includes(Number(action.target))) target = Number(action.target)
     } catch { /* ignore */ }
   }
@@ -5141,7 +5176,7 @@ async function wwSheriffElection(engine) {
       continue
     }
     try {
-      const situation = `第1天警长竞选，请决定是否上警。如果上警，请发表≤80字的竞选发言；不上警则只说"不上警"。\n最近发言：\n${gamePublicBrief(engine, 12)}\n请输出：在该发言末尾附 <<ACTION>>{"type":"run","value":1}（上警）或 <<ACTION>>{"type":"run","value":0}（不上警）。`
+      const situation = `第1天警长竞选，请决定是否上警（警长可决定发言顺序、投票算 1.5 票——好人建议积极上警争取警徽；狼人也可以上警抢徽）。如果上警，请发表≤80字的竞选发言；不上警则只说"不上警"。\n最近发言：\n${gamePublicBrief(engine, 12)}\n请输出：在该发言末尾附 <<ACTION>>{"type":"run","value":1}（上警）或 <<ACTION>>{"type":"run","value":0}（不上警）。`
       const { text, action } = await wwAiTalk(engine, seat, situation)
       if (action?.value === 1 || /上警/.test(text) && action?.value !== 0) { candidates.push(seat); if (text && !/不上警/.test(text)) gameSay(engine, 'public', seatName(S, seat), `【竞选警长】${text}`, { seat }) }
       else if (text && !/不上警/.test(text)) gameSay(engine, 'public', seatName(S, seat), text, { seat })
@@ -5158,8 +5193,8 @@ async function wwSheriffElection(engine) {
       continue
     }
     try {
-      const situation = `警长竞选投票。候选：${candidates.map((x) => seatName(S, x)).join('、')}。请输出投票动作：<<ACTION>>{"type":"vote","target":座位号}（或 target:0 弃票）。\n候选发言摘要：\n${(S.channels.public || []).slice(-14).map((m) => `${m.from}：${String(m.text).slice(0, 90)}`).join('\n')}`
-      const { action } = await gameAsk(engine, seat, wwRoleSystem(engine, seat), situation)
+      const situation = `警长竞选投票。候选：${candidates.map((x) => seatName(S, x)).join('、')}。请输出投票动作（尽量投给发言更好的候选，别弃票）：<<ACTION>>{"type":"vote","target":座位号}（或 target:0 弃票）。\n候选发言摘要：\n${(S.channels.public || []).slice(-14).map((m) => `${m.from}：${String(m.text).slice(0, 90)}`).join('\n')}`
+      const { action } = await gameAsk(engine, seat, wwRoleSystem(engine, seat), situation, { quiet: true })
       const t = Number(action?.target) || 0
       ballots[seat] = candidates.includes(t) ? t : 0
     } catch { ballots[seat] = 0 }
@@ -5219,8 +5254,8 @@ async function wwDayVote(engine) {
         ballots[seat] = Number(val?.target) || 0
       } else {
         try {
-          const situation = `第${S.day}天放逐投票（第${round}轮）${forbid.length ? `，你不能投 ${forbid.map((x) => seatName(S, x)).join('、')}` : ''}。可投：${targets.map((x) => seatName(S, x)).join('、')}。\n今天的发言：\n${gamePublicBrief(engine, 36)}\n请输出投票动作：<<ACTION>>{"type":"vote","target":座位号} 或 <<ACTION>>{"type":"vote","target":0} 弃票。`
-          const { action } = await gameAsk(engine, seat, wwRoleSystem(engine, seat), situation)
+          const situation = `第${S.day}天放逐投票（第${round}轮）${forbid.length ? `，你不能投 ${forbid.map((x) => seatName(S, x)).join('、')}` : ''}。可投：${targets.map((x) => seatName(S, x)).join('、')}。\n今天的发言：\n${gamePublicBrief(engine, 36)}\n请输出投票动作（尽量投给最可疑的人；弃票只在完全没有信息时使用）：<<ACTION>>{"type":"vote","target":座位号} 或 <<ACTION>>{"type":"vote","target":0} 弃票。`
+          const { action } = await gameAsk(engine, seat, wwRoleSystem(engine, seat), situation, { quiet: true })
           const t = Number(action?.target)
           ballots[seat] = targets.includes(t) ? t : 0
         } catch { ballots[seat] = 0 }
@@ -5237,7 +5272,7 @@ async function wwDayVote(engine) {
     let best = [], max = 0
     for (const [t, n] of Object.entries(tally)) { if (n > max) { max = n; best = [Number(t)] } else if (n === max) best.push(Number(t)) }
     // ★ 票型公开/隐藏：公开=投票后公布每人票型；隐藏=只公布结果（法官在界面仍可看到明细）
-    const showBallots = !!S.config.voteOpen || S.config.myRole === 'judge'
+    const showBallots = !!S.config.voteOpen || S.config.myRole === 'judge' || S.config.myRole === 'observer'
     S.votes.current.revealed = showBallots
     gameEmit(engine, { type: 'game-vote-result', ballots: showBallots ? ballots : null, tally: showBallots ? tally : null, max: showBallots ? max : null, best, round })
     if (S.config.voteOpen) gameSystem(engine, `【票型】第${round}轮：${Object.entries(ballots).map(([seat, t]) => `${seatName(S, Number(seat))}→${t ? seatName(S, Number(t)) : '弃票'}`).join('，')}。`)
@@ -5356,10 +5391,14 @@ function rpGmSystem(engine) {
 function rpCharSystem(engine, seat) {
   const S = engine.state
   const p = playerBySeat(S, seat)
+  // ★ 表演经验（同会话跨对局累积）
+  const exp = S.experience?.players?.[seat] || []
+  const expTxt = exp.slice(-4).map((e) => `- ${e.text}`).join('\n')
   return [
     `你在参加一场多人角色扮演推演。你扮演的角色是「${p.name}」。`,
     `人物设定：${p.persona || '（暂无，请自行补充合理设定）'}`,
     S.config.premise ? `故事背景：${S.config.premise}` : '',
+    expTxt ? `你的表演经验（参考这些经验提升演出质量）：\n${expTxt}` : '',
     '规则：只以你的角色身份行动与说话，不替别人行动；信息限于你亲历或被告知的内容，禁止全知视角；不写旁白式心理总结，用对白与行动推动；禁止提及AI/模型/提示词等超游内容；每次发言1~3句、不超过120字。',
   ].filter(Boolean).join('\n')
 }
@@ -5425,6 +5464,8 @@ async function gameLoop(engine) {
     S.status = 'finished'
     try { await gameReview(engine) } catch { /* ignore */ }
     gameEmit(engine, { type: 'game-end', result: S.result, review: S.review })
+    // ★ 赛后经验总结（先广播结束、再后台总结，避免延迟复盘展示；重新游戏会等待它写完）
+    if (S.day > 0) { engine.summaryPromise = gameSummarizeExperience(engine); try { await engine.summaryPromise } catch { /* ignore */ } }
     await gameSave(S)
     gameNotify(engine)
   }
@@ -5456,8 +5497,42 @@ async function gameReview(engine) {
   S.review = lines.join('\n')
   try { await mkdir(gameDir(S.sid), { recursive: true }); await writeFile(path.join(gameDir(S.sid), 'review.md'), S.review, 'utf8') } catch { /* ignore */ }
 }
+// ★ 赛后经验总结：每个 AI 玩家自总结一条经验（按座位累积，重新游戏后继承）
+async function gameSummarizeExperience(engine) {
+  const S = engine.state
+  if (!(S.day > 0)) return // 未真正开局（空跑/秒退）不总结
+  const exp = S.experience || { games: 0, players: {} }
+  exp.games = (exp.games || 0) + 1
+  const resultTxt = S.result?.text || '对局结束'
+  for (const p of S.players) {
+    if (p.kind !== 'ai') continue
+    try {
+      const { provider, model } = gameProviderModel(engine, p.seat)
+      if (!provider || !model) continue
+      const role = WW_ROLES[p.role]?.label || p.role || (S.mode === 'roleplay' ? '角色' : '')
+      const notes = (p.notes || []).slice(-5).join('；')
+      const sys = S.mode === 'roleplay'
+        ? '你刚参加完一场角色扮演推演。只输出一句话经验总结（≤60字，第一人称，具体可操作：如何更好地扮演/推进剧情/避免出戏），不要泛泛而谈。'
+        : '你在玩中文狼人杀，正在赛后复盘积累经验。只输出一句话经验总结（≤60字，第一人称，具体可操作：如发言/站边/验人/刀法/票型分析的改进点），不要泛泛而谈。'
+      const usr = `你是「${p.name}」，本局身份【${role}】${S.mode === 'werewolf' ? `，所属${p.team === 'wolf' ? '狼人' : '好人'}阵营` : ''}，结果：${resultTxt}。${notes ? '你的私密笔记：' + notes + '。' : ''}请总结本局经验（60字内）。`
+      const text = await chatComplete(provider, model, [
+        { role: 'system', content: sys },
+        { role: 'user', content: usr },
+      ], { stream: false, temperature: 0.7, reasoningEffort: 'none', sessionId: S.sid, onUsage: (u) => gameTrackUsage(engine, provider, model, u) })
+      const line = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 100)
+      if (line) {
+        const arr = (exp.players[p.seat] ||= [])
+        arr.push({ g: exp.games, role, text: line })
+        if (arr.length > 10) arr.splice(0, arr.length - 10)
+      }
+    } catch { /* 单个玩家总结失败不影响其他 */ }
+  }
+  S.experience = exp
+  try { await mkdir(gameDir(S.sid), { recursive: true }); await writeFile(gameExpFile(S.sid), JSON.stringify(exp, null, 2), 'utf8') } catch { /* ignore */ }
+  gameEmit(engine, { type: 'game-experience', games: exp.games })
+}
 // ★ 开始对局（从会话配置创建引擎并后台运行）
-function startGameSession(sess) {
+async function startGameSession(sess) {
   const old = gameEngines.get(sess.id)
   if (old) {
     // ★ 重新开局：终止旧引擎并标记 replaced（旧引擎收尾不再写盘/广播，避免覆盖新对局）
@@ -5465,7 +5540,10 @@ function startGameSession(sess) {
     if (old.state.waiting) { try { engineSubmitAction(old, { auto: true }) } catch { /* ignore */ } }
     try { gameNotify(old) } catch { /* ignore */ }
   }
+  // ★ 等待上一局的"经验总结"写完，再读取经验档案（避免重新游戏时漏掉最新经验）
+  if (old?.summaryPromise) { try { await old.summaryPromise } catch { /* ignore */ } }
   const state = makeGameState(sess)
+  state.experience = await gameLoadExperience(sess.id)
   const engine = {
     state, listeners: new Set(), buffer: [], waiters: [], waitSeq: 0,
     paused: false, pausedReason: '', abort: false, pendingResolve: null,
@@ -5494,6 +5572,8 @@ function startGameSession(sess) {
   }
   gameSave(S)
   gameEmit(engine, { type: 'game-status', status: 'running' })
+  // ★ 经验继承提示：重新游戏时 AI 带上历史经验（越玩越有判断力）
+  if (S.experience?.games > 0) gameSystem(engine, `【经验继承】AI 玩家已加载此前 ${S.experience.games} 局经验，本局为第 ${S.experience.games + 1} 局。`)
   gameLoop(engine).catch(() => { /* gameLoop 内部已兜底 */ })
   return engine
 }

@@ -307,8 +307,15 @@ const TEAM_PRESETS = {
 }
 
 /* 版本迭代记录（设置页展示） */
-const APP_VERSION = '1.9.0'
+const APP_VERSION = '1.9.1'
 const CHANGELOG = [
+  ['P9.11', '2026-10', [
+    '修复：好人玩家能看到「狼人夜聊 / 法官频道」内容的问题——实时事件（消息/流式发言）此前未按身份过滤，现在状态快照与实时推送使用同一套可见性规则（服务端 SSE 写入 + 前端双重过滤）',
+    '观战改为全知视角：观战可查看狼人夜聊、法官频道、全部身份与票型明细（与法官同级）；玩家视角保持严格隔离',
+    '夜间投票/技能等私密决策不再对外流式输出；狼人夜聊的流式发言仅狼人与法官/观战可见',
+    '狼人杀 AI 行为优化：鼓励上警（警徽 1.5 票）与积极投票，减少全员弃票导致的无尽平安日',
+    '新增 AI 经验累积：每局结束后 AI 玩家自动总结一条经验（按座位累计，每人保留最近 10 条），「重新游戏」自动继承并注入提示词——同一会话玩得越多，AI 的判断与套路越强；对局结束会提示"AI 已总结本局经验（累计 N 局）"',
+  ]],
   ['P9.10', '2026-10', [
     '新增「团队会话（游戏与推演大厅）」：新建团队会话时可选类型——「团队工作」/「团队会话（游戏与推演）」；游戏会话不执行工作，专门陪玩',
     '角色扮演推演：填故事设定后 AI 自动生成角色阵容并轮流演出；你可当主持 GM（引导剧情）/ 扮演一个角色 / 纯观战',
@@ -3125,6 +3132,23 @@ function ensureGameChannel() {
   const chans = gv.view?.channels || {}
   if (!chans[gv.channel]) gv.channel = 'public'
 }
+// ★ 频道可见性（与服务器 gameViewFor 同一套规则）：实时事件也按身份过滤
+//   · 玩家：只能看公共 + 自己的阵营/私密频道
+//   · 法官/观战：全知视角（狼人夜聊、法官频道、票型明细全部可见）
+function gameCanSee(ch) {
+  const v = gv.view
+  if (!v) return false
+  const me = (v.players || []).find((p) => p.seat === v.userSeat)
+  const isJudge = v.config.myRole === 'judge'
+  const isObserver = v.config.myRole === 'observer'
+  if (ch === 'public') return true
+  if (ch === 'judge') return isJudge || isObserver
+  if (ch === 'dead') return isJudge || isObserver || (me && !me.alive)
+  if (ch === 'wolf') return isJudge || isObserver || !!(me && me.team === 'wolf')
+  if (ch.startsWith('note:')) return isJudge || ch === 'note:' + v.userSeat
+  if (ch.startsWith('whisper:')) return isJudge || isObserver || ch.split(':').includes(String(v.userSeat))
+  return false
+}
 function handleGameEvent(ev) {
   if (ev.type === 'game-state') { gv.view = ev.state; gv.live = {}; gv.errCount = 0; ensureGameChannel(); renderGameAll(); return }
   if (!gv.view) return
@@ -3133,6 +3157,7 @@ function handleGameEvent(ev) {
     case 'game-phase': gv.view.day = ev.day; gv.view.phase = ev.phase; gv.view.phaseName = ev.name; renderGameTop(); renderGamePlayers(); break
     case 'game-msg': {
       const ch = ev.channel
+      if (!gameCanSee(ch)) break // ★ 不可见频道直接丢弃（狼人夜聊/法官频道等）
       if (!gv.view.channels[ch]) gv.view.channels[ch] = []
       gv.view.channels[ch].push(ev.msg)
       if (ev.msg?.seat && gv.live[ev.msg.seat]) { try { gv.live[ev.msg.seat].remove() } catch { /* ignore */ } delete gv.live[ev.msg.seat] }
@@ -3140,7 +3165,7 @@ function handleGameEvent(ev) {
       if (ch !== 'public' && ev.msg?.seat != null) renderGameChannels()
       break
     }
-    case 'delta': liveGameDelta(ev.seat, ev.text); break
+    case 'delta': if (ev.channel && gameCanSee(ev.channel) && ev.channel === gv.channel) liveGameDelta(ev.seat, ev.text); break
     case 'game-speak-turn': renderGamePlayers(ev.seat); break
     case 'game-wait': gv.view.waiting = ev.wait; renderGameActions(); renderGameInput(); break
     case 'game-wait-clear': gv.view.waiting = null; gv.live = {}; renderGameActions(); renderGameInput(); break
@@ -3149,6 +3174,7 @@ function handleGameEvent(ev) {
     case 'game-vote-result': gv.vote = null; renderGameActions(); break
     case 'game-death': { const p = (gv.view.players || []).find((x) => x.seat === ev.seat); if (p) p.alive = false; renderGamePlayers(); break }
     case 'game-note': if (gv.view.userSeat === ev.seat) appendGameMsg('note:' + ev.seat, { from: '上帝视角', text: ev.text, note: true }); break
+    case 'game-experience': if (gv.channel === 'public') appendGameMsg('public', { from: '系统', text: `AI 玩家已总结本局经验（累计 ${ev.games} 局），下一局将继承并越玩越有判断力`, system: true }); break
     case 'game-cost': gv.view.cost = ev.cost; renderGameTop(); break
     case 'game-win': gv.view.result = { winner: ev.winner, text: ev.text }; break
     case 'game-end': gv.view.status = 'finished'; if (ev.result) gv.view.result = ev.result; if (ev.review) gv.view.review = ev.review; gv.reviewOpen = true; renderGameAll(); break
@@ -3156,7 +3182,7 @@ function handleGameEvent(ev) {
   }
 }
 function liveGameDelta(seat, text) {
-  if (!['public', 'wolf', 'dead'].includes(gv.channel)) return
+  if (!gv.view) return
   let el = gv.live[seat]
   if (!el) {
     el = document.createElement('div')
@@ -3371,6 +3397,7 @@ function renderGameSetup() {
   info.textContent = v.mode === 'werewolf'
     ? `狼人杀 · ${v.board} ｜ 你的身份：${gvMyRoleLabel('werewolf', v.config.myRole)} ｜ 单局预算 ¥${v.budget > 0 ? v.budget : '不限'}${v.config.timer ? ' ｜ 倒计时开' : ''} ｜ 票型：${v.config.voteOpen !== false ? '公开' : '隐藏'}`
     : `角色扮演推演 ｜ 角色数 ${v.config.playerCount} ｜ 你的身份：${gvMyRoleLabel('roleplay', v.config.myRole)} ｜ 单局预算 ¥${v.budget > 0 ? v.budget : '不限'}`
+  if (v.experienceGames > 0) info.textContent += ` ｜ AI 经验：${v.experienceGames} 局（重新游戏会继承）`
   box.appendChild(info)
   if (v.mode === 'roleplay' && v.config.premise) {
     const p = document.createElement('div'); p.className = 'dim'; p.textContent = `故事设定：${v.config.premise}`
