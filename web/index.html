@@ -10,8 +10,9 @@
  <link rel="manifest" href="/manifest.json" />
  <title>Open Agent Team</title>
  <link rel="icon" href="/oat.png" />
- <link rel="stylesheet" href="/style.css?v=1.8.0" />
- <link rel="stylesheet" href="/team.css?v=1.8.0" />
+  <link rel="stylesheet" href="/style.css?v=1.9.0" />
+  <link rel="stylesheet" href="/team.css?v=1.9.0" />
+  <link rel="stylesheet" href="/game.css?v=1.9.0" />
 </head>
 <body>
  <!-- ═══ 顶栏 ═══ -->
@@ -231,9 +232,48 @@
   <input id="team-role-text" placeholder="与该角色直接对话（任务进行中将作为中途指令发送）…" />
   <button id="btn-role-chat-send" class="btn primary" data-i18n="send">发送</button>
   </div>
- <div id="team-cost" class="team-cost hidden"></div>
- </div>
- <div class="splitter" id="split-team" title="拖动调整宽度"></div>
+  <div id="team-cost" class="team-cost hidden"></div>
+  <!-- ★ 团队会话：游戏与推演大厅（选中游戏会话时显示，团队工作界面自动隐藏） -->
+  <div id="game-view" class="game-view">
+  <div class="gv-top">
+  <div class="gv-title-wrap"><span id="gv-title">对局</span><span id="gv-mode-tag" class="tag"></span></div>
+  <div class="gv-phase-wrap"><span id="gv-day" class="gv-day"></span><span id="gv-phase" class="gv-phase">准备中</span><span id="gv-timer" class="gv-timer"></span></div>
+  <div class="gv-cost" id="gv-cost"></div>
+  <div class="gv-controls">
+  <button id="gv-btn-start" class="btn primary">开始对局</button>
+  <button id="gv-btn-pause" class="btn ghost hidden">暂停</button>
+  <button id="gv-btn-resume" class="btn ghost hidden">继续</button>
+  <button id="gv-btn-stop" class="btn ghost hidden">结束</button>
+  <button id="gv-btn-review" class="btn ghost hidden">复盘总结</button>
+  <button id="gv-btn-restart" class="btn ghost hidden">重新游戏</button>
+  <button id="gv-btn-identity" class="btn ghost hidden">我的身份</button>
+  <button id="gv-btn-gm" class="btn ghost hidden">法官台</button>
+  </div>
+  </div>
+  <div class="gv-setup" id="gv-setup"></div>
+  <div class="gv-body">
+  <div class="gv-side">
+  <div class="gv-side-title">玩家</div>
+  <div class="gv-players" id="gv-players"></div>
+  <div class="gv-actions" id="gv-actions"></div>
+  </div>
+  <div class="gv-main">
+  <div class="gv-channels" id="gv-channels"></div>
+  <div class="gv-log" id="gv-log"></div>
+  <div class="gv-input-row" id="gv-input-row">
+  <textarea id="gv-input" rows="2" placeholder="轮到你可以发言/行动…"></textarea>
+  <div class="gv-input-btns"><button id="gv-btn-mic" class="btn ghost" title="语音输入（中文识别；需 Chrome/Edge，本机或 HTTPS 环境）">语音</button><button id="gv-btn-pass" class="btn ghost">过麦</button><button id="gv-btn-send" class="btn primary">发送</button></div>
+  </div>
+  </div>
+  </div>
+  <div class="gv-review hidden" id="gv-review"></div>
+  <div class="gv-gm hidden" id="gv-gm">
+  <div class="gv-gm-row"><input id="gv-gm-announce" placeholder="法官公告（广播所有人）…" /><button id="gv-gm-announce-btn" class="btn ghost tiny">公告</button></div>
+  <div class="gv-gm-row"><select id="gv-gm-whisper-to" class="mini-sel"></select><input id="gv-gm-whisper" placeholder="法官私聊（仅记录在私密频道）…" /><button id="gv-gm-whisper-btn" class="btn ghost tiny">发送</button></div>
+  </div>
+  </div>
+  </div>
+  <div class="splitter" id="split-team" title="拖动调整宽度"></div>
  <div class="team-side">
  <div class="subtabs">
  <button class="subtab active" data-panel="art" data-i18n="art">画板</button>
@@ -879,27 +919,71 @@
  </div>
  </div>
 
- <!-- 新建团队会话（角色配置 + 工作区 + 名称） -->
- <div id="team-session-modal" class="modal hidden">
- <div class="modal-box" style="width:560px">
- <h2 data-i18n="newTeamSession">新建团队会话</h2>
- <div class="form">
- <label data-i18n="sessionTitle">会话名称（可空）</label>
- <input id="ts-title" placeholder="例如：马里奥复刻 / 官网改版" />
-  <label data-i18n="sessionWorkspace">工作区（默认当前工作区）</label>
-  <select id="ts-workspace"></select>
-  <label data-i18n="teamPresetPick">团队预设（可选，选中后自动带出角色）</label>
-  <select id="ts-preset"></select>
-  <label data-i18n="teamRoles">参与本会话的团队角色</label>
-  <div id="ts-roles" class="ts-roles"></div>
- </div>
- <div class="modal-actions">
- <span id="ts-msg" class="modal-msg"></span>
- <button id="btn-ts-cancel" class="btn ghost" data-i18n="cancel">取消</button>
- <button id="btn-ts-create" class="btn primary" data-i18n="create">创建</button>
- </div>
- </div>
- </div>
+  <!-- 新建团队会话（类型选择：团队工作 / 团队会话·游戏与推演） -->
+  <div id="team-session-modal" class="modal hidden">
+  <div class="modal-box" style="width:600px">
+  <h2 data-i18n="newTeamSession">新建团队会话</h2>
+  <div class="form">
+  <label>会话类型</label>
+  <div class="ts-type" id="ts-type">
+  <label class="ts-type-card"><input type="radio" name="ts-kind" value="work" checked /><b>团队工作</b><span>AI 分工协作干活：写代码 / 文档 / 出图 / 视频</span></label>
+  <label class="ts-type-card"><input type="radio" name="ts-kind" value="game" /><b>团队会话（游戏推演）</b><span>角色扮演推演 / 狼人杀：陪玩陪演，不执行工作</span></label>
+  </div>
+  <label data-i18n="sessionTitle">会话名称（可空）</label>
+  <input id="ts-title" placeholder="例如：马里奥复刻 / 迷雾群岛推演" />
+  <div id="ts-work-panel">
+   <label data-i18n="sessionWorkspace">工作区（默认当前工作区）</label>
+   <select id="ts-workspace"></select>
+   <label data-i18n="teamPresetPick">团队预设（可选，选中后自动带出角色）</label>
+   <select id="ts-preset"></select>
+   <label data-i18n="teamRoles">参与本会话的团队角色</label>
+   <div id="ts-roles" class="ts-roles"></div>
+  </div>
+  <div id="ts-game-panel" class="hidden">
+  <label>玩法</label>
+  <select id="ts-game-mode">
+  <option value="roleplay">角色扮演推演（主持引导 · 无胜负）</option>
+  <option value="werewolf">狼人杀（6 / 9 / 12 人）</option>
+  </select>
+  <div id="ts-wolf-opts">
+  <label>板子</label>
+  <select id="ts-board">
+  <option value="6p">6人局 · 2狼 预女 2民（屠城）</option>
+  <option value="9p" selected>9人局 · 3狼 预女猎 3民（屠边）</option>
+  <option value="12p">12人局 · 4狼 预女猎白 4民（屠边）</option>
+  </select>
+  <label>票型公开</label>
+  <select id="ts-voteopen">
+  <option value="1" selected>公开（投票结束后公布每人的票）</option>
+  <option value="0">隐藏（只公布结果；票型仅法官可见）</option>
+  </select>
+  </div>
+  <div id="ts-rp-opts" class="hidden">
+  <label>故事设定（开局时 AI 会据此生成角色阵容）</label>
+  <textarea id="ts-premise" rows="3" placeholder="例如：一群旅人在迷雾群岛寻找传说中的灯塔，各自藏着秘密…"></textarea>
+  <label>角色数量</label>
+  <input id="ts-playercount" type="number" min="2" max="10" value="5" />
+  </div>
+  <label>我的身份</label>
+  <select id="ts-myrole">
+  <option value="judge">法官 / 主持（看全部信息，掌控节奏）</option>
+  <option value="player">玩家（入局占一个座位）</option>
+  <option value="observer">观战（只看公开信息）</option>
+  </select>
+  <label>AI 模型（本局所有 AI 玩家使用，开局后可逐个改）</label>
+  <div class="ts-row2"><select id="ts-game-provider"></select><select id="ts-game-model"></select></div>
+  <label>单局预算 ¥（0 = 不限；超预算自动暂停）</label>
+  <input id="ts-budget" type="number" min="0" step="1" value="5" />
+  <label class="ck-line"><input type="checkbox" id="ts-timer" /> 开启发言 / 投票倒计时（超时自动过麦/弃票）</label>
+  </div>
+  </div>
+  <div class="modal-actions">
+  <span id="ts-msg" class="modal-msg"></span>
+  <button id="btn-ts-cancel" class="btn ghost" data-i18n="cancel">取消</button>
+  <button id="btn-ts-create" class="btn primary" data-i18n="create">创建</button>
+  </div>
+  </div>
+  </div>
 
  <!-- 保险箱：查看完整凭证（密码校验） -->
  <div id="vault-reveal-modal" class="modal hidden">
@@ -968,6 +1052,6 @@
  </div>
 
  <script src="/vendor/qrcode.js"></script>
- <script src="/app.js?v=1.8.0"></script>
+  <script src="/app.js?v=1.9.0"></script>
 </body>
 </html>

@@ -1,0 +1,112 @@
+/* ══════════════════════════════════════════════════════════════
+ * 团队会话：游戏与推演大厅（狼人杀 / 角色扮演推演）
+ * ─ 选中游戏会话时替换团队工作界面；样式尽量复用现有组件类
+ * ══════════════════════════════════════════════════════════════ */
+.game-view { display: none; flex-direction: column; gap: 8px; flex: 1; min-height: 0; width: 100%; }
+.team-main.game-mode > :not(.team-session-row):not(.game-view) { display: none !important; }
+.team-main.game-mode > .game-view { display: flex; }
+
+/* ── 顶部状态条 ── */
+.gv-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 6px 10px; border-radius: 10px; background: rgba(128, 128, 128, .10); }
+.gv-title-wrap { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+.gv-mode-tag { font-size: 11px; padding: 1px 6px; border-radius: 6px; background: rgba(47, 158, 143, .18); color: #2f9e8f; }
+.gv-phase-wrap { display: flex; align-items: center; gap: 6px; }
+.gv-day { font-size: 12px; opacity: .8; }
+.gv-phase { font-size: 13px; font-weight: 600; color: #2f9e8f; }
+.gv-timer { font-size: 12px; color: #e0b34a; min-width: 32px; }
+.gv-cost { margin-left: auto; font-size: 12px; opacity: .85; }
+.gv-controls { display: flex; gap: 6px; }
+
+/* ── 开局前设置面板 ── */
+.gv-setup { display: none; flex-direction: column; gap: 6px; padding: 10px; border-radius: 10px; background: rgba(128, 128, 128, .08); max-height: 42vh; overflow-y: auto; }
+.gv-setup.show { display: flex; }
+.gv-setup .gv-set-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.gv-setup .gv-set-row select { max-width: 320px; }
+.gv-setup .gv-set-seat { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.gv-setup .gv-set-seat b { min-width: 64px; }
+.gv-setup .dim { opacity: .7; font-size: 12px; }
+
+/* ── 主体两栏 ── */
+.gv-body { display: flex; gap: 8px; flex: 1; min-height: 0; }
+.gv-side { width: 210px; min-width: 160px; display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+.gv-side-title { font-size: 12px; opacity: .65; padding-left: 2px; }
+.gv-players { display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
+.gv-player { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 8px; background: rgba(128, 128, 128, .10); border: 1px solid transparent; font-size: 13px; cursor: default; }
+.gv-player .gp-seat { width: 22px; height: 22px; border-radius: 50%; background: rgba(47, 158, 143, .18); color: #2f9e8f; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex: none; }
+.gv-player .gp-role { margin-left: auto; font-size: 11px; opacity: .85; }
+.gv-player.dead { opacity: .42; text-decoration: line-through; }
+.gv-player.turn { border-color: #2f9e8f; box-shadow: 0 0 0 1px #2f9e8f inset; }
+.gv-player.wolfmate { border-color: rgba(200, 80, 80, .6); }
+.gv-player.sheriff .gp-seat::after { content: '★'; position: absolute; margin-top: -16px; margin-left: 14px; color: #e0b34a; font-size: 10px; }
+.gv-player.me { background: rgba(47, 158, 143, .14); }
+
+/* ── 操作面板（等待用户） ── */
+.gv-actions { display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: 10px; background: rgba(224, 179, 74, .10); }
+.gv-actions:empty { display: none; }
+.gv-actions .gv-act-prompt { font-size: 12px; line-height: 1.5; }
+.gv-actions .gv-act-opts { display: flex; flex-wrap: wrap; gap: 4px; }
+.gv-actions .gv-act-opts .btn { font-size: 12px; padding: 3px 8px; }
+.gv-actions .gv-act-msg { font-size: 12px; opacity: .75; }
+
+/* ── 频道标签 ── */
+.gv-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+.gv-channels { display: flex; gap: 4px; flex-wrap: wrap; }
+.gv-channels .gv-ch { font-size: 12px; padding: 3px 10px; border-radius: 8px; background: rgba(128, 128, 128, .12); cursor: pointer; border: none; color: inherit; }
+.gv-channels .gv-ch.active { background: rgba(47, 158, 143, .25); color: #2f9e8f; font-weight: 600; }
+.gv-channels .gv-ch.wolf { color: #d07070; }
+.gv-channels .gv-ch.dead { opacity: .7; }
+
+/* ── 消息流 ── */
+.gv-log { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: 10px; background: rgba(128, 128, 128, .07); min-height: 120px; }
+.gv-msg { display: flex; gap: 8px; padding: 6px 10px; border-radius: 10px; background: rgba(128, 128, 128, .10); font-size: 13px; line-height: 1.55; }
+.gv-msg .gv-from { color: #2f9e8f; font-weight: 600; white-space: nowrap; flex: none; }
+.gv-msg .gv-text { white-space: pre-wrap; word-break: break-word; min-width: 0; }
+.gv-msg.system { justify-content: center; background: transparent; opacity: .75; font-size: 12px; text-align: center; }
+.gv-msg.system .gv-from { display: none; }
+.gv-msg.dead { opacity: .55; }
+.gv-msg.gm { background: rgba(47, 158, 143, .14); }
+.gv-msg.note { background: rgba(224, 179, 74, .12); }
+.gv-msg.wolf { background: rgba(200, 80, 80, .12); }
+.gv-msg.delta .gv-text::after { content: '▍'; animation: gv-blink 1s step-start infinite; }
+@keyframes gv-blink { 50% { opacity: 0; } }
+
+/* ── 输入行（与对话页发言框保持一致的视觉） ── */
+.gv-input-row { display: flex; gap: 8px; align-items: stretch; }
+.gv-input-row textarea {
+  flex: 1; resize: none; background: var(--bg-card); color: var(--text);
+  border: 1px solid var(--border); border-radius: 10px; padding: 10px; font: inherit; font-size: 13px; min-height: 44px;
+}
+.gv-input-row textarea:focus { outline: none; border-color: var(--accent); }
+.gv-input-row .gv-input-btns { display: flex; flex-direction: row; gap: 6px; align-items: stretch; }
+.gv-input-row .gv-input-btns .btn { white-space: nowrap; }
+.gv-input-row.disabled { opacity: .45; pointer-events: none; }
+.gv-input-row .gv-input-btns .btn.recording { color: #e05555; border-color: #e05555; animation: gv-rec 1.2s infinite; }
+@keyframes gv-rec { 50% { opacity: .55; } }
+
+/* ── 复盘 / 法官台 ── */
+.gv-review { padding: 10px; border-radius: 10px; background: rgba(128, 128, 128, .08); max-height: 40vh; overflow-y: auto; }
+.gv-review pre { white-space: pre-wrap; word-break: break-word; font-size: 12px; line-height: 1.6; margin: 0; }
+.gv-gm { display: flex; flex-direction: column; gap: 4px; padding: 8px; border-radius: 10px; background: rgba(128, 128, 128, .08); }
+.gv-gm .gv-gm-row { display: flex; gap: 6px; }
+.gv-gm .gv-gm-row input { flex: 1; }
+
+/* ── 新建会话弹窗：类型选择 + 游戏配置 ── */
+.ts-type { display: flex; gap: 8px; }
+.ts-type-card { flex: 1; display: flex; flex-direction: column; gap: 4px; padding: 10px; border-radius: 10px; background: rgba(128, 128, 128, .08); border: 1px solid rgba(128, 128, 128, .18); cursor: pointer; font-size: 12px; }
+.ts-type-card b { font-size: 13px; }
+.ts-type-card span { opacity: .7; line-height: 1.4; }
+.ts-type-card input { margin-right: 4px; }
+.ts-type-card:has(input:checked) { border-color: #2f9e8f; background: rgba(47, 158, 143, .12); }
+.ts-row2 { display: flex; gap: 8px; }
+.ts-row2 select { flex: 1; min-width: 0; }
+.ck-line { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+
+/* ── 手机端适配 ── */
+@media (max-width: 760px) {
+  .gv-body { flex-direction: column; }
+  .gv-side { width: auto; }
+  .gv-players { flex-direction: row; flex-wrap: wrap; }
+  .gv-player { font-size: 12px; padding: 3px 6px; }
+  .gv-top { gap: 6px; }
+  .gv-controls .btn { padding: 4px 8px; font-size: 12px; }
+}

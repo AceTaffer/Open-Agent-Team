@@ -307,8 +307,17 @@ const TEAM_PRESETS = {
 }
 
 /* 版本迭代记录（设置页展示） */
-const APP_VERSION = '1.8.0'
+const APP_VERSION = '1.9.0'
 const CHANGELOG = [
+  ['P9.10', '2026-10', [
+    '新增「团队会话（游戏与推演大厅）」：新建团队会话时可选类型——「团队工作」/「团队会话（游戏与推演）」；游戏会话不执行工作，专门陪玩',
+    '角色扮演推演：填故事设定后 AI 自动生成角色阵容并轮流演出；你可当主持 GM（引导剧情）/ 扮演一个角色 / 纯观战',
+    '狼人杀：内置 6/9/12 人板子（屠城/屠边），完整夜间行动（狼队夜聊刀人 / 女巫救毒 / 预言家查验）、警长竞选（1.5 票）、顺序发言、投票与平票 PK、遗言、白痴翻牌、猎人开枪、亡者频道（出局后仍可讨论观战）',
+    '对局控制：AI 玩家模型开局前逐个可选；单局预算熔断（默认 ¥5，超支自动暂停可追加）；可选发言/投票倒计时；票型公开/隐藏可选（隐藏时仅法官可见明细）',
+    '对局结束自动生成「复盘总结」（身份表/关键节点/票型记录），支持一键「重新游戏」；「对局不存在」最多提示 5 次后给出重新游戏按钮',
+    '发言框支持语音输入（Web Speech 中文识别，Chrome/Edge 本机或 HTTPS）；游戏发言框视觉与对话页统一',
+    '新增 4 个内置技能：狼人杀·狼人策略 / 狼人杀·好人逻辑 / 游戏与扮演礼仪 / 扮演模式主持规范',
+  ]],
   ['P9.9', '2026-10', [
     '新增「Qwen-TTS 本地 API」接入（进阶可选，仅电脑端）：设置 → 媒体引擎 可选「本地 Qwen-TTS（licyk WebUI）」——连接其本地 REST API（/qwenapi/v1，默认 127.0.0.1:7860）进行本地合成；支持预设音色与参考音频登记（clone_voice）后按音色名调用；OAT 只做 API 调用，不随包提供引擎与模型（首次合成自动下载），欢迎社区用户按需扩展训练/微调等能力',
     '媒体引擎卡片同步更新：Qwen 地址/模型/预设音色配置与「检测 Qwen」（检测不会触发大模型加载）',
@@ -1255,7 +1264,7 @@ function renderChatRail() {
  }
  }
  })
- const others = state.sessions.filter((s) => (s.kind || 'chat') !== 'team')
+  const others = state.sessions.filter((s) => !['team', 'game'].includes(s.kind || 'chat'))
  sl.innerHTML = others.length ? others.map((s) => `<div class="rail-item sess ${s.id === sess?.id ? 'active' : ''}" data-sid="${s.id}">
  <div class="rail-text"><b>${esc(s.title || '(untitled)')}</b></div>
  <div class="dim small">${new Date(s.updatedAt).toLocaleDateString()} · ${s.messageCount} · ${fmtCost(s.cost)}</div>
@@ -1631,7 +1640,7 @@ function runBlock(run, agent, label, subtitle) {
 /* 团队会话：先建会话（选工作区）再下任务 */
 async function refreshTeamSessions(selectId) {
  await refreshSessions()
- state.teamSessions = state.sessions.filter((s) => (s.kind || 'chat') === 'team')
+ state.teamSessions = state.sessions.filter((s) => ['team', 'game'].includes(s.kind || 'chat'))
  const sel = $('team-session')
  if (!sel) return
  if (!state.teamSessions.length) {
@@ -1642,8 +1651,11 @@ async function refreshTeamSessions(selectId) {
  }
  if (selectId) state.teamSessionId = selectId
  if (!state.teamSessionId || !state.teamSessions.some((s) =>s.id === state.teamSessionId)) state.teamSessionId = state.teamSessions[0].id
-  // ★ 不再显示消息条数后缀（容易被误解为"第几个会话"序号）
-  sel.innerHTML = state.teamSessions.map((s) => `<option value="${s.id}" ${s.id === state.teamSessionId ? 'selected' : ''}>${esc(s.title || '(untitled)')}</option>`).join('')
+   // ★ 游戏会话带 [狼]/[演] 前缀；普通团队会话无前缀
+   sel.innerHTML = state.teamSessions.map((s) => {
+   const tag = s.kind === 'game' ? (s.game?.mode === 'werewolf' ? '[狼] ' : '[演] ') : ''
+   return `<option value="${s.id}" ${s.id === state.teamSessionId ? 'selected' : ''}>${tag}${esc(s.title || '(untitled)')}</option>`
+   }).join('')
  sel.value = state.teamSessionId
  const cur = state.teamSessions.find((s) =>s.id === state.teamSessionId)
  $('team-session-ws').textContent = cur?.workspace ? ` ${cur.workspace}` : ''
@@ -2844,7 +2856,7 @@ function switchView(name) {
   if (name === 'team') {
     renderRoleSummary(); refreshArtGallery(); refreshWorkspace(); refreshTasks(); refreshStats()
     renderRoleActivity(); renderRolesLive(); renderVideoSelectors(); renderOpenApi()
-    if (!state.teamLoaded) { state.teamLoaded = true; refreshTeamSessions().then(() => renderTeamSession()) }
+    if (!state.teamLoaded) { state.teamLoaded = true; refreshTeamSessions().then(() => selectTeamSession(state.teamSessionId)) }
   }
   if (name === 'settings') renderSettings()
  if (name === 'teamconfig') { renderRolesEditor(); renderSkillsList(); renderMarket() }
@@ -2983,11 +2995,39 @@ function openTeamSessionModal() {
     renderTsRoles()
   }
   renderTsRoles()
+  // ★ 类型选择：团队工作 / 团队会话（游戏推演）
+  const setKind = (kind) => {
+    $('ts-work-panel').classList.toggle('hidden', kind !== 'work')
+    $('ts-game-panel').classList.toggle('hidden', kind !== 'game')
+  }
+  document.querySelectorAll('input[name="ts-kind"]').forEach((r) => { r.onchange = () => setKind(r.value) })
+  setKind('work')
+  // ★ 游戏配置：AI 模型下拉 + 玩法切换（狼人杀 / 角色扮演推演）
+  const gp = $('ts-game-provider')
+  gp.innerHTML = state.providers.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('')
+  gp.value = state.activeSession?.providerId || state.providers[0]?.id || ''
+  const gmSel = () => { $('ts-game-model').innerHTML = groupedModelSelect(providerById(gp.value), null, { chatOnly: true }) }
+  gp.onchange = gmSel; gmSel()
+  $('ts-game-mode').onchange = () => {
+    const wolf = $('ts-game-mode').value === 'werewolf'
+    $('ts-wolf-opts').classList.toggle('hidden', !wolf)
+    $('ts-rp-opts').classList.toggle('hidden', wolf)
+    // ★ 「我的身份」文案按玩法区分：狼人杀=法官；扮演推演=主持 GM（不混用）
+    const roleSel = $('ts-myrole')
+    const cur = roleSel.value || 'judge'
+    roleSel.innerHTML = wolf
+      ? '<option value="judge">法官（看全部信息，掌控节奏）</option><option value="player">玩家（入局占一个座位）</option><option value="observer">观战（只看公开信息）</option>'
+      : '<option value="judge">主持 GM（引导剧情，掌控节奏）</option><option value="player">玩家（扮演一个角色）</option><option value="observer">观战（只看公开信息）</option>'
+    roleSel.value = cur
+  }
+  $('ts-game-mode').onchange()
   $('ts-title').value = ''
   $('ts-msg').textContent = ''
   $('team-session-modal').classList.remove('hidden')
 }
 async function createTeamSessionFromModal() {
+  const kind = document.querySelector('input[name="ts-kind"]:checked')?.value || 'work'
+  if (kind === 'game') return createGameSessionFromModal()
   const rolesNext = state.roles.map((r) => ({ ...r, enabled: $(`ts-roles`).querySelector(`.ts-role-ck[data-id="${r.id}"]`)?.checked !== false }))
   const r = await api('PUT', '/api/roles', rolesNext)
   if (!r.ok) { $('ts-msg').textContent = r.error || 'fail'; return }
@@ -3001,6 +3041,462 @@ async function createTeamSessionFromModal() {
   renderTeamSession()
   switchView('team')
 }
+// ★ 创建「团队会话（游戏与推演）」：只建会话与配置，进入游戏视图后点「开始对局」才开局
+async function createGameSessionFromModal() {
+  const providerId = $('ts-game-provider').value
+  const model = $('ts-game-model').value
+  if (!providerId || !model) { $('ts-msg').textContent = '请选择 AI 模型'; return }
+  const mode = $('ts-game-mode').value
+  const game = {
+    mode, board: $('ts-board').value, myRole: $('ts-myrole').value,
+    budget: Math.max(0, Number($('ts-budget').value) || 0), timer: $('ts-timer').checked,
+    voteOpen: $('ts-voteopen').value === '1',
+    providerId, model,
+    premise: $('ts-premise').value.trim(), playerCount: Math.max(2, Math.min(10, Number($('ts-playercount').value) || 5)),
+  }
+  const body = { kind: 'game', title: $('ts-title').value.trim(), providerId, model, workspace: state.activeWorkspace, game }
+  const cr = await api('POST', '/api/sessions', body)
+  if (!cr.ok) { $('ts-msg').textContent = cr.error || 'fail'; return }
+  $('team-session-modal').classList.add('hidden')
+  await refreshTeamSessions(cr.session.id)
+  await selectTeamSession(cr.session.id)
+}
+
+/* ══════════════ 团队会话：游戏与推演大厅（前端视图） ══════════════ */
+const gv = { sid: '', view: null, es: null, channel: 'public', live: {}, vote: null, tick: null, errCount: 0, playerModels: {}, reviewOpen: false }
+// ★ 身份文案按模式区分：狼人杀=法官，扮演推演=主持 GM
+function gvMyRoleLabel(mode, role) {
+  const wolf = { judge: '法官', player: '玩家', observer: '观战' }
+  const rp = { judge: '主持GM', player: '玩家', observer: '观战' }
+  return (mode === 'werewolf' ? wolf : rp)[role] || role
+}
+const GAME_ROLE_LABEL = { wolf: '狼人', seer: '预言家', witch: '女巫', hunter: '猎人', idiot: '白痴', villager: '村民' }
+function isGameSession(s) { return !!s && (s.kind || 'chat') === 'game' }
+function gvChannelLabel(ch) {
+  if (ch === 'public') return '公共'
+  if (ch === 'wolf') return '狼人夜聊'
+  if (ch === 'dead') return '亡者频道'
+  if (ch === 'judge') return '法官频道'
+  if (ch.startsWith('note:')) return '我的信息'
+  if (ch.startsWith('whisper:')) { const p = ch.split(':'); return `私聊 ${p[1] === 'judge' ? '法官' : p[1] + '号'}→${p[2] + '号'}` }
+  return ch
+}
+// 选中团队会话：游戏会话 → 游戏视图；普通团队会话 → 团队工作视图
+async function selectTeamSession(id) {
+  if (id) state.teamSessionId = id
+  const s = (state.teamSessions || []).find((x) => x.id === state.teamSessionId)
+  if (isGameSession(s)) { await openGameSession(state.teamSessionId) }
+  else { closeGameSession(); renderTeamSession() }
+}
+function closeGameSession() {
+  const tm = document.querySelector('.team-main')
+  if (tm) tm.classList.remove('game-mode')
+  if (gv.es) { try { gv.es.close() } catch { /* ignore */ } gv.es = null }
+  gv.sid = ''; gv.view = null; gv.live = {}; gv.vote = null
+}
+async function openGameSession(id) {
+  state.teamSessionId = id
+  if (document.body.classList.contains('rail-open')) document.body.classList.remove('rail-open')
+  switchView('team')
+  const tm = document.querySelector('.team-main')
+  if (tm) tm.classList.add('game-mode')
+  if (gv.es) { try { gv.es.close() } catch { /* ignore */ } gv.es = null }
+  gv.sid = id; gv.view = null; gv.live = {}; gv.vote = null; gv.channel = 'public'; gv.errCount = 0; gv.reviewOpen = false
+  $('gv-log').innerHTML = '<div class="empty-tip">正在载入对局…</div>'
+  $('gv-actions').innerHTML = ''
+  $('gv-review').classList.add('hidden')
+  const r = await api('GET', `/api/game/state?sessionId=${encodeURIComponent(id)}`)
+  if (r.ok && r.state) { gv.view = r.state; ensureGameChannel(); renderGameAll() }
+  attachGameStream(id)
+}
+function attachGameStream(id) {
+  if (gv.es) { try { gv.es.close() } catch { /* ignore */ } }
+  const es = new EventSource(`/api/game/stream?sessionId=${encodeURIComponent(id)}&token=${encodeURIComponent(AUTH_TOKEN)}`)
+  gv.es = es
+  es.onmessage = (e) => {
+    let ev
+    try { ev = JSON.parse(e.data) } catch { return }
+    if (ev.ping) return
+    try { handleGameEvent(ev) } catch { /* ignore */ }
+  }
+  es.onerror = () => { /* 浏览器自动重连；重连后服务端会重发 game-state */ }
+}
+function ensureGameChannel() {
+  const chans = gv.view?.channels || {}
+  if (!chans[gv.channel]) gv.channel = 'public'
+}
+function handleGameEvent(ev) {
+  if (ev.type === 'game-state') { gv.view = ev.state; gv.live = {}; gv.errCount = 0; ensureGameChannel(); renderGameAll(); return }
+  if (!gv.view) return
+  switch (ev.type) {
+    case 'game-status': gv.view.status = ev.status; renderGameTop(); break
+    case 'game-phase': gv.view.day = ev.day; gv.view.phase = ev.phase; gv.view.phaseName = ev.name; renderGameTop(); renderGamePlayers(); break
+    case 'game-msg': {
+      const ch = ev.channel
+      if (!gv.view.channels[ch]) gv.view.channels[ch] = []
+      gv.view.channels[ch].push(ev.msg)
+      if (ev.msg?.seat && gv.live[ev.msg.seat]) { try { gv.live[ev.msg.seat].remove() } catch { /* ignore */ } delete gv.live[ev.msg.seat] }
+      if (ch === gv.channel) { $('gv-log').appendChild(gameMsgEl(ch, ev.msg)); scrollGameLog() }
+      if (ch !== 'public' && ev.msg?.seat != null) renderGameChannels()
+      break
+    }
+    case 'delta': liveGameDelta(ev.seat, ev.text); break
+    case 'game-speak-turn': renderGamePlayers(ev.seat); break
+    case 'game-wait': gv.view.waiting = ev.wait; renderGameActions(); renderGameInput(); break
+    case 'game-wait-clear': gv.view.waiting = null; gv.live = {}; renderGameActions(); renderGameInput(); break
+    case 'game-vote-start': gv.vote = { voted: [], total: ev.voters?.length || 0, deadline: ev.deadline }; renderGameActions(); break
+    case 'game-vote-progress': if (gv.vote) { gv.vote.voted = ev.voted || []; gv.vote.total = ev.total || gv.vote.total; renderGameActions() } break
+    case 'game-vote-result': gv.vote = null; renderGameActions(); break
+    case 'game-death': { const p = (gv.view.players || []).find((x) => x.seat === ev.seat); if (p) p.alive = false; renderGamePlayers(); break }
+    case 'game-note': if (gv.view.userSeat === ev.seat) appendGameMsg('note:' + ev.seat, { from: '上帝视角', text: ev.text, note: true }); break
+    case 'game-cost': gv.view.cost = ev.cost; renderGameTop(); break
+    case 'game-win': gv.view.result = { winner: ev.winner, text: ev.text }; break
+    case 'game-end': gv.view.status = 'finished'; if (ev.result) gv.view.result = ev.result; if (ev.review) gv.view.review = ev.review; gv.reviewOpen = true; renderGameAll(); break
+    case 'game-error': showGameError(ev.error); break
+  }
+}
+function liveGameDelta(seat, text) {
+  if (!['public', 'wolf', 'dead'].includes(gv.channel)) return
+  let el = gv.live[seat]
+  if (!el) {
+    el = document.createElement('div')
+    el.className = 'gv-msg delta'
+    el.innerHTML = `<span class="gv-from">${esc(gvSeatName(seat))}</span><span class="gv-text"></span>`
+    $('gv-log').appendChild(el)
+    gv.live[seat] = el
+  }
+  el.querySelector('.gv-text').textContent += text
+  scrollGameLog()
+}
+function gvSeatName(seat) { return (gv.view?.players || []).find((p) => p.seat === seat)?.name || `${seat}号` }
+function scrollGameLog() { const el = $('gv-log'); el.scrollTop = el.scrollHeight }
+function gameMsgEl(ch, m) {
+  const el = document.createElement('div')
+  const cls = ['gv-msg']
+  if (m.system) cls.push('system')
+  if (m.dead) cls.push('dead')
+  if (m.gm) cls.push('gm')
+  if (m.note) cls.push('note')
+  if (ch === 'wolf' || m.wolf) cls.push('wolf')
+  el.className = cls.join(' ')
+  el.innerHTML = `<span class="gv-from">${esc(m.from || '')}</span><span class="gv-text">${esc(m.text || '')}</span>`
+  return el
+}
+function renderGameAll() {
+  if (!gv.view) return
+  renderGameTop(); renderGamePlayers(); renderGameChannels(); renderGameLog(); renderGameActions(); renderGameInput(); renderGameSetup(); renderGameReview()
+}
+function renderGameTop() {
+  const v = gv.view
+  if (!v) return
+  const s = (state.teamSessions || []).find((x) => x.id === gv.sid)
+  $('gv-title').textContent = v.title || s?.title || '对局'
+  $('gv-mode-tag').textContent = (v.mode === 'werewolf' ? `狼人杀 · ${v.board}` : '角色扮演推演') + ` · ${gvMyRoleLabel(v.mode, v.config.myRole)}${v.config.myRole === 'judge' ? '(你)' : ''}`
+  $('gv-day').textContent = v.day > 0 ? `第${v.day}${v.mode === 'werewolf' ? '天' : '幕'}` : ''
+  $('gv-phase').textContent = v.phaseName || '准备中'
+  $('gv-cost').textContent = `费用 ¥${Number(v.cost || 0).toFixed(2)}${v.budget > 0 ? ' / 预算 ¥' + v.budget : ''}${v.budgetStopped ? ' · 已超预算，已暂停' : ''}`
+  const st = v.status
+  $('gv-btn-start').classList.toggle('hidden', st !== 'idle')
+  $('gv-btn-pause').classList.toggle('hidden', st !== 'running')
+  $('gv-btn-resume').classList.toggle('hidden', st !== 'paused')
+  $('gv-btn-stop').classList.toggle('hidden', !(st === 'running' || st === 'paused'))
+  $('gv-btn-review').classList.toggle('hidden', !(st === 'finished' && v.review))
+  $('gv-btn-restart').classList.toggle('hidden', !(st === 'finished' || gv.errCount >= 5))
+  $('gv-btn-identity').classList.toggle('hidden', !(v.userSeat != null && st !== 'idle'))
+  $('gv-btn-gm').classList.toggle('hidden', !(v.config.myRole === 'judge' && (st === 'running' || st === 'paused')))
+}
+function renderGamePlayers(turnSeat) {
+  const box = $('gv-players')
+  if (!box || !gv.view) return
+  box.innerHTML = ''
+  for (const p of gv.view.players || []) {
+    const el = document.createElement('div')
+    const cls = ['gv-player']
+    if (!p.alive) cls.push('dead')
+    if (p.isSheriff) cls.push('sheriff')
+    if (gv.view.userSeat === p.seat) cls.push('me')
+    if (gv.view.players.some((x) => x.seat === gv.view.userSeat && x.team === 'wolf') && p.team === 'wolf' && p.seat !== gv.view.userSeat) cls.push('wolfmate')
+    if (turnSeat === p.seat) cls.push('turn')
+    el.className = cls.join(' ')
+    const roleTxt = p.role ? (GAME_ROLE_LABEL[p.role] || p.role) : ''
+    el.innerHTML = `<span class="gp-seat">${p.seat}</span><span class="gp-name">${esc(p.name)}</span><span class="gp-role">${esc(roleTxt)}${p.isSheriff ? ' 警长' : ''}</span>`
+    if (p.persona) el.title = p.persona
+    box.appendChild(el)
+  }
+}
+function renderGameChannels() {
+  const box = $('gv-channels')
+  if (!box || !gv.view) return
+  box.innerHTML = ''
+  const chans = Object.keys(gv.view.channels || {})
+  const order = ['public', ...chans.filter((c) => c !== 'public').sort()]
+  for (const ch of order) {
+    const b = document.createElement('button')
+    b.className = 'gv-ch' + (ch === gv.channel ? ' active' : '') + (ch === 'wolf' ? ' wolf' : '') + (ch === 'dead' ? ' dead' : '')
+    b.textContent = gvChannelLabel(ch)
+    b.onclick = () => { gv.channel = ch; renderGameChannels(); renderGameLog() }
+    box.appendChild(b)
+  }
+}
+function renderGameLog() {
+  const box = $('gv-log')
+  if (!box || !gv.view) return
+  box.innerHTML = ''
+  const msgs = (gv.view.channels || {})[gv.channel] || []
+  for (const m of msgs) box.appendChild(gameMsgEl(gv.channel, m))
+  if (!msgs.length) box.innerHTML = '<div class="empty-tip">这个频道还没有消息</div>'
+  scrollGameLog()
+}
+function appendGameMsg(ch, m) {
+  if (ch !== gv.channel || !gv.view) return
+  const box = $('gv-log')
+  if (box.querySelector('.empty-tip')) box.innerHTML = ''
+  box.appendChild(gameMsgEl(ch, m))
+  scrollGameLog()
+}
+// ★ 对局错误：「对局不存在」最多提醒 5 次，之后给出「重新游戏」按钮
+function showGameError(text) {
+  const msg = String(text || '')
+  const box = $('gv-log')
+  if (box.querySelector('.empty-tip')) box.innerHTML = ''
+  if (/不存在/.test(msg)) {
+    gv.errCount++
+    if (gv.errCount <= 5) {
+      box.appendChild(gameMsgEl(gv.channel, { from: '系统', text: `对局错误：${msg}（${gv.errCount}/5）`, system: true }))
+      scrollGameLog()
+    }
+    if (gv.errCount >= 5) {
+      if (gv.es) { try { gv.es.close() } catch { /* ignore */ } gv.es = null }
+      $('gv-btn-restart').classList.remove('hidden')
+      renderGameActions()
+      renderGameTop()
+    }
+    return
+  }
+  box.appendChild(gameMsgEl(gv.channel, { from: '系统', text: '对局错误：' + msg, system: true }))
+  scrollGameLog()
+}
+function renderGameRestartPanel(box) {
+  const tip = document.createElement('div')
+  tip.className = 'gv-act-prompt'
+  tip.textContent = '对局数据不存在或已被删除，可以重新游戏（沿用当前配置）。'
+  const btn = document.createElement('button')
+  btn.className = 'btn primary tiny'
+  btn.textContent = '重新游戏'
+  btn.onclick = restartGame
+  box.appendChild(tip); box.appendChild(btn)
+}
+// ★ 重新游戏：优先在同一会话重开一局；会话已不存在则按原配置新建会话
+async function restartGame() {
+  if (!gv.sid) { openTeamSessionModal(); return }
+  const oldView = gv.view
+  gv.errCount = 0; gv.reviewOpen = false
+  await api('POST', '/api/game/control', { sessionId: gv.sid, action: 'stop' }).catch(() => { })
+  const r = await api('POST', '/api/game/start', { sessionId: gv.sid, game: { playerModels: gv.playerModels } })
+  if (r.ok) {
+    gv.view = r.state; gv.live = {}; renderGameAll(); attachGameStream(gv.sid)
+    return
+  }
+  const cfg = oldView?.config
+  if (!cfg) { openTeamSessionModal(); return }
+  const body = {
+    kind: 'game', title: (oldView.title || '对局') + ' · 新一局', providerId: cfg.providerId, model: cfg.model, workspace: state.activeWorkspace,
+    game: { mode: cfg.mode, board: cfg.board, myRole: cfg.myRole, budget: cfg.budget, timer: cfg.timer, voteOpen: cfg.voteOpen !== false, providerId: cfg.providerId, model: cfg.model, premise: cfg.premise, playerCount: cfg.playerCount },
+  }
+  const cr = await api('POST', '/api/sessions', body)
+  if (!cr.ok) { alert(cr.error || '创建失败'); return }
+  await refreshTeamSessions(cr.session.id)
+  await selectTeamSession(cr.session.id)
+}
+function renderGameActions() {
+  const box = $('gv-actions')
+  if (!box) return
+  box.innerHTML = ''
+  if (gv.errCount >= 5 && !gv.view?.waiting) { renderGameRestartPanel(box); return }
+  if (!gv.view) return
+  const w = gv.view.waiting
+  if (w) {
+    const prompt = document.createElement('div')
+    prompt.className = 'gv-act-prompt'
+    prompt.textContent = w.prompt || '轮到你操作'
+    box.appendChild(prompt)
+    if (w.type === 'speak' || w.type === 'gm-input') {
+      const hint = document.createElement('div')
+      hint.className = 'gv-act-msg'
+      hint.textContent = w.type === 'gm-input' ? '在下方输入框写下你的主持推进（将广播所有人）' : '在下方输入框发言，或点「过麦」跳过'
+      box.appendChild(hint)
+    } else if (Array.isArray(w.options) && w.options.length) {
+      const row = document.createElement('div')
+      row.className = 'gv-act-opts'
+      for (const o of w.options) {
+        const b = document.createElement('button')
+        b.className = 'btn ghost tiny'
+        b.textContent = o.label
+        b.onclick = () => {
+          const targetTypes = ['vote', 'sheriff-vote', 'kill', 'check', 'shoot', 'badge']
+          submitGameAction(targetTypes.includes(w.type) ? { target: Number(o.value) } : { value: o.value })
+        }
+        row.appendChild(b)
+      }
+      box.appendChild(row)
+    }
+  } else if (gv.vote) {
+    const d = document.createElement('div')
+    d.className = 'gv-act-msg'
+    d.textContent = `投票进行中：${(gv.vote.voted || []).length}/${gv.vote.total || '?'} 人已投`
+    box.appendChild(d)
+  }
+}
+function renderGameInput() {
+  const row = $('gv-input-row')
+  if (!row || !gv.view) return
+  const w = gv.view.waiting
+  const can = !!w && (w.type === 'speak' || w.type === 'gm-input')
+  row.classList.toggle('disabled', !can)
+  $('gv-btn-pass').textContent = w?.type === 'gm-input' ? '跳过' : '过麦'
+}
+async function submitGameAction(action) {
+  if (!gv.sid) return
+  await api('POST', '/api/game/action', { sessionId: gv.sid, action })
+}
+function renderGameSetup() {
+  const box = $('gv-setup')
+  if (!box || !gv.view) return
+  const v = gv.view
+  if (v.status !== 'idle') { box.classList.remove('show'); box.innerHTML = ''; return }
+  box.classList.add('show')
+  box.innerHTML = ''
+  const info = document.createElement('div')
+  info.className = 'dim'
+  info.textContent = v.mode === 'werewolf'
+    ? `狼人杀 · ${v.board} ｜ 你的身份：${gvMyRoleLabel('werewolf', v.config.myRole)} ｜ 单局预算 ¥${v.budget > 0 ? v.budget : '不限'}${v.config.timer ? ' ｜ 倒计时开' : ''} ｜ 票型：${v.config.voteOpen !== false ? '公开' : '隐藏'}`
+    : `角色扮演推演 ｜ 角色数 ${v.config.playerCount} ｜ 你的身份：${gvMyRoleLabel('roleplay', v.config.myRole)} ｜ 单局预算 ¥${v.budget > 0 ? v.budget : '不限'}`
+  box.appendChild(info)
+  if (v.mode === 'roleplay' && v.config.premise) {
+    const p = document.createElement('div'); p.className = 'dim'; p.textContent = `故事设定：${v.config.premise}`
+    box.appendChild(p)
+  }
+  const hint = document.createElement('div')
+  hint.className = 'dim'
+  hint.textContent = '为每位 AI 玩家选择模型（不选则用会话默认模型），确认后点右上角「开始对局」：'
+  box.appendChild(hint)
+  for (const p of v.players || []) {
+    const row = document.createElement('div')
+    row.className = 'gv-set-row gv-set-seat'
+    row.dataset.seat = p.seat
+    row.innerHTML = `<b>${esc(p.name)}</b>`
+    const ps = document.createElement('select')
+    ps.className = 'mini-sel'
+    ps.innerHTML = state.providers.map((x) => `<option value="${x.id}" ${x.id === v.config.providerId ? 'selected' : ''}>${esc(x.name)}</option>`).join('')
+    const ms = document.createElement('select')
+    ms.className = 'mini-sel'
+    ms.innerHTML = groupedModelSelect(providerById(ps.value), v.config.model, { chatOnly: true })
+    ps.onchange = () => { ms.innerHTML = groupedModelSelect(providerById(ps.value), null, { chatOnly: true }) }
+    row.appendChild(ps); row.appendChild(ms)
+    box.appendChild(row)
+  }
+}
+function collectSetupModels() {
+  const models = {}
+  document.querySelectorAll('#gv-setup .gv-set-seat').forEach((row) => {
+    const sels = row.querySelectorAll('select')
+    if (sels.length >= 2 && sels[1].value) models[row.dataset.seat] = { providerId: sels[0].value, model: sels[1].value }
+  })
+  return models
+}
+function renderGameReview() {
+  const box = $('gv-review')
+  if (!box || !gv.view) return
+  if (!gv.reviewOpen || !gv.view.review) { box.classList.add('hidden'); return }
+  box.classList.remove('hidden')
+  box.innerHTML = `<pre>${esc(gv.view.review)}</pre>`
+}
+function showGameIdentity() {
+  const v = gv.view
+  if (!v || v.userSeat == null) return
+  const me = (v.players || []).find((p) => p.seat === v.userSeat)
+  const role = me?.role ? (GAME_ROLE_LABEL[me.role] || me.role) : '未分配（观战/法官不占座位）'
+  const notes = (v.channels[`note:${v.userSeat}`] || []).map((m) => '· ' + m.text).join('\n')
+  alert(`你的身份：${role}\n${me?.persona ? '人设：' + me.persona + '\n' : ''}${notes ? '\n私密信息：\n' + notes : ''}`)
+}
+function initGameView() {
+  if (!$('gv-btn-start')) return
+  $('gv-btn-start').onclick = async () => {
+    $('gv-btn-start').disabled = true
+    gv.errCount = 0; gv.reviewOpen = false
+    gv.playerModels = { ...gv.playerModels, ...collectSetupModels() }
+    const r = await api('POST', '/api/game/start', { sessionId: gv.sid, game: { playerModels: gv.playerModels } })
+    $('gv-btn-start').disabled = false
+    if (!r.ok) { alert(r.error || '开始失败'); return }
+    if (r.state) { gv.view = r.state; renderGameAll() }
+    attachGameStream(gv.sid)
+  }
+  $('gv-btn-restart').onclick = restartGame
+  $('gv-btn-pause').onclick = async () => { await api('POST', '/api/game/control', { sessionId: gv.sid, action: 'pause' }) }
+  $('gv-btn-resume').onclick = async () => { await api('POST', '/api/game/control', { sessionId: gv.sid, action: 'resume', addBudget: gv.view?.budgetStopped ? 5 : 0 }) }
+  $('gv-btn-stop').onclick = async () => { if (!confirm('确定结束本局吗？（会立即结算并生成复盘）')) return; await api('POST', '/api/game/control', { sessionId: gv.sid, action: 'stop' }) }
+  $('gv-btn-review').onclick = () => { gv.reviewOpen = !gv.reviewOpen; renderGameReview() }
+  $('gv-btn-identity').onclick = showGameIdentity
+  $('gv-btn-gm').onclick = () => {
+    const gmBox = $('gv-gm')
+    gmBox.classList.toggle('hidden')
+    const sel = $('gv-gm-whisper-to')
+    sel.innerHTML = (gv.view?.players || []).map((p) => `<option value="${p.seat}">${esc(p.name)}</option>`).join('')
+  }
+  $('gv-gm-announce-btn').onclick = async () => {
+    const text = $('gv-gm-announce').value.trim()
+    if (!text) return
+    await api('POST', '/api/game/control', { sessionId: gv.sid, action: 'announce', text })
+    $('gv-gm-announce').value = ''
+  }
+  $('gv-gm-whisper-btn').onclick = async () => {
+    const text = $('gv-gm-whisper').value.trim()
+    if (!text) return
+    await api('POST', '/api/game/control', { sessionId: gv.sid, action: 'whisper', to: Number($('gv-gm-whisper-to').value), text })
+    $('gv-gm-whisper').value = ''
+  }
+  $('gv-btn-send').onclick = async () => {
+    const text = $('gv-input').value.trim()
+    if (!text) return
+    $('gv-input').value = ''
+    await submitGameAction({ text })
+  }
+  $('gv-btn-pass').onclick = async () => { $('gv-input').value = ''; await submitGameAction({ text: '', skip: true }) }
+  $('gv-input').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); $('gv-btn-send').click() } })
+  // ★ 语音输入（Web Speech API，中文识别）：识别结果追加到发言框；狼人杀/角色推演通用
+  let recog = null, recording = false
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+  const micBtn = $('gv-btn-mic')
+  if (!SR) micBtn.title = '当前环境不支持语音输入：请用 Chrome/Edge，并通过本机(127.0.0.1)或 HTTPS 访问'
+  micBtn.onclick = () => {
+    if (!SR) { alert('当前环境不支持语音输入：请使用 Chrome/Edge，并通过 http://127.0.0.1 本机或 HTTPS 访问。'); return }
+    if (recording) { try { recog.stop() } catch { /* ignore */ } return }
+    recog = new SR()
+    recog.lang = 'zh-CN'
+    recog.continuous = true
+    recog.interimResults = false
+    recog.onresult = (e) => {
+      let add = ''
+      for (let i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) add += e.results[i][0].transcript
+      if (add) { const cur = $('gv-input').value; $('gv-input').value = (cur ? cur + ' ' : '') + add.trim() }
+    }
+    recog.onend = () => { recording = false; micBtn.textContent = '语音'; micBtn.classList.remove('recording') }
+    recog.onerror = (e) => {
+      recording = false; micBtn.textContent = '语音'; micBtn.classList.remove('recording')
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') alert('麦克风权限被拒绝或不可用：请在浏览器允许麦克风；局域网 http 访问可能不支持语音识别，请改用本机(127.0.0.1)或 HTTPS。')
+    }
+    try { recog.start(); recording = true; micBtn.textContent = '停止'; micBtn.classList.add('recording') } catch { recording = false }
+  }
+  if (gv.tick) clearInterval(gv.tick)
+  gv.tick = setInterval(() => {
+    const el = $('gv-timer')
+    if (!el || !gv.view) return
+    const d = gv.view.waiting?.deadline || gv.vote?.deadline || 0
+    if (d) { const left = Math.max(0, Math.ceil((d - Date.now()) / 1000)); el.textContent = left + 's' } else el.textContent = ''
+  }, 1000)
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initGameView)
+else initGameView()
 
 /* ══════════════ 视频生成（与画板同构） ══════════════ */
 function renderVideoSelectors() {
@@ -3566,7 +4062,7 @@ async function main() {
  if (window.matchMedia) {
  window.matchMedia('(prefers-color-scheme: light)').addEventListener?.('change', () => { if ((state.settings.ui || {}).theme === 'system') applyUi() })
  }
- $('team-session').onchange = async () => { state.teamSessionId = $('team-session').value; await refreshTeamSessions(state.teamSessionId); renderTeamSession() }
+ $('team-session').onchange = async () => { await refreshTeamSessions($('team-session').value); await selectTeamSession(state.teamSessionId) }
  $('btn-team-session-new').onclick = () => openTeamSessionModal()
  $('btn-ts-cancel').onclick = () => $('team-session-modal').classList.add('hidden')
  $('btn-ts-create').onclick = createTeamSessionFromModal
