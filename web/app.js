@@ -249,16 +249,19 @@ const TEAM_PRESETS = {
       { id: 'tester', label: '测试', color: '#ff8c5a', desc: '独立验证并回归', enabled: true, budgetCost: 0, skills: ['mk_strict_test'], systemPrompt: `你是这个团队的测试。设计正常/边界/异常用例并真实运行验证；发现问题用 ask_role 反馈给程序（复现+期望+实际），修复后回归；输出通过/不通过结论与证据。` },
     ],
   },
-  video: {
-    label: '视频制作小组（队长/编剧/视频美术/质检）',
-    skillIds: ['mk_requirement', 'mk_video_storyboard', 'mk_doc_cn', 'mk_strict_test'],
-    roles: [
-      { id: 'leader', label: '队长', color: '#2f9e8f', desc: '澄清需求、派单、汇总', enabled: true, budgetCost: 0, skills: ['mk_requirement'], systemPrompt: `你是视频制作小组的队长。1）先用 ask_user 向用户确认：视频主题、时长、画幅（横屏/竖屏）、风格、是否要字幕/旁白、交付形式；2）把确认结果汇总成目标说明，拆成 JSON 计划派发（通常：编剧分镜 → 视频美术逐镜生成 → 质检核对）；3）跟踪进度、核对产物（MP4 是否真实存在、清单是否完整）；4）最终报告成片清单与后续建议。` },
-      { id: 'planner', label: '编剧', color: '#e0b34a', desc: '剧本、分镜表、镜头语言', enabled: true, budgetCost: 0, skills: ['mk_video_storyboard'], systemPrompt: `你是视频编剧。产出：1）脚本（分场、旁白/字幕文案、总时长）；2）分镜表：镜号、画面描述（每条附可直接用于 generate_video 的英文提示词）、时长、转场、音效建议；3）交付物清单。完成后交还队长评估。` },
-      { id: 'videoartist', label: '视频美术', color: '#c86bff', desc: '分镜逐镜生成 MP4', enabled: true, budgetCost: 0, skills: ['mk_video_storyboard'], systemPrompt: `你是视频美术。按分镜表逐镜调用 generate_video 生成 MP4（name 用 shot01、shot02…），必要时用 generate_image 生成关键帧/封面；每次生成后用 list_files 核对文件确实存在；输出成片清单（文件→对应分镜→时长）。若生成失败（内容审核/模型不可用），调整提示词重试并说明。` },
-      { id: 'tester', label: '质检', color: '#ff8c5a', desc: '核对成片与清单', enabled: true, budgetCost: 0, skills: ['mk_strict_test'], systemPrompt: `你是视频质检。独立核对：1）分镜表要求 vs 实际生成的 MP4 数量与命名；2）用 list_files/read_file 确认文件真实存在、大小正常；3）核对字幕/旁白/时长等需求项是否落实；4）输出通过/不通过结论与逐项证据，不通过时明确指出缺哪一镜。` },
-    ],
-  },
+ video: {
+  label: '短视频制作组（导演/编剧/视频美术/配音/配乐/剪辑合成/质检）',
+  skillIds: ['mk_requirement', 'mk_video_project', 'mk_i2v', 'mk_dubbing', 'mk_music', 'mk_compose', 'mk_strict_test'],
+  roles: [
+    { id: 'leader', label: '导演', color: '#2f9e8f', desc: '确认需求、派单、验收、汇总', enabled: true, budgetCost: 0, skills: ['mk_requirement'], systemPrompt: `你是短视频制作组的导演（队长）。1）先用 ask_user 向用户逐项确认：主题与要点、时长（如 15/30/60 秒）、画幅（竖屏 9:16 / 横屏 16:9）、风格、配音方式（预置音色或提供样本克隆）、是否需要背景音乐/字幕、预算上限、交付位置；2）汇总目标后拆成 JSON 计划派发，标准链路：编剧建立 video-project/project.json 分镜 → 视频美术逐镜生成（关键帧→图生视频）→ 配音师逐镜配音 → 配乐师定 BGM → 剪辑合成出片 → 质检验收；3）要求每个角色产出后立即回写 project.json 对应字段；4）核对 cut/final.mp4 真实存在、时长与需求一致（让质检给逐项证据）；5）最终报告：成片路径、时长、镜头数、花费、遗留问题与改进建议。` },
+    { id: 'planner', label: '编剧', color: '#e0b34a', desc: '脚本、分镜、project.json 工程表', enabled: true, budgetCost: 0, skills: ['mk_video_project'], systemPrompt: `你是短视频编剧。1）先产出脚本（分场、旁白/字幕文案、总时长估算）；2）按【短视频工程规范】创建 video-project/project.json：meta（title/aspect/width/height/fps/style/music/subtitle）+ scenes（每镜：id、dur、narration 中文文案、visualPrompt 英文提示词、mode:"i2v"、keyframe/shot/voice 路径约定 k01/shot01/vo01）；3）文案要口语化、可直接朗读（数字与缩写改写），镜头文案长度与 dur 匹配（中文约 4 字/秒）；4）写完后用 read_file 读回自检 JSON 合法；5）交还导演评估。` },
+    { id: 'videoartist', label: '视频美术', color: '#c86bff', desc: '关键帧→图生视频，逐镜生成', enabled: true, budgetCost: 0, skills: ['mk_i2v'], systemPrompt: `你是视频美术。按 project.json 逐镜产出视频：1）先为每个镜头用 generate_image 生成关键帧，必须带 out 参数（如 out:"video-project/keyframes/k01.png"，工具路径一律 video-project/ 开头；画幅与 meta 一致，全片共用同一风格前缀）；2）再用 generate_video 携带 image（如 image:"video-project/keyframes/k01.png"）走图生视频，out 写到 "video-project/shots/shot01.mp4" 等（多镜可用 shots:[...] 批量、默认 2 路并发）；3）每镜完成后把「工程内相对路径」（如 shots/shot01.mp4）回写 project.json.shot，并用 list_files 核对真实存在；4）失败镜头调整提示词重试（最多 3 次），仍失败要明确上报缺哪一镜并给替代方案；5）输出成片清单交导演。` },
+    { id: 'voiceartist', label: '配音师', color: '#4fc3f7', desc: '逐镜 TTS 配音，时长对齐', enabled: true, budgetCost: 0, skills: ['mk_dubbing'], systemPrompt: `你是配音师。1）若导演要求克隆音色且用户提供了参考音频，先 clone_voice（未接入时说明并用预置音色）；2）逐镜调用 generate_speech 生成配音（out: audio/vo01.mp3…，全片同一音色），路径写回 project.json.voice；3）文案过长（超过 dur-0.5 秒朗读量）先精简文案再生成，不要硬加速；4）每条用 media_probe 核对时长与音轨；5）汇报：各镜配音时长清单与总时长。` },
+    { id: 'musician', label: '配乐师', color: '#e0b34a', desc: 'BGM 选择/合成与音量规划', enabled: true, budgetCost: 0, skills: ['mk_music'], systemPrompt: `你是配乐师。1）先 generate_music list 查看工作区 bgm/ 已有音乐：有合适的直接 pick 使用；没有就用 generate_music style 合成氛围配乐（calm/warm/tense/uplift）到 audio/bgm.mp3；2）把结果写进 project.json.meta.music（file 相对路径 + volumeDb 默认 -18）；3）汇报音乐来源、时长与音量方案。` },
+    { id: 'videoeditor', label: '剪辑合成', color: '#43d17c', desc: '字幕+混音+转场合成成片', enabled: true, budgetCost: 0, skills: ['mk_compose'], systemPrompt: `你是剪辑合成。1）确认 project.json 中 shots/voice/bgm 都已回写（缺的用 ask_role 找对应角色补齐）；2）make_subtitles 生成字幕；3）compose_video 合成 cut/final.mp4（归一化→转场→混音→烧字幕，缺镜头会黑场占位并在结果中说明）；4）media_probe（loudness:true）输出成片实测数据；5）汇报：成片路径、时长、分辨率、响度、字幕条数，交质检。` },
+    { id: 'tester', label: '质检', color: '#ff8c5a', desc: '媒体硬指标逐项验收', enabled: true, budgetCost: 0, skills: ['mk_strict_test', 'mk_compose'], systemPrompt: `你是视频质检。按【合成与媒体验收规范】逐项独立验收（全部要 media_probe 证据）：1）final.mp4 存在且可探测；2）分辨率/时长与 project.json.meta 和 Σ镜头时长（减转场）一致；3）有音轨、响度约 -16 LUFS（±3）；4）字幕逐句与配音对齐（读 subs/final.srt 对照 scenes 文案）；5）每个 shot 与 voice 文件真实存在、时长匹配；6）输出「通过 / 不通过」结论与逐项证据，不通过必须点名「哪个镜头/哪条配音/哪段字幕」需返工，返工重合成后复审。禁止只声称通过。` },
+  ],
+ },
   image: {
     label: '图片处理小组（队长/设计策划/图片师/质检）',
     skillIds: ['mk_requirement', 'mk_art_style', 'mk_asset_org', 'mk_strict_test'],
@@ -292,8 +295,16 @@ const TEAM_PRESETS = {
 }
 
 /* 版本迭代记录（设置页展示） */
-const APP_VERSION = '1.4.0'
+const APP_VERSION = '1.5.0'
 const CHANGELOG = [
+  ['P9.4', '2026-10', [
+    '短视频流水线（重大更新）：团队预设「短视频制作组」升级为 7 角色——导演 / 编剧 / 视频美术 / 配音师 / 配乐师 / 剪辑合成 / 质检，从一句需求到成片全自动',
+    '新增媒体工具：generate_speech（云端 TTS 配音，百炼 qwen-tts，返回实测时长）、generate_music（优先选用工作区 bgm/ 的音乐，也可用内置合成氛围乐，无版权负担）、make_subtitles（按配音时长自动生成 SRT）、compose_video（ffmpeg 一步完成归一化/转场/混音/烧字幕/响度标准化）、media_probe（时长/分辨率/音视频轨/响度，质检证据）',
+    'generate_video 大升级：支持图生视频（关键帧→视频，失败自动回退文生视频）、批量多镜（默认 2 路并发）、指定输出目录、9:16 竖屏与 16:9 横屏，全程进度可视',
+    'project.json 短视频工程规范：分镜/文案/时长/产物路径的单一事实源，所有角色共同维护；新增 5 个内置技能（工程规范/图生视频/配音/配乐/合成验收）',
+    'ffmpeg 首次使用时自动下载并校验 sha256（本机已有则直接复用）；设置页新增「媒体引擎」卡片（ffmpeg 状态 / 声音后端 / TTS 模型与音色 / BGM 目录）',
+    '修复：视频模型解析只认「视频」标签模型（此前设置的聊天模型会被误用）；百炼图生视频走官方临时上传并带 OSS 解析头；长任务工具进度事件（团队/角色对话/对话三处可见）',
+  ]],
   ['P9.3', '2026-10', [
     '本地知识库（RAG）：零依赖 BM25 检索——自动给当前工作区文档（md / txt / PDF 等）建索引（存 工作区/.oat/index.json，随项目迁移），CJK 二元分词无需外部分词库；PDF 为尽力而为抽取（扫描版不支持），纯本机、无外部服务',
     '角色对话与团队每一步自动检索知识库并注入最相关片段（可在设置页关闭）；新增 kb_search 工具，AI 可主动在项目文档里查资料并给出文件路径',
@@ -663,6 +674,7 @@ function renderSettings() {
   $('set-update-branch').value = state.settings.updateBranch || 'main'
   renderSchedules() // ★ 定时任务列表
   renderKb() // ★ 本地知识库状态
+  renderMedia() // ★ 媒体引擎状态
  // ★ 工具调用限制（0=无限、-1=禁止、custom=自定义）
  const tl = state.settings.toolLimits || {}
  for (const [key, selId, numId] of [['chat', 'set-limit-chat', 'set-limit-chat-n'], ['team', 'set-limit-team', 'set-limit-team-n'], ['roleChat', 'set-limit-rolechat', 'set-limit-rolechat-n']]) {
@@ -1302,6 +1314,7 @@ async function sendChat() {
           if (j.permreq) { appendPermReqCard(box, { permreq: j.permreq }, 'chat'); maybeNotify('对话待授权', j.permreq?.tool || '') }
           if (j.notice) appendNotice(box, j.notice)
           if (j.question) { appendQuestionCard(box, j.question, 'chat'); maybeNotify('AI 等待你的回答', j.question?.questions?.[0]?.question || '') }
+          if (j.tool_progress) { let d = box.querySelector('.chat-prog'); if (!d) { d = document.createElement('div'); d.className = 'dim small chat-prog'; box.appendChild(d) } d.textContent = `[进度] ${j.tool_progress.phase || ''}${j.tool_progress.detail ? '：' + j.tool_progress.detail : ''}${j.tool_progress.pct != null ? `（${j.tool_progress.pct}%）` : ''}` }
           if (j.imagereview) appendImageReviewCard(box, j.imagereview)
  if (j.image) setArtCallout({ who: 'AI', ...j.image })
  if (j.reasoning) { ensureTurn(j); const rb = ensureReasoning(); queueReason(rb, j.reasoning); scrollIfNearBottom(box) }
@@ -1839,7 +1852,12 @@ async function roleChatSend() {
       if (d && !d.dataset.done) { d.dataset.done = '1'; d.open = false; d.querySelector('summary').textContent = ` ${t('thoughtDone')}（${d.querySelector('.reasoning-body').textContent.length}）` }
       appendStreamText(target, j.delta); setMsgStatus(target, 'answering'); scrollIfNearBottom($('team-stream'))
      }
-     if (j.error) { target.textContent = t('failure') + ': ' + j.error; setMsgStatus(target, 'failed'); finished = true }
+      if (j.error) { target.textContent = t('failure') + ': ' + j.error; setMsgStatus(target, 'failed'); finished = true }
+     if (j.tool_progress) {
+      let d = box.querySelector('.rc-prog')
+      if (!d) { d = document.createElement('div'); d.className = 'dim small rc-prog'; box.insertBefore(d, target) }
+      d.textContent = `[进度] ${j.tool_progress.phase || ''}${j.tool_progress.detail ? '：' + j.tool_progress.detail : ''}${j.tool_progress.pct != null ? `（${j.tool_progress.pct}%）` : ''}`
+     }
      if (j.done) { setMsgStatus(target, 'done'); finished = true; maybeNotify('角色对话完成', roleLabel(roleId)) }
      // ★ 单角色对话中的工具与协作事件（ask_role 联系队友等）
      if (j.question) { appendQuestionCard(box, j.question, roleId); maybeNotify('AI 等待你的回答', j.question?.questions?.[0]?.question || '') }
@@ -1912,6 +1930,13 @@ function handleTeamEvent(ev, run, ref) {
  if (ev.type === 'session') { ref.id = ev.taskId; state.currentTeamTaskId = ev.taskId; state.teamTaskCost = 0; renderTeamBudget(); updatePauseUI(); return }
  if (ev.type === 'confirm') { appendConfirmCard(run.body, ev.confirm); return }
  if (ev.type === 'permreq') { appendPermReqCard(run.body, ev, ev.agent); applyTeamFilter(); maybeNotify('团队任务待授权', `${roleLabel(ev.agent)} 请求授权：${ev.permreq?.tool || ''}`); return }
+ if (ev.type === 'tool_progress') {
+  let el = run.body.querySelector(`[data-prog="${ev.agent}"]`)
+  if (!el) { el = document.createElement('div'); el.className = 'dim small prog-line'; el.dataset.prog = ev.agent; el.dataset.agent = ev.agent; run.body.appendChild(el) }
+  el.textContent = `[进度] ${ev.phase || ''}${ev.detail ? '：' + ev.detail : ''}${ev.pct != null ? `（${ev.pct}%）` : ''}`
+  roleSetStatus(ev.agent, 'acting', { sub: `${ev.phase || ''} ${ev.detail || ''}`.slice(0, 60) })
+  applyTeamFilter(); return
+ }
  if (ev.type === 'notice') { appendNotice(run.body, ev.text || '', ev.agent); applyTeamFilter(); return }
  if (ev.type === 'role_status') { roleSetStatus(ev.agent, ev.status, { sub: ev.sub || '' }); return }
  if (ev.type === 'question') { appendQuestionCard(run.body, ev, ev.agent); maybeNotify('AI 等待你的回答', ev.question?.questions?.[0]?.question || ''); return }
@@ -2926,6 +2951,23 @@ async function doUpdateApply() {
 }
 
 /* ══════════════ 初始化 ══════════════ */
+/* ★ 媒体引擎（短视频）：设置页状态渲染（ffmpeg / 声音后端 / TTS 配置） */
+async function renderMedia() {
+ try {
+  const box = $('media-status'); if (!box) return
+  const r = await api('GET', '/api/media/status').catch(() => ({ ok: false }))
+  if (!r.ok) { box.textContent = '读取失败'; return }
+  box.textContent = `ffmpeg：${r.ffmpeg ? '已就绪（合成/探测可用）' : '未安装（首次合成会自动下载，或点上方按钮安装）'}｜BGM 目录：${r.bgmDir || '工作区/bgm'}`
+  if ($('media-voice-backend')) $('media-voice-backend').value = r.voiceBackend || 'cloud'
+  if ($('media-tts-provider')) {
+    const cur = r.ttsProviderId || ''
+    const opts = (state.providers || []).map((p) => `<option value="${p.id}" ${p.id === cur ? 'selected' : ''}>${esc(p.name)}</option>`).join('')
+    $('media-tts-provider').innerHTML = `<option value="">（自动选择：优先百炼）</option>${opts}`
+  }
+  if ($('media-tts-model')) $('media-tts-model').value = r.ttsModel || ''
+  if ($('media-tts-voice')) $('media-tts-voice').value = r.ttsVoice || ''
+ } catch { /* ignore */ }
+}
 /* ★ 本地知识库（RAG）：设置页状态渲染（文件数/分块数/更新时间） */
 async function renderKb() {
  try {
@@ -3332,6 +3374,20 @@ async function main() {
     if (!confirm('清空当前工作区的项目档案？（不影响工作区里的任何文件）')) return
     const r = await api('DELETE', '/api/project-memory').catch(() => ({ ok: false }))
     $('projmem-msg').textContent = r.ok ? '已清空' : (r.error || t('failure'))
+  }
+  // ★ 媒体引擎：安装 ffmpeg / 保存 TTS 配置
+  if ($('btn-media-install-ffmpeg')) {
+    $('btn-media-install-ffmpeg').onclick = async () => {
+      $('media-msg').textContent = '下载安装中（约 100MB）…请稍候'
+      const r = await api('POST', '/api/media/install-ffmpeg', {}).catch(() => ({ ok: false }))
+      $('media-msg').textContent = r.ok ? 'ffmpeg 已就绪' : (r.error || '安装失败')
+      renderMedia()
+    }
+    $('btn-media-save').onclick = async () => {
+      const body = { voiceBackend: $('media-voice-backend').value, ttsProviderId: $('media-tts-provider').value, ttsModel: $('media-tts-model').value.trim(), ttsVoice: $('media-tts-voice').value.trim() }
+      const r = await api('PUT', '/api/settings', body).catch(() => ({ ok: false }))
+      $('media-msg').textContent = r.ok ? t('savedOk') : (r.error || t('failure'))
+    }
   }
   // ★ 本地知识库：重建索引 / 检索测试 / 自动注入开关
   if ($('btn-kb-rebuild')) {

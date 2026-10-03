@@ -10,8 +10,8 @@
  <link rel="manifest" href="/manifest.json" />
  <title>Open Agent Team</title>
  <link rel="icon" href="/oat.png" />
- <link rel="stylesheet" href="/style.css?v=1.4.0" />
- <link rel="stylesheet" href="/team.css?v=1.4.0" />
+ <link rel="stylesheet" href="/style.css?v=1.5.0" />
+ <link rel="stylesheet" href="/team.css?v=1.5.0" />
 </head>
 <body>
  <!-- ═══ 顶栏 ═══ -->
@@ -673,6 +673,24 @@
   </div>
   </div>
   <div class="set-card">
+  <h3>媒体引擎（短视频）</h3>
+  <p class="dim small">ffmpeg 用于视频合成（转场/混音/字幕烧录）与媒体探测；TTS 用于配音；背景音乐优先使用工作区 <code>bgm/</code> 目录里的音乐，没有时可用内置合成氛围乐。团队预设「短视频制作组」使用本卡片配置。</p>
+  <div id="media-status" class="dim small">…</div>
+  <div class="gh-row" style="flex-wrap:wrap;margin-top:6px">
+  <button id="btn-media-install-ffmpeg" class="btn ghost">安装 / 更新 ffmpeg</button>
+  <span class="dim small">声音后端</span>
+  <select id="media-voice-backend" class="mini-sel"><option value="cloud">云端 TTS（推荐）</option><option value="voicestudio">本地 VoiceStudio（规划中）</option></select>
+  </div>
+  <div class="gh-row" style="flex-wrap:wrap;margin-top:6px">
+  <span class="dim small">TTS 提供方</span>
+  <select id="media-tts-provider" class="mini-sel"></select>
+  <input id="media-tts-model" placeholder="模型（默认 qwen-tts）" style="width:150px" />
+  <input id="media-tts-voice" placeholder="音色（默认 Cherry）" style="width:130px" />
+  <button id="btn-media-save" class="btn ghost">保存</button>
+  <span id="media-msg" class="dim small"></span>
+  </div>
+  </div>
+  <div class="set-card">
   <h3 data-i18n="updateTitle">更新</h3>
  <label class="set-row"><span data-i18n="updateCurrent">当前版本</span><b id="update-current">-</b></label>
  <label class="set-row"><span data-i18n="updateRepo">更新源仓库</span><input id="set-update-repo" placeholder="owner/repo（你的 GitHub 仓库）" style="flex:1" /></label>
@@ -911,6 +929,6 @@
  </div>
 
  <script src="/vendor/qrcode.js"></script>
- <script src="/app.js?v=1.4.0"></script>
+ <script src="/app.js?v=1.5.0"></script>
 </body>
 </html>

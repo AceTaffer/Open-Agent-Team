@@ -41,9 +41,10 @@ process.on('uncaughtException', (e) => { try { console.error(`[${new Date().toIS
 process.on('unhandledRejection', (e) => { try { console.error(`[${new Date().toISOString()}] UNHANDLED ${e?.stack || e}`) } catch { /* ignore */ } })
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const DATA_DIR = path.join(__dirname, 'data')
+// ★ Android 壳/便携模式支持：数据目录与默认工作区可用环境变量重定向（缺省仍为程序目录下 data/workspace）
+const DATA_DIR = process.env.OAT_DATA_DIR ? path.resolve(process.env.OAT_DATA_DIR) : path.join(__dirname, 'data')
 const WEB_DIR = path.join(__dirname, 'web')
-const WORKSPACE_DIR = path.join(__dirname, 'workspace')
+const WORKSPACE_DIR = process.env.OAT_WORKSPACE_DIR ? path.resolve(process.env.OAT_WORKSPACE_DIR) : path.join(__dirname, 'workspace')
 const ARTIFACT_DIR = path.join(WORKSPACE_DIR, 'artifacts')
 const PROVIDERS_FILE = path.join(DATA_DIR, 'providers.json')
 const SECRETS_FILE = path.join(DATA_DIR, 'secrets.json')
@@ -74,7 +75,7 @@ const TEMPLATES = {
   minimax: { label: 'MiniMax（海螺）', baseUrl: 'https://api.minimaxi.com/v1', models: ['minimax-m3', 'minimax-m2.7', 'minimax-m2.5'], capabilities: ['对话', '代码'], balance: 'probe', needsKey: true },
   xai: { label: 'xAI（Grok）', baseUrl: 'https://api.x.ai/v1', models: ['grok-5', 'grok-4.1', 'grok-4-fast'], capabilities: ['对话', '推理'], balance: 'probe', needsKey: true },
   gemini: { label: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', models: ['gemini-3.1-pro', 'gemini-3-flash', 'gemini-2.5-pro'], capabilities: ['对话', '视觉', '推理'], balance: 'probe', needsKey: true },
-  dashscope: { label: '阿里云百炼（通义千问/万相）', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', models: ['qwen-max', 'qwen-plus', 'qwen-vl-max', 'wanx2.1-t2i-turbo'], capabilities: ['对话', '视觉', '出图'], balance: 'probe', needsKey: true },
+  dashscope: { label: '阿里云百炼（通义千问/万相）', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', models: ['qwen-max', 'qwen-plus', 'qwen-vl-max', 'qwen-tts', 'wanx2.1-t2i-turbo', 'wanx2.1-i2v-turbo', 'wanx2.1-t2v-turbo', 'wanx2.2-t2v-plus'], capabilities: ['对话', '视觉', '出图', '语音', '视频'], balance: 'probe', needsKey: true },
   opencode_go: { label: 'OpenCode Go / Zen', baseUrl: 'https://opencode.ai/zen/go/v1', models: ['deepseek-v4-flash', 'deepseek-v4-pro', 'deepseek-v4.1-flash', 'deepseek-flash', 'deepseek-v4-flash-vision-exp', 'glm-5.2', 'glm-5.3', 'glm-5.3-flash', 'gpt-6-luna', 'gpt-5.6-luna', 'grok-4.7', 'grok-4.6', 'qwen3.8-max', 'qwen3.8-flash', 'qwen3.7-plus', 'kimi-k3', 'kimi-k2.7-code', 'minimax-m3', 'minimax-m2.7', 'mimo-v2.6-pro', 'mimo-v2.6-flash', 'mimo-v2.5-pro', 'mimo-v2.5', 'hy4-preview', 'hy3', 'longcat-2.0', 'longcat-2.5-preview-free', 'space-bunny-free', 'muse-spark-1.3-contributor', 'muse-spark-1.2-contributor'], capabilities: ['对话', '代码'], balance: 'opencode_go', needsKey: true },
   openrouter: { label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', models: ['deepseek/deepseek-chat-v3.1', 'anthropic/claude-sonnet-4.5'], capabilities: ['对话', '代码'], balance: 'openrouter', needsKey: true },
   siliconflow: { label: '硅基流动', baseUrl: 'https://api.siliconflow.cn/v1', models: ['deepseek-ai/DeepSeek-V3.2-Exp', 'Qwen/Qwen3-VL-32B-Instruct', 'Kwai-Kolors/Kolors'], capabilities: ['对话', '视觉', '出图'], balance: 'probe', needsKey: true },
@@ -214,6 +215,12 @@ const BUILTIN_SKILLS = [
   { id: 'mk_novel_proofread', name: '小说校对规范', description: '逻辑/人设/时间线/文字逐项校对', tags: ['小说', '质量'], prompt: '校对小说话稿时逐项检查并给出证据：1) 剧情逻辑漏洞（动机不足、前后矛盾）；2) 人设一致性（性格、能力、称呼是否走形）；3) 时间线/空间线错误（季节、昼夜、路程）；4) 重复用词、口头禅滥用、错别字；5) 节奏问题（拖沓/跳跃）与建议删改段。输出「文件+段落位置+问题类型+修改建议」清单，重大问题用 ask_role 反馈给写手，改后必须复审。' },
   // ★ Paperclip 要点②：验收证据门——任何「完成/通过」结论必须附可复核证据（借鉴 Paperclip 的"无证据不算完成"）
   { id: 'mk_evidence', name: '验收证据规范', description: '完成/通过必须附命令、输出与读回证据', tags: ['质量', '规范'], prompt: '任何「完成 / 通过 / 已修复」结论都必须附可复核证据（禁止只声称）：1) 文件类：给出完整路径 + 用 read_file 读回的关键片段（或 list_files 结果）；2) 命令类：给出执行的命令原文 + 关键输出片段（如语法检查、字节比对、测试通过行）；3) 数据类：给出统计口径与原始数字；4) 若某项无法验证，明确写「未验证」并说明原因，不得默认通过；5) 汇报格式：结论 → 证据（逐项）→ 遗留问题。' },
+  // ★ 短视频流水线技能（project.json 工程规范 / 图生视频 / 配音 / 配乐 / 合成与媒体质检）
+  { id: 'mk_video_project', name: '短视频工程规范（project.json）', description: '分镜工程单一事实源：场景表结构与时序约定', tags: ['视频', '规范'], prompt: '短视频项目以 video-project/project.json 为唯一事实源，所有角色都读写它、不要各自发明格式。结构：{"meta":{"title":"","aspect":"9:16 或 16:9","width":1080,"height":1920,"fps":30,"style":"风格关键词","music":{"file":"audio/bgm.mp3","volumeDb":-18},"subtitle":true},"scenes":[{"id":1,"dur":5,"narration":"中文文案（用于配音与字幕）","subtitleText":"可选覆盖字幕文本","visualPrompt":"可直接用于出图/视频的英文提示词","negative":"负面提示词","mode":"i2v","keyframe":"keyframes/k01.png","shot":"shots/shot01.mp4","voice":"audio/vo01.mp3"}]}。路径规范（重要）：project.json 内字段一律写「工程内相对路径」，直接以 shots/、audio/、keyframes/ 开头，**不要带 video-project/ 前缀**（如 "shots/shot01.mp4"、"audio/vo01.mp3"、"keyframes/k01.png"）；调用工具时一律用「工作区相对路径」（带 video-project/ 前缀）。工作纪律：先写全场景表再开工；每完成一个产物立即回写对应字段；时长以配音实测时长为准（合成工具会自动对齐全片时间线）。' },
+  { id: 'mk_i2v', name: '图生视频规范', description: '关键帧先行、镜头风格一致性与重试策略', tags: ['视频', '生成'], prompt: '短视频镜头生成策略：1) 先用 generate_image 生成关键帧，必须带 out 参数写入工程目录，如 out:"video-project/keyframes/k01.png"（工具参数一律用「工作区相对路径」= video-project/ 开头；project.json 内字段才用工程内相对路径如 keyframes/k01.png）；画幅与 meta 一致（9:16 用 720x1280、16:9 用 1280x720），全片共用同一风格前缀；2) 再用 generate_video 携带 image:"video-project/keyframes/k01.png" 走图生视频（out 写 "video-project/shots/shot01.mp4"；被拒会自动回退文生视频；关键帧缺失会明确报错）；3) 多镜可用 shots:[...] 一次批量（默认 2 路并发）；4) 失败镜头先改提示词再重试，最多 3 次，仍失败要报告缺哪一镜并给替代方案；5) 完成后用 list_files 核对文件真实存在，并把「工程内相对路径」写回 project.json.shot。' },
+  { id: 'mk_dubbing', name: '配音规范', description: '音色一致、语速与镜头时长匹配、旁白节奏', tags: ['视频', '配音'], prompt: '配音工作规范：1) 全片使用同一音色（设置页「媒体引擎」的 TTS 音色，或先 clone_voice 克隆后指定 voice）；2) 逐镜用 generate_speech 生成配音，out 用「工作区相对路径」如 "video-project/audio/vo01.mp3"（工具参数 = video-project/ 开头），并在 project.json.voice 写「工程内相对路径」如 audio/vo01.mp3；3) 语速与镜头时长相配：文案预计朗读超过 scene.dur - 0.5s 时先精简文案而不是硬加速；4) 数字、英文缩写、多音字改写为口语化表达避免读错；5) 配音完成后用 media_probe（path 用 video-project/audio/vo01.mp3）核对时长与音轨。' },
+  { id: 'mk_music', name: '配乐规范', description: 'BGM 选择/生成、音量包络与对白避让', tags: ['视频', '配乐'], prompt: '配乐工作规范：1) 先 generate_music list:true 查看工作区 bgm/ 已有音乐，有合适的直接 pick:"文件名"；没有就用 generate_music style 合成氛围配乐（calm/warm/tense/uplift），out 用 "video-project/audio/bgm.mp3"；2) project.json.meta.music.file 写工程内相对路径 "audio/bgm.mp3"，volumeDb 默认 -18（对白为主，音乐垫底）；3) 风格与情绪匹配：舒缓 calm、温情 warm、紧张 tense、高潮 uplift；4) 成片后如质检指出音乐盖住人声，把 volumeDb 调低 2~4dB 后重新合成。' },
+  { id: 'mk_compose', name: '合成与媒体验收规范', description: 'ffmpeg 合成参数标准与成片验收清单', tags: ['视频', '质量'], prompt: '合成与验收规范：1) 合成前先 make_subtitles 生成字幕（会同时产出 ASS 与 SRT，ASS 用于烧录）；2) compose_video 一步完成归一化/转场/混音/烧字幕，输出 video-project/cut/final.mp4；缺镜头会黑场占位并在结果中警告，出现该警告一律不通过、必须补生成镜头后重新合成；3) 成片验收硬指标（全部用 media_probe 取证据）：分辨率符合 meta、有音轨、时长≈Σ镜头时长-转场重叠、响度约 -16 LUFS（±3）、**平均亮度 avgY ≥ 25（黑屏不通过；夜景等暗调题材 ≥ 18 且报告需说明）**、black 字段不得为 true；4) shot 与 final 都要探测；5) 字幕必须与配音逐句对齐（对照 subs/final.srt 与 scenes 文案），缺句/错句算不通过；6) 不通过时明确列出「哪个镜头/哪条配音/哪段字幕」需要返工，返工后重新合成再复审。' },
 ]
 let stats = { calls: 0, promptTokens: 0, completionTokens: 0, cacheHitTokens: 0, cost: 0, toolCalls: 0, byRole: {}, byModel: {}, updatedAt: 0 }
 let ROLE_META = {}      // ★ 由 roles 动态重建：{ id: role }，兼容旧代码的 ROLE_META[id].label/.color
@@ -654,6 +661,27 @@ const BASE_TOOL_PROTOCOL = `
 \`\`\`
 （kb_search 在工作区的本地知识库索引里检索 md/txt/PDF 等文档，返回命中的文件路径与原文片段）
 \`\`\`tool
+{"tool":"generate_speech","text":"要配音的文案","out":"audio/vo01.mp3","voice":"Cherry"}
+\`\`\`
+（云端 TTS 配音；返回音频时长。out/voice 可省略）
+\`\`\`tool
+{"tool":"generate_music","style":"calm","dur":30,"out":"audio/bgm.mp3"}
+\`\`\`
+（配乐：优先选用工作区 bgm/ 目录音乐（可 pick:"文件名"）；否则用 ffmpeg 合成无版权的氛围垫乐。style: calm/warm/tense/uplift）
+\`\`\`tool
+{"tool":"media_probe","path":"shots/shot01.mp4","loudness":true}
+\`\`\`
+（媒体探测：时长/分辨率/帧率/音视频轨/响度，质检用）
+\`\`\`tool
+{"tool":"make_subtitles","project":"video-project/project.json"}
+\`\`\`
+（按 project.json 文案与实测配音时长生成 SRT 字幕）
+\`\`\`tool
+{"tool":"compose_video","project":"video-project/project.json","out":"video-project/cut/final.mp4"}
+\`\`\`
+（合成成片：归一化镜头→转场拼接→配音+BGM 混音→烧录字幕；缺镜头的场景自动黑场占位）
+【图生视频 / 批量生成】generate_video 支持：image（关键帧路径，走图生视频；被拒自动回退文生视频）、out（输出到工程目录而非 artifacts）、shots:[{prompt,image,name,out}]（多镜批量，默认 2 路并发）、aspect（"9:16"/"16:9"）。
+\`\`\`tool
 {"tool":"ask_role","role":"角色id（如 planner/coder）","question":"想与对方商量/确认的问题"}
 \`\`\`
 \`\`\`tool
@@ -661,8 +689,9 @@ const BASE_TOOL_PROTOCOL = `
 \`\`\`
 （ask_user 会暂停任务等待用户回答，用户答复会作为工具结果返回；需求不明确时应主动提问）
 \`\`\`tool
-{"tool":"generate_image","prompt":"英文出图提示词","name":"可选英文文件名（PNG，自动保存到工作区 artifacts/）"}
+{"tool":"generate_image","prompt":"英文出图提示词","name":"可选文件名","out":"可选：同时保存到工作区此路径，如 video-project/keyframes/k01.png"}
 \`\`\`
+（generate_image 默认保存到全局 artifacts/；短视频工程请用 out 把关键帧存到 video-project/keyframes/ 下）
 \`\`\`tool
 {"tool":"generate_video","prompt":"英文视频提示词","name":"可选英文文件名（MP4，自动保存到工作区 artifacts/）"}
 \`\`\`
@@ -946,6 +975,19 @@ async function runTool(call, opts = {}) {
     if (call.tool === 'http_call') return await toolHttpCall(call)
     if (call.tool === 'vault_call') return await toolVaultCall(call)
     if (call.tool === 'run_exe') return await toolRunExe(call)
+    // ★ 媒体工具链（短视频流水线）
+    if (call.tool === 'media_probe') {
+      const p = String(call.path || call.file || '').trim()
+      if (!p) return '缺少 path（要探测的媒体文件，相对工作区）'
+      const abs = resolveInWorkspace(p, root)
+      if (!existsSync(abs)) return `文件不存在：${p}`
+      const info = await probeMedia(abs, { loudness: call.loudness !== false })
+      return JSON.stringify(info, null, 2)
+    }
+    if (call.tool === 'generate_speech') return await generateSpeech(call, { root })
+    if (call.tool === 'generate_music') return await generateMusic(call, { root })
+    if (call.tool === 'make_subtitles') return await makeSubtitles(call, { root })
+    if (call.tool === 'compose_video') return await composeVideo(call, { root }, opts.onProgress)
     if (call.tool === 'generate_image') {
       const target = resolveArtTarget(call)
       if (!target) return '未找到可用的出图模型：请先在「画板」选择出图模型（会自动记住），或在调用里指定 providerId/model。'
@@ -960,8 +1002,8 @@ async function runTool(call, opts = {}) {
  * 8.5 ★ 会话权限（查看/修改/受限/完全）与步骤确认
  * ═══════════════════════════════════════════════════════════════ */
 const PERMISSIONS = ['view', 'modify', 'limited', 'full']
-const READ_TOOLS = new Set(['read_file', 'list_files', 'web_search', 'web_fetch', 'kb_search'])
-const WRITE_TOOLS = new Set(['write_file'])
+const READ_TOOLS = new Set(['read_file', 'list_files', 'web_search', 'web_fetch', 'kb_search', 'media_probe'])
+const WRITE_TOOLS = new Set(['write_file', 'generate_speech', 'generate_music', 'make_subtitles', 'compose_video'])
 const EXEC_TOOLS = new Set(['run_command', 'run_exe'])
 function toolCategory(call) {
   if (READ_TOOLS.has(call.tool)) return 'read'
@@ -1116,22 +1158,51 @@ async function runToolGuarded(call, ctx = {}) {
       if (ctx.session) { ctx.session.autoApprove = true; saveSessions().catch(() => {}) }
     }
   }
-  // ★ 视频：生成后落盘 artifacts（MP4），供 AI 与用户使用
+  // ★ 视频：支持批量多镜、图生视频（image 关键帧）、指定输出路径（out）、进度上报
   if (call.tool === 'generate_video') {
     const target = resolveVideoTarget(call)
     if (!target) return '未找到可用的视频模型：请先在「视频」页选择视频模型（会自动记住），或在调用里指定 providerId/model。'
-    const prompt = String(call.prompt || '').trim()
-    if (!prompt) return '缺少 prompt（视频提示词）。'
-    try {
-      ctx.onImage?.({ phase: 'start', kind: 'video', prompt, name: call.name || '' })
-      const urls = await generateVideo(target.provider, target.model, prompt, call.name)
-      await recordArt(urls, { prompt, model: target.model, provider: target.provider.name, providerId: target.provider.id, role: ctx.agentId || 'chat', kind: 'video' })
-      ctx.onImage?.({ phase: 'done', kind: 'video', prompt, ok: true })
-      return `已生成视频（MP4，保存在当前工作区 artifacts/，可用相对路径引用）：\n${urls.join('\n')}`
-    } catch (e) {
-      ctx.onImage?.({ phase: 'done', kind: 'video', prompt, ok: false })
-      return `视频生成失败：${e.message}`
+    const jobs = Array.isArray(call.shots) && call.shots.length ? call.shots.slice(0, 8) : [{ prompt: call.prompt, name: call.name, image: call.image, out: call.out }]
+    if (!jobs.some((j) => String(j.prompt || '').trim())) return '缺少 prompt（视频提示词）。'
+    const vroot = ctx.root && existsSync(ctx.root) ? ctx.root : getActiveRoot()
+    const aspect = call.aspect || (call.size === '720*1280' ? '9:16' : '')
+    const conc = Math.max(1, Math.min(3, Number(call.concurrency) || 2))
+    const results = new Array(jobs.length).fill(null)
+    let finished = 0
+    const runOne = async (job, idx) => {
+      const prompt = String(job.prompt || '').trim()
+      if (!prompt) { results[idx] = { skip: true }; finished++; return }
+      const isI2V = !!job.image
+      const name = job.name || (call.out ? '' : `shot${String(idx + 1).padStart(2, '0')}`)
+      try {
+        ctx.onProgress?.({ phase: `镜头 ${idx + 1}/${jobs.length}`, detail: `${isI2V ? '图生视频' : '文生视频'}：${prompt.slice(0, 50)}`, pct: Math.round(finished / jobs.length * 100) })
+        ctx.onImage?.({ phase: 'start', kind: 'video', prompt, name })
+        const urls = await generateVideo(target.provider, target.model, prompt, name, {
+          image: job.image || '',
+          out: job.out || call.outDir ? (job.out || `${String(call.outDir).replace(/\/$/, '')}/${String(job.name || `shot${idx + 1}`)}.mp4`) : '',
+          root: vroot, aspect, size: call.size,
+        })
+        const relPath = urls[1] || urls[0]
+        if (!job.out && !call.outDir) await recordArt(urls.slice(0, 1), { prompt, model: target.model, provider: target.provider.name, providerId: target.provider.id, role: ctx.agentId || 'chat', kind: 'video' })
+        ctx.onImage?.({ phase: 'done', kind: 'video', prompt, ok: true })
+        results[idx] = { ok: true, path: relPath, prompt }
+      } catch (e) {
+        ctx.onImage?.({ phase: 'done', kind: 'video', prompt, ok: false })
+        results[idx] = { ok: false, error: e.message, prompt }
+      }
+      finished++
+      ctx.onProgress?.({ phase: `镜头 ${idx + 1}/${jobs.length}`, detail: results[idx]?.ok ? `完成：${results[idx].path}` : `失败：${results[idx]?.error || ''}`, pct: Math.round(finished / jobs.length * 100) })
     }
+    // 小型并发池（默认 2 路）
+    let cursor = 0
+    await Promise.all(Array.from({ length: Math.min(conc, jobs.length) }, async () => {
+      while (cursor < jobs.length) { const idx = cursor++; await runOne(jobs[idx], idx) }
+    }))
+    const okList = results.filter((r) => r && r.ok)
+    const failList = results.map((r, i) => ({ r, i })).filter((x) => x.r && !x.r.ok)
+    const lines = okList.map((r) => `- ${r.path}`).join('\n') || '（无）'
+    const failLines = failList.map((x) => `- 第 ${x.i + 1} 镜失败：${x.r.error}`).join('\n')
+    return `视频生成完成：成功 ${okList.length}/${jobs.length}\n${lines}${failLines ? `\n失败：\n${failLines}` : ''}\n（请把 shot 路径登记到 project.json 对应场景；失败镜头应调整提示词重试）`
   }
   // ★ 出图：生成 → 交由用户审核（保留/重画/删除）→ 通过后才返回给 AI 使用
   if (call.tool === 'generate_image') {
@@ -1147,8 +1218,19 @@ async function runToolGuarded(call, ctx = {}) {
         const urls = await generateImage(target.provider, target.model, prompt, name)
         await recordArt(urls, { prompt, model: target.model, provider: target.provider.name, providerId: target.provider.id, role: ctx.agentId || 'chat', keep: true })
         ctx.onImage?.({ phase: 'done', prompt, ok: true })
+        // ★ out 参数：把生成的图片同时保存到工作区指定路径（短视频工程的关键帧等需要放在会话工作区内）
+        let outRel = ''
+        if (call.out && urls.length) {
+          try {
+            const targetAbs = resolveInWorkspace(String(call.out), ctx.root)
+            await mkdir(path.dirname(targetAbs), { recursive: true })
+            const srcAbs = path.join(getArtifactDir(), path.basename(artRelOf(urls[0])))
+            await copyFile(srcAbs, targetAbs)
+            outRel = String(call.out).replace(/\\/g, '/')
+          } catch { /* ignore */ }
+        }
         const auto = ctx.autoState?.approvedAll || ctx.session?.autoApprove
-        if (auto || typeof ctx.onImageReview !== 'function') return `已生成图片（PNG，保存在当前工作区 artifacts/，可用相对路径引用）：\n${urls.join('\n')}`
+        if (auto || typeof ctx.onImageReview !== 'function') return outRel ? `已生成图片并保存到 ${outRel}（PNG，工作区相对路径，可直接登记到 project.json）\n（预览：${urls.join('\n')}）` : `已生成图片（PNG，保存在当前工作区 artifacts/，可用相对路径引用）：\n${urls.join('\n')}`
         const id = crypto.randomUUID()
         ctx.onImageReview({ id, urls, prompt })
         const decision = await waitReview(id)
@@ -1171,7 +1253,7 @@ async function runToolGuarded(call, ctx = {}) {
     return '该图多次未通过用户审核，已停止生成。请先与用户确认画面需求再继续。'
   }
   const allowOutside = perm === 'limited' || perm === 'full'
-  return await runTool(call, { root: ctx.root, allowOutside })
+  return await runTool(call, { root: ctx.root, allowOutside, onProgress: typeof ctx.onProgress === 'function' ? ctx.onProgress : undefined })
 }
 function normalizePlan(j) {
   // ★ 兼容多种模型输出格式：steps/plan.steps/数组、字段别名 agent/role/who 等
@@ -1844,38 +1926,514 @@ function resolveVideoTarget(call = {}) {
   const provider = providers.find((p) => p.id === call.providerId) || providers.find((p) => p.id === settings.videoProvider && hasVideo(p)) || providers.find(hasVideo)
   if (!provider) return null
   const models = (provider.models || []).filter((m) => (m.tags || []).includes('视频'))
-  const model = call.model || (provider.id === settings.videoProvider ? settings.videoModel : '') || models[0]?.id
+  const ids = new Set(models.map((m) => m.id))
+  // ★ 只认带「视频」标签的模型：settings/call 里若指定了非视频模型（如聊天模型），自动退回第一个视频模型
+  const model = (call.model && ids.has(call.model) ? call.model : '') ||
+    (provider.id === settings.videoProvider && settings.videoModel && ids.has(settings.videoModel) ? settings.videoModel : '') ||
+    models[0]?.id
   return model ? { provider, model } : null
 }
-async function generateVideo(provider, model, prompt, name) {
+/* ═══════════════════════════════════════════════════════════════
+ * 10.9 ★ 媒体工具链（短视频流水线核心）
+ *   · ffmpeg：复用 tools/ffmpeg.exe；缺失时首次使用自动下载并校验 sha256
+ *   · 探测：直接用 ffmpeg -i 解析（无需 ffprobe）
+ *   · project.json：短视频工程的单一事实源（meta + scenes[]）
+ * ═══════════════════════════════════════════════════════════════ */
+const FFMPEG_EXE = path.join(__dirname, 'tools', 'ffmpeg.exe')
+const XFADE_DUR = 0.4 // 镜头间转场时长（秒）
+function ffmpegReady() { return existsSync(FFMPEG_EXE) }
+async function ensureFfmpeg() {
+  if (ffmpegReady()) return FFMPEG_EXE
+  // ★ 首次使用：官方镜像下载 essentials 构建（附 .sha256 校验；如需手动安装：把 ffmpeg.exe 放入 tools/ 即可）
+  await mkdir(path.join(__dirname, 'tools'), { recursive: true })
+  const zipUrl = 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip'
+  const shaUrl = zipUrl + '.sha256'
+  const expect = (await (await fetch(shaUrl, { signal: AbortSignal.timeout(30000) })).text()).trim().split(/\s+/)[0].toLowerCase()
+  if (!/^[0-9a-f]{64}$/.test(expect)) throw new Error('ffmpeg 校验值获取失败：请手动下载 ffmpeg.exe 放入 tools/ 目录')
+  const buf = Buffer.from(await (await fetch(zipUrl, { signal: AbortSignal.timeout(900000) })).arrayBuffer())
+  const got = crypto.createHash('sha256').update(buf).digest('hex')
+  if (got !== expect) throw new Error('ffmpeg 下载校验失败（sha256 不一致），已放弃安装')
+  const zip = path.join(__dirname, 'tools', '_ffmpeg_dl.zip')
+  const outDir = path.join(__dirname, 'tools', '_ffmpeg_x')
+  await writeFile(zip, buf)
+  await execAsync(`powershell -NoProfile -Command "Expand-Archive -LiteralPath '${zip}' -DestinationPath '${outDir}' -Force"`, { timeout: 600000, windowsHide: true })
+  let found = ''
+  const walk = async (d) => {
+    for (const e of await readdir(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name)
+      if (e.isDirectory()) await walk(p)
+      else if (e.name.toLowerCase() === 'ffmpeg.exe') found = p
+    }
+  }
+  await walk(outDir)
+  if (!found) throw new Error('解压后未找到 ffmpeg.exe')
+  await copyFile(found, FFMPEG_EXE)
+  await rm(zip, { force: true }).catch(() => {})
+  await rm(outDir, { recursive: true, force: true }).catch(() => {})
+  return FFMPEG_EXE
+}
+async function runFfmpeg(args, timeoutMs = 900000, cwd = undefined) {
+  const exe = await ensureFfmpeg()
+  try {
+    const { stdout, stderr } = await execFileAsync(exe, args, { timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024, windowsHide: true, cwd })
+    return { stdout, stderr }
+  } catch (e) {
+    const tail = String((e && e.stderr) || e.message || '').split('\n').filter(Boolean).slice(-6).join('\n')
+    throw new Error(`ffmpeg 失败：${tail || '未知错误'}`)
+  }
+}
+// 媒体探测（时长/分辨率/帧率/音视频轨；loudness=true 时附带响度测量）
+async function probeMedia(abs, opts = {}) {
+  const exe = await ensureFfmpeg()
+  let out = ''
+  try { await execFileAsync(exe, ['-hide_banner', '-i', abs], { timeout: 30000, windowsHide: true }) } catch (e) { out = String((e && e.stderr) || '') }
+  const lines = out.split('\n')
+  const durM = out.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/)
+  const duration = durM ? (+durM[1]) * 3600 + (+durM[2]) * 60 + parseFloat(durM[3]) : 0
+  const vLine = lines.find((l) => /Stream #.*Video:/.test(l)) || ''
+  const aLine = lines.find((l) => /Stream #.*Audio:/.test(l)) || ''
+  const res = vLine.match(/(\d{2,5})x(\d{2,5})/)
+  const fps = vLine.match(/([\d.]+)\s*fps/)
+  const st = await stat(abs).catch(() => null)
+  const info = {
+    duration: Number(duration.toFixed(3)),
+    width: res ? Number(res[1]) : 0, height: res ? Number(res[2]) : 0,
+    fps: fps ? Number(fps[1]) : 0,
+    hasVideo: !!vLine, hasAudio: !!aLine,
+    videoCodec: (vLine.match(/Video:\s*([\w-]+)/) || [])[1] || '',
+    audioCodec: (aLine.match(/Audio:\s*([\w-]+)/) || [])[1] || '',
+    size: st ? st.size : 0,
+  }
+  if (opts.loudness) {
+    try {
+      let lout = ''
+      try {
+        const r = await execFileAsync(exe, ['-hide_banner', '-i', abs, '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json', '-f', 'null', '-'], { timeout: 120000, windowsHide: true })
+        lout = r.stderr
+      } catch (e2) { lout = String((e2 && e2.stderr) || '') }
+      const m = lout.match(/\{[\s\S]*?\}\s*$/)
+      if (m) { const j = JSON.parse(m[0]); info.loudness = { input_i: Number(j.input_i), input_tp: Number(j.input_tp), target: -16 } }
+    } catch { /* ignore */ }
+  }
+  // ★ 亮度采样（黑屏检测）：2fps 抽帧 YAVG 平均值；avgY < 22 视为疑似黑屏
+  if (opts.brightness !== false && info.hasVideo) {
+    try {
+      let bout = ''
+      try {
+        const r = await execFileAsync(exe, ['-hide_banner', '-i', abs, '-vf', 'fps=2,signalstats,metadata=print', '-f', 'null', '-'], { timeout: 120000, windowsHide: true })
+        bout = r.stderr
+      } catch (e3) { bout = String((e3 && e3.stderr) || '') }
+      const vals = (bout.match(/YAVG=([\d.]+)/g) || []).map((x) => parseFloat(x.split('=')[1]))
+      if (vals.length) {
+        const avg = vals.reduce((a, b) => a + b, 0) / vals.length
+        info.avgY = Number(avg.toFixed(1))
+        info.black = avg < 22
+      }
+    } catch { /* ignore */ }
+  }
+  return info
+}
+async function downloadTo(url, abs) { const r = await fetch(url); if (!r.ok) throw new Error(`下载失败 HTTP ${r.status}`); await writeFile(abs, Buffer.from(await r.arrayBuffer())) }
+// ★ 媒体文件路径容错解析：project.json 字段可能是「工程内相对」或「工作区相对」（带 video-project/ 前缀），两者都兼容
+function resolveMediaFile(root, projDir, rel) {
+  const r = String(rel || '').replace(/\\/g, '/').trim()
+  if (!r) return ''
+  const cands = []
+  if (projDir) cands.push(path.posix.join(projDir, r))
+  cands.push(r)
+  cands.push('artifacts/' + path.posix.basename(r))
+  for (const c of cands) { try { const a = resolveInWorkspace(c, root); if (existsSync(a)) return a } catch { /* ignore */ } }
+  const g = path.join(getArtifactDir(), path.posix.basename(r))
+  if (existsSync(g)) return g
+  return ''
+}
+// 短视频工程：读取 project.json（默认 video-project/project.json）
+async function loadVideoProject(root, rel) {
+  const p = String(rel || 'video-project/project.json').replace(/\\/g, '/')
+  const abs = resolveInWorkspace(p, root)
+  const j = JSON.parse(await readFile(abs, 'utf8'))
+  j._dir = path.posix.dirname(p)
+  j._file = p
+  return j
+}
+// 时间线规划：场景时长 = max(声明时长, 配音时长+0.4)；转场重叠 0.4s；配音在镜头出现后 0.25s 起
+async function planTimeline(root, proj) {
+  const scenes = Array.isArray(proj.scenes) ? proj.scenes : []
+  const out = []
+  let videoStart = 0
+  for (let i = 0; i < scenes.length; i++) {
+    const sc = scenes[i]
+    const voiceRel = sc.voice ? String(sc.voice).replace(/\\/g, '/') : ''
+    let vd = 0
+    if (voiceRel) {
+      const vAbs = resolveMediaFile(root, proj._dir, voiceRel)
+      if (vAbs) vd = (await probeMedia(vAbs).catch(() => ({ duration: 0 }))).duration
+    }
+    const dur = Math.max(1, Math.max(Number(sc.dur) || 5, vd ? vd + 0.4 : 0))
+    out.push({ i, sc, dur: Number(dur.toFixed(3)), videoStart: Number(videoStart.toFixed(3)), voiceRel, voiceDur: vd, voiceStart: voiceRel ? Number((videoStart + 0.25).toFixed(3)) : 0 })
+    videoStart += dur - (i < scenes.length - 1 ? XFADE_DUR : 0)
+  }
+  return { scenes: out, total: Number(videoStart.toFixed(3)), xfade: scenes.length > 1 ? XFADE_DUR : 0 }
+}
+function srtTime(sec) {
+  const s = Math.max(0, sec); const h = Math.floor(s / 3600); const m = Math.floor((s % 3600) / 60); const ss = Math.floor(s % 60); const ms = Math.round((s - Math.floor(s)) * 1000)
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(ss).padStart(2, '0')},${String(ms).padStart(3, '0')}`
+}
+// 生成 ASS 字幕（PlayRes 与成片一致 → 字号/边距可控；比 SRT+force_style 更稳定）
+function buildAss(proj, tl) {
+  const meta = proj.meta || {}
+  const W = Number(meta.width) || (meta.aspect === '16:9' ? 1280 : 1080)
+  const H = Number(meta.height) || (meta.aspect === '16:9' ? 720 : 1920)
+  const fontSize = Math.max(18, Math.round(H * 0.030))
+  const marginV = Math.round(H * 0.055)
+  const head = `[Script Info]\nScriptType: v4.00+\nPlayResX: ${W}\nPlayResY: ${H}\nWrapStyle: 2\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Microsoft YaHei,${fontSize},&H00FFFFFF,&H00FFFFFF,&H80000000,&H80000000,0,0,0,0,100,100,0,0,1,2,0,2,60,60,${marginV},1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n`
+  const t = (sec) => { const s = Math.max(0, sec); const h = Math.floor(s / 3600); const m = Math.floor((s % 3600) / 60); const ss = s % 60; return `${h}:${String(m).padStart(2, '0')}:${ss.toFixed(2).padStart(5, '0')}` }
+  const lines = []
+  for (const it of tl.scenes) {
+    const text = String(it.sc.subtitleText || it.sc.narration || '').trim()
+    if (!text) continue
+    const start = it.videoStart + 0.1
+    const end = Math.max(start + 1.2, it.videoStart + it.dur - (it.i < tl.scenes.length - 1 ? XFADE_DUR : 0.2))
+    lines.push(`Dialogue: 0,${t(start)},${t(end)},Default,,0,0,0,,${wrapCJK(text).join('\\N')}`)
+  }
+  return lines.length ? head + lines.join('\n') + '\n' : ''
+}
+function wrapCJK(text, maxLen = 16) {
+  const s = String(text || '').trim()
+  if (!s) return ['（无文案）']
+  const out = []; let cur = ''
+  for (const ch of s) { cur += ch; if (cur.length >= maxLen || /[。！？!?]/.test(ch)) { out.push(cur); cur = '' } }
+  if (cur) out.push(cur)
+  return out.slice(0, 2) // 每条字幕最多两行
+}
+async function buildSrt(root, proj, tl) {
+  const parts = []
+  let n = 0
+  for (const t of tl.scenes) {
+    const sc = t.sc
+    const text = String(sc.subtitleText || sc.narration || '').trim()
+    if (!text) continue
+    n++
+    const start = t.videoStart + 0.1
+    const end = Math.max(start + 1.2, t.videoStart + t.dur - (t.i < tl.scenes.length - 1 ? XFADE_DUR : 0.2))
+    parts.push(`${n}\n${srtTime(start)} --> ${srtTime(end)}\n${wrapCJK(text).join('\n')}\n`)
+  }
+  return parts.join('\n')
+}
+// 云端 TTS（百炼 qwen-tts / OpenAI 兼容 /audio/speech）
+async function generateSpeech(call, ctx) {
+  const text = String(call.text || '').trim()
+  if (!text) return '缺少 text（要配音的文案）'
+  const dir = path.posix.dirname(String(call.out || `audio/vo-${Date.now()}.mp3`).replace(/\\/g, '/'))
+  const out = String(call.out || `audio/vo-${Date.now()}.mp3`).replace(/\\/g, '/')
+  const abs = resolveInWorkspace(out, ctx.root)
+  await mkdir(path.dirname(abs), { recursive: true })
+  const backend = settings.voiceBackend === 'voicestudio' ? 'voicestudio' : 'cloud'
+  if (backend === 'voicestudio') {
+    return '本地声音引擎（VoiceStudio）尚未接入（规划中）：请把 设置 → 媒体引擎 → 声音后端 切回「云端」，或等后续版本支持。'
+  }
+  const provider = providers.find((p) => p.id === settings.ttsProviderId) || providers.find((p) => (p.baseUrl || '').includes('dashscope')) || providers.find((p) => /api\.openai\.com|openai/i.test(p.baseUrl || ''))
+  if (!provider) return '未找到可用的 TTS 提供方：请在 API 仓库添加「百炼」或 OpenAI 兼容接口，并在 设置 → 媒体引擎 中指定。'
+  const key = await getSecret(provider.id)
+  const isDash = (provider.baseUrl || '').includes('dashscope')
+  const model = settings.ttsModel || (isDash ? 'qwen-tts' : 'tts-1')
+  const voice = String(call.voice || settings.ttsVoice || (isDash ? 'Cherry' : 'alloy'))
+  try {
+    if (isDash) {
+      const root = provider.baseUrl.replace(/\/compatible-mode\/v1\/?$/, '')
+      // ★ qwen-tts 系列：input.text + input.voice（旧形状 messages 会报 Field required: input.text，这里做兼容回退）
+      const shapes = [
+        { input: { text: String(text).slice(0, 3000), voice }, parameters: {} },
+        { input: { text: String(text).slice(0, 3000) }, parameters: { voice } },
+        { input: { messages: [{ role: 'user', content: [{ text: String(text).slice(0, 3000) }] }] }, parameters: { voice } },
+      ]
+      let j = null; let ok = false
+      for (const sh of shapes) {
+        const r = await fetch(joinUrl(root, 'api/v1/services/aigc/multimodal-generation/generation'), {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+          body: JSON.stringify({ model, ...sh }),
+        })
+        j = await r.json().catch(() => null)
+        if (r.ok && !j?.code) { ok = true; break }
+        // 仅当错误与请求形状/音色相关时换下一种形状，其他错误直接返回
+        if (!/text|voice|required|InvalidParameter/i.test(String(j?.code || '') + String(j?.message || ''))) break
+      }
+      if (!ok) return `TTS 失败：${j?.message || j?.code || '未知错误'}`
+      const url = j?.output?.audio?.url || j?.output?.audio_url || j?.output?.audio?.data
+      if (!url) return `TTS 未返回音频地址：${JSON.stringify(j).slice(0, 300)}`
+      if (String(url).startsWith('data:')) {
+        const b64 = String(url).split(',')[1] || ''
+        await writeFile(abs, Buffer.from(b64, 'base64'))
+      } else await downloadTo(url, abs)
+    } else {
+      const r = await fetch(joinUrl(provider.baseUrl, 'audio/speech'), {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+        body: JSON.stringify({ model, input: String(text).slice(0, 3000), voice, response_format: out.endsWith('.wav') ? 'wav' : 'mp3' }),
+      })
+      if (!r.ok) return `TTS 失败：HTTP ${r.status} ${(await r.text().catch(() => '')).slice(0, 200)}`
+      await writeFile(abs, Buffer.from(await r.arrayBuffer()))
+    }
+  } catch (e) { return `TTS 调用失败：${e.message}` }
+  const info = await probeMedia(abs).catch(() => ({ duration: 0, hasAudio: false }))
+  return `已生成配音：${out}（${info.duration}s${info.hasAudio ? '，含音轨' : ''}）\n请把路径登记到 project.json 对应场景的 voice 字段（相对 video-project 目录）。`
+}
+// 配乐：优先用户 bgm/ 目录，其次 ffmpeg 合成氛围垫乐（CC0，自生成）
+async function generateMusic(call, ctx) {
+  const dur = Math.max(3, Math.min(300, Number(call.dur) || 30))
+  const style = String(call.style || 'calm').toLowerCase()
+  const out = String(call.out || `audio/bgm-${Date.now()}.mp3`).replace(/\\/g, '/')
+  const abs = resolveInWorkspace(out, ctx.root)
+  await mkdir(path.dirname(abs), { recursive: true })
+  const bgmDir = path.join(ctx.root, 'bgm')
+  const files = (await readdir(bgmDir).catch(() => [])).filter((f) => /\.(mp3|wav|m4a|flac|ogg|aac)$/i.test(f))
+  const jsonList = files.map((f) => `bgm/${f}`).join('、') || '（空）'
+  if (call.list) return `工作区 bgm/ 目录下的音乐：${jsonList}`
+  const pickName = call.pick ? files.find((f) => f.includes(String(call.pick))) : (call.useLibrary !== false && files.length ? files[0] : '')
+  if (pickName) {
+    await copyFile(path.join(bgmDir, pickName), abs)
+    const info = await probeMedia(abs).catch(() => ({ duration: 0 }))
+    return `已选用本机音乐：bgm/${pickName} → ${out}（${info.duration}s）`
+  }
+  // 合成氛围垫乐（各风格 = 不同和声组合 + 慢速起伏 + 低通 + 回声；无版权负担）
+  const freqs = { calm: [196, 247, 294], warm: [220, 277, 330], tense: [110, 131, 165], uplift: [262, 330, 392] }[style] || [196, 247, 294]
+  const expr = freqs.map((f, k) => `${(0.20 - k * 0.04).toFixed(2)}*sin(2*PI*${f}*t)`).join('+')
+  const aev = `aevalsrc=${expr}:s=44100:d=${dur}`
+  await runFfmpeg([
+    '-y', '-f', 'lavfi', '-i', aev,
+    '-af', `tremolo=f=0.12:d=0.35,lowpass=f=1400,aecho=0.7:0.5:140|280:0.3|0.18,afade=t=in:st=0:d=1.5,afade=t=out:st=${(dur - 2.5).toFixed(2)}:d=2.5`,
+    '-c:a', 'libmp3lame', '-b:a', '160k', abs,
+  ], 120000)
+  const info = await probeMedia(abs).catch(() => ({ duration: 0 }))
+  return `已合成氛围配乐（风格 ${style}）：${out}（${info.duration}s，CC0 自生成）\n提示：你也可以把喜欢的音乐放到工作区 bgm/ 目录，然后 pick:"文件名" 直接选用。`
+}
+// 字幕生成：按 project.json + 实测配音时长
+async function makeSubtitles(call, ctx) {
+  let proj
+  try { proj = await loadVideoProject(ctx.root, call.project) } catch { return '未找到 project.json：请先由编剧创建视频工程文件（video-project/project.json）' }
+  const tl = await planTimeline(ctx.root, proj)
+  const srt = await buildSrt(ctx.root, proj, tl)
+  if (!srt.trim()) return '工程内没有任何文案（scenes[].narration 为空），无需字幕'
+  const srtRel = String(call.out || `${proj._dir}/subs/final.srt`).replace(/\\/g, '/')
+  const srtAbs = resolveInWorkspace(srtRel, ctx.root)
+  await mkdir(path.dirname(srtAbs), { recursive: true })
+  await writeFile(srtAbs, srt, 'utf8')
+  // ★ 同时生成 ASS（字号/边距按画幅精确控制，合成时优先使用）
+  const ass = buildAss(proj, tl)
+  const assRel = srtRel.replace(/\.srt$/i, '.ass')
+  if (ass) { await writeFile(resolveInWorkspace(assRel, ctx.root), ass, 'utf8') }
+  const count = (srt.match(/-->/g) || []).length
+  return `已生成字幕：${assRel}（ASS，用于烧录）+ ${srtRel}（SRT，便于查看），共 ${count} 条，时间轴与配音时长对齐`
+}
+// 合成成片：归一化 → 转场拼接 → 混音（配音+BGM）→ 烧字幕输出
+async function composeVideo(call, ctx, onProgress) {
+  let proj
+  try { proj = await loadVideoProject(ctx.root, call.project) } catch { return '未找到 project.json：请先准备视频工程文件' }
+  await ensureFfmpeg()
+  const dirAbs = resolveInWorkspace(proj._dir, ctx.root)
+  const workAbs = path.join(dirAbs, 'work')
+  await mkdir(workAbs, { recursive: true })
+  const tl = await planTimeline(ctx.root, proj)
+  if (!tl.scenes.length) return '工程 scenes 为空'
+  const meta = proj.meta || {}
+  const isV = meta.aspect === '16:9'
+  const W = Number(meta.width) || (isV ? 1280 : 1080)
+  const H = Number(meta.height) || (isV ? 720 : 1920)
+  const fps = Number(meta.fps) || 30
+  const dirAbsEarly = resolveInWorkspace(proj._dir, ctx.root)
+  const toCmdEarly = (abs) => path.relative(dirAbsEarly, abs).replace(/\\/g, '/') // 以工程目录为 cwd 的相对路径
+  onProgress?.('归一化镜头', `0/${tl.scenes.length}`, 5)
+  // A. 归一化每个镜头（缺失镜头自动用黑场占位并在结果中明确警告）
+  const missingShots = []
+  for (const t of tl.scenes) {
+    const shotRel = t.sc.shot ? String(t.sc.shot).replace(/\\/g, '/') : ''
+    const outRel = `work/n${t.i}.mp4`
+    const vf = `scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:black,fps=${fps},format=yuv420p`
+    const shotAbs = shotRel ? resolveMediaFile(ctx.root, proj._dir, shotRel) : ''
+    const srcArg = shotAbs ? toCmdEarly(shotAbs) : ''
+    if (shotAbs) {
+      await runFfmpeg(['-y', '-i', srcArg, '-t', String(t.dur), '-vf', vf, '-an', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', outRel], 600000, dirAbs)
+    } else {
+      if (shotRel) missingShots.push(t.sc.id ?? t.i + 1)
+      await runFfmpeg(['-y', '-f', 'lavfi', '-i', `color=c=black:s=${W}x${H}:d=${t.dur}:r=${fps}`, '-vf', vf, '-an', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', outRel], 300000, dirAbs)
+    }
+    onProgress?.('归一化镜头', `${t.i + 1}/${tl.scenes.length}${shotAbs ? '' : '（缺镜头，黑场占位）'}`, 5 + Math.round((t.i + 1) / tl.scenes.length * 30))
+  }
+  // B. 转场拼接（xfade 链）
+  onProgress?.('拼接与转场', '', 40)
+  let acc = 'work/n0.mp4'
+  let accDur = tl.scenes[0].dur
+  for (let i = 1; i < tl.scenes.length; i++) {
+    const offset = Math.max(0, accDur - XFADE_DUR)
+    const outRel = `work/acc${i}.mp4`
+    await runFfmpeg(['-y', '-i', acc, '-i', `work/n${i}.mp4`, '-filter_complex', `[0:v][1:v]xfade=transition=fade:duration=${XFADE_DUR}:offset=${offset.toFixed(3)}[v]`, '-map', '[v]', '-an', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', outRel], 600000, dirAbs)
+    acc = outRel
+    accDur = accDur + tl.scenes[i].dur - XFADE_DUR
+  }
+  // C. 音轨：配音（按时间线延迟）+ BGM（循环/音量/淡入淡出）→ 混音
+  onProgress?.('混音', '', 60)
+  const total = Math.max(accDur, tl.total)
+  const inputArgs = []
+  const fParts = []
+  const voLabels = []
+  let idx = 0
+  const missingVoices = []
+  for (const t of tl.scenes) {
+    if (!t.voiceRel) continue
+    const vAbs = resolveMediaFile(ctx.root, proj._dir, t.voiceRel)
+    if (!vAbs) { missingVoices.push(t.sc.id ?? t.i + 1); continue }
+    inputArgs.push('-i', toCmdEarly(vAbs))
+    const delay = Math.round(t.voiceStart * 1000)
+    fParts.push(`[${idx}:a]adelay=${delay}|${delay},volume=1.0[v${idx}]`)
+    voLabels.push(`[v${idx}]`)
+    idx++
+  }
+  const bgmRel = meta.music && meta.music.file ? String(meta.music.file).replace(/\\/g, '/') : ''
+  const bgmAbs = bgmRel ? resolveMediaFile(ctx.root, proj._dir, bgmRel) : ''
+  let bgLabel = ''
+  if (bgmAbs) {
+    inputArgs.push('-stream_loop', '-1', '-i', toCmdEarly(bgmAbs))
+    const vol = Number(meta.music?.volumeDb ?? -18)
+    const fadeOutStart = Math.max(0, total - 2.5).toFixed(2)
+    fParts.push(`[${idx}:a]volume=${vol}dB,afade=t=in:st=0:d=1.5,afade=t=out:st=${fadeOutStart}:d=2.5,atrim=0:${total.toFixed(3)}[bg]`)
+    bgLabel = '[bg]'
+    idx++
+  }
+  let mixRel = ''
+  if (voLabels.length || bgLabel) {
+    if (voLabels.length && bgLabel) {
+      fParts.push(`${voLabels.join('')}amix=inputs=${voLabels.length}:normalize=0[vo]`)
+      fParts.push('[vo][bg]amix=inputs=2:normalize=0,alimiter=limit=0.95,loudnorm=I=-16:TP=-1.5:LRA=11[a]')
+    } else if (voLabels.length) {
+      fParts.push(`${voLabels.join('')}amix=inputs=${voLabels.length}:normalize=0,alimiter=limit=0.95,loudnorm=I=-16:TP=-1.5:LRA=11[a]`)
+    } else {
+      fParts.push('[bg]alimiter=limit=0.95,loudnorm=I=-16:TP=-1.5:LRA=11[a]')
+    }
+    mixRel = 'work/mix.m4a'
+    await runFfmpeg(['-y', ...inputArgs, '-filter_complex', fParts.join(';'), '-map', '[a]', '-t', total.toFixed(3), '-c:a', 'aac', '-b:a', '192k', mixRel], 600000, dirAbs)
+  }
+  // D. 合并 + 旋转字幕 + 首尾淡入淡出
+  onProgress?.('输出成片', '', 85)
+  // ★ 字幕优先用 ASS（字号/边距按画幅精确控制）；没有 ASS 时退回 SRT + force_style
+  const assAbs = resolveInWorkspace(`${proj._dir}/subs/final.ass`, ctx.root)
+  const srtAbs = resolveInWorkspace(`${proj._dir}/subs/final.srt`, ctx.root)
+  const useAss = existsSync(assAbs)
+  const hasSub = useAss || existsSync(srtAbs)
+  // ★ 所有 ffmpeg 参数路径都换算成「工程目录相对路径」（cwd=工程目录），避免路径重复拼接
+  const toCmd = (abs) => path.relative(dirAbs, abs).replace(/\\/g, '/')
+  const style = 'FontName=Microsoft YaHei,FontSize=10,PrimaryColour=&H00FFFFFF,OutlineColour=&H80000000,BorderStyle=1,Outline=2,Shadow=0,MarginV=8'
+  const subFilter = hasSub ? (useAss ? `subtitles=${toCmd(assAbs)}` : `subtitles=${toCmd(srtAbs)}:force_style='${style}'`) + ',' : ''
+  const vf = `${subFilter}fade=t=in:st=0:d=0.5,fade=t=out:st=${Math.max(0, total - 0.6).toFixed(2)}:d=0.6`
+  const outRel = String(call.out || `${proj._dir}/cut/final.mp4`).replace(/\\/g, '/')
+  const outAbs = resolveInWorkspace(outRel, ctx.root)
+  await mkdir(path.dirname(outAbs), { recursive: true })
+  const dArgs = ['-y', '-i', acc, ...(mixRel ? ['-i', mixRel] : []), '-vf', vf, '-map', '0:v']
+  if (mixRel) dArgs.push('-map', '1:a')
+  dArgs.push('-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-t', total.toFixed(3), toCmd(outAbs))
+  await runFfmpeg(dArgs, 1800000, dirAbs)
+  const info = await probeMedia(outAbs, { loudness: true }).catch(() => ({}))
+  onProgress?.('完成', outRel, 100)
+  const warns = []
+  if (missingShots.length) warns.push(`镜头文件缺失 ${missingShots.length} 个（已黑场占位）：镜 ${missingShots.join('、')} —— 必须返工补生成后重新合成`)
+  if (missingVoices.length) warns.push(`配音文件缺失 ${missingVoices.length} 个：镜 ${missingVoices.join('、')}`)
+  if (info.black) warns.push(`成片画面亮度过低（avgY=${info.avgY}），疑似黑屏，请检查镜头素材`)
+  return `已合成成片：${outRel}
+- 时长：${info.duration ?? '?'}s · 分辨率：${info.width ?? '?'}x${info.height ?? '?'} · 音轨：${info.hasAudio ? '有' : '无'}${info.loudness ? ` · 响度：${info.loudness.input_i} LUFS（目标 -16）` : ''}${info.avgY != null ? ` · 平均亮度：${info.avgY}` : ''}
+- 规格：${tl.scenes.length} 个镜头，转场 ${XFADE_DUR}s${hasSub ? `，已烧录字幕（${useAss ? 'ASS' : 'SRT'}）` : '（无字幕文件）'}
+${warns.length ? '★ 警告：\n- ' + warns.join('\n- ') + '\n' : ''}请用 media_probe 复核并交付质检。`
+}
+// 百炼视频：i2v 需要公网可访问的图片 → 走官方临时存储上传（getPolicy → OSS → oss://）
+async function dashscopeUploadImage(provider, absPath, model) {
+  const key = await getSecret(provider.id)
+  const st = await stat(absPath); const fname = path.basename(absPath)
+  const pj = await (await fetch(`https://dashscope.aliyuncs.com/api/v1/uploads?action=getPolicy&model=${encodeURIComponent(model)}&file_name=${encodeURIComponent(fname)}&file_size=${st.size}`, { headers: { Authorization: `Bearer ${key}` } })).json()
+  const d = pj && pj.data
+  if (!d || !d.upload_host || !d.upload_dir) throw new Error(`临时上传凭证失败：${JSON.stringify(pj).slice(0, 200)}`)
+  const form = new FormData()
+  form.append('OSSAccessKeyId', d.oss_access_key_id)
+  form.append('policy', d.policy)
+  form.append('Signature', d.signature)
+  form.append('key', `${d.upload_dir}/${fname}`)
+  form.append('x-oss-object-acl', d.x_oss_object_acl || 'private')
+  form.append('x-oss-forbid-overwrite', String(d.x_oss_forbid_overwrite ?? 'true'))
+  form.append('success_action_status', '200')
+  form.append('file', new Blob([await readFile(absPath)]), fname)
+  const up = await fetch(d.upload_host, { method: 'POST', body: form })
+  if (!up.ok) throw new Error(`图片上传失败 HTTP ${up.status}`)
+  return `oss://${d.upload_dir}/${fname}`
+}
+async function generateVideo(provider, model, prompt, name, opts = {}) {
   const base = provider.baseUrl || ''
   const key = await getSecret(provider.id)
   const headers = { 'Content-Type': 'application/json', ...(key ? { Authorization: `Bearer ${key}` } : {}) }
   if (!base.includes('dashscope')) throw new Error('当前仅支持阿里云百炼（dashscope）的视频模型')
   const root = base.replace(/\/compatible-mode\/v1\/?$/, '')
-  const r = await fetch(joinUrl(root, 'api/v1/services/aigc/video-generation/video-synthesis'), {
-    method: 'POST', headers: { ...headers, 'X-DashScope-Async': 'enable' },
-    body: JSON.stringify({ model, input: { prompt }, parameters: { size: '1280*720' } }),
-  })
-  const j = await r.json().catch(() => null)
-  if (!r.ok || j?.code) throw new Error(`视频生成失败：${j?.message || `HTTP ${r.status}`}`)
-  const taskId = j?.output?.task_id
-  for (let i = 0; i < 200; i++) {
-    await new Promise((s) => setTimeout(s, 3000))
-    const qj = await (await fetch(joinUrl(root, `api/v1/tasks/${taskId}`), { headers: { Authorization: `Bearer ${key}` } })).json().catch(() => null)
-    const st = qj?.output?.task_status
-    if (st === 'SUCCEEDED') {
-      const url = qj?.output?.video_url || (qj?.output?.results || [])[0]?.url
-      if (!url) throw new Error('未返回视频地址')
-      const fname = `${String(name || '').replace(/[^\w\u4e00-\u9fa5-]/g, '_').slice(0, 40) || `video-${Date.now()}`}.mp4`
-      const rr = await fetch(url)
-      if (!rr.ok) throw new Error(`下载视频失败 HTTP ${rr.status}`)
-      await writeFile(path.join(getArtifactDir(), fname), Buffer.from(await rr.arrayBuffer()))
-      return [`/api/artifact?path=${encodeURIComponent('artifacts/' + fname)}`]
+  // ★ 图生视频：先上传关键帧拿 oss:// 引用；失败则回退文生视频。
+  //   关键帧路径容错：工作区相对 → 输出目录相对 → artifacts/ 相对 → 全局 artifacts 目录
+  let imgUrl = ''
+  if (opts.image && opts.root) {
+    const img = String(opts.image).replace(/\\/g, '/')
+    const cands = [img]
+    if (opts.out) cands.push(path.posix.join(path.posix.dirname(String(opts.out).replace(/\\/g, '/')), img))
+    cands.push('artifacts/' + path.posix.basename(img))
+    let imgAbs = ''
+    for (const c of cands) { const a = resolveInWorkspace(c, opts.root); if (existsSync(a)) { imgAbs = a; break } }
+    if (!imgAbs) {
+      const g = path.join(getArtifactDir(), path.basename(img))
+      if (existsSync(g)) imgAbs = g
     }
-    if (st === 'FAILED') throw new Error(`视频任务失败：${qj?.output?.message || '未知'}`)
+    if (!imgAbs) throw new Error(`图生视频的关键帧文件不存在：${opts.image}（请先用 generate_image 生成并带 out 参数保存到工作区内，如 out:"video-project/keyframes/k01.png"）`)
+    try { imgUrl = await dashscopeUploadImage(provider, imgAbs, model) } catch (e) { dbg('video.upload_fail', { message: e.message }) }
   }
-  throw new Error('视频生成超时')
+  const sizeMap = { '9:16': '720*1280', '16:9': '1280*720' }
+  const size = opts.size || (opts.aspect && sizeMap[opts.aspect]) || '1280*720'
+  // ★ 单次提交（可带/不带关键帧）+ 轮询；用 oss:// 时必须加 X-DashScope-OssResourceResolve 请求头
+  const submitAndWait = async (useImage) => {
+    const input = { prompt }
+    if (useImage && imgUrl) input.img_url = imgUrl
+    const reqHeaders = { ...headers, 'X-DashScope-Async': 'enable' }
+    if (useImage && imgUrl && imgUrl.startsWith('oss://')) reqHeaders['X-DashScope-OssResourceResolve'] = 'enable'
+    dbg('video.synth_submit', { model, useImage, hasImg: !!input.img_url, img: String(input.img_url || '').slice(0, 60), size })
+    const r = await fetch(joinUrl(root, 'api/v1/services/aigc/video-generation/video-synthesis'), {
+      method: 'POST', headers: reqHeaders,
+      body: JSON.stringify({ model, input, parameters: { size } }),
+    })
+    const j = await r.json().catch(() => null)
+    if (!r.ok || j?.code) throw new Error(`视频生成失败：${j?.message || `HTTP ${r.status}`}`)
+    const taskId = j?.output?.task_id
+    for (let i = 0; i < 240; i++) {
+      await new Promise((s) => setTimeout(s, 3000))
+      const qj = await (await fetch(joinUrl(root, `api/v1/tasks/${taskId}`), { headers: { Authorization: `Bearer ${key}` } })).json().catch(() => null)
+      const st = qj?.output?.task_status
+      if (st === 'SUCCEEDED') return { url: qj?.output?.video_url || (qj?.output?.results || [])[0]?.url, taskId }
+      if (st === 'FAILED') throw new Error(qj?.output?.message || '任务失败')
+    }
+    throw new Error('视频生成超时')
+  }
+  let result
+  try {
+    result = await submitAndWait(!!imgUrl)
+  } catch (e) {
+    // ★ 图生视频失败（含被内容审核拒绝）自动回退文生视频（不带关键帧重新提交一次）
+    if (imgUrl) {
+      dbg('video.i2v_retry', { reason: e.message })
+      result = await submitAndWait(false).catch((e2) => { throw new Error(`图生视频失败（${e.message}）；回退文生视频也失败（${e2.message}）`) })
+    } else throw e
+  }
+  if (!result.url) throw new Error('未返回视频地址')
+  // ★ 输出位置：优先 call/out 指定的工程路径（相对工作区），否则沿用 artifacts/
+  let absOut, relOut
+  if (opts.out) {
+    relOut = String(opts.out).replace(/\\/g, '/')
+    absOut = resolveInWorkspace(relOut, opts.root || getActiveRoot())
+  } else {
+    const fname = `${String(name || '').replace(/[^\w\u4e00-\u9fa5-]/g, '_').slice(0, 40) || `video-${Date.now()}`}.mp4`
+    absOut = path.join(getArtifactDir(), fname)
+    relOut = 'artifacts/' + fname
+  }
+  if (opts.skipDownload) return [relOut, result.taskId, result.url]
+  await mkdir(path.dirname(absOut), { recursive: true })
+  await downloadTo(result.url, absOut)
+  return [`/api/artifact?path=${encodeURIComponent(relOut)}`, relOut]
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -2148,6 +2706,7 @@ async function runTeam(task, opts = {}) {
             onQuestion: (q) => send({ type: 'question', ...q }),
             onAsk: (info) => { recordAsk(info); send({ type: 'ask', ...info }) },
             onAskDone: (info) => { recordAskDone(info); send({ type: 'ask_done', ...info }) },
+            onProgress: (info) => send({ type: 'tool_progress', agent: roleId, ...info }), // ★ 长任务进度（视频/合成）
             // ★ 权限不足时主动向用户申请（角色卡片会显示棕色感叹号）
             onPermRequest: async (info) => {
               const id = crypto.randomUUID()
@@ -2233,6 +2792,7 @@ async function runTeam(task, opts = {}) {
             onQuestion: (q) => send({ type: 'question', ...q }),
             onAsk: (info) => { recordAsk(info); send({ type: 'ask', ...info }) },
             onAskDone: (info) => { recordAskDone(info); send({ type: 'ask_done', ...info }) },
+            onProgress: (info) => send({ type: 'tool_progress', agent: 'leader', ...info }),
             onPermRequest: async (info) => {
               const id = crypto.randomUUID()
               send({ type: 'permreq', agent: 'leader', permreq: { id, ...info } })
@@ -2553,6 +3113,7 @@ async function handleApi(req, res, url) {
     if (b.lanListen != null) b.lanListen = !!b.lanListen
     if (b.pauseOnDisconnect != null) b.pauseOnDisconnect = !!b.pauseOnDisconnect
     if (b.kbAuto != null) b.kbAuto = !!b.kbAuto // ★ 知识库自动检索注入开关
+    if (b.voiceBackend != null) b.voiceBackend = b.voiceBackend === 'voicestudio' ? 'voicestudio' : 'cloud' // ★ 声音后端
     // ★ TAT：EasyTier 组网配置合并
     if (b.easytier && typeof b.easytier === 'object') b.easytier = { ...(settings.easytier || {}), ...b.easytier }
     settings = { ...settings, ...b }
@@ -2917,6 +3478,7 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
             onImage: (info) => emit({ image: info, turn: tIdx }),
             onImageReview: (r) => emit({ imagereview: r, turn: tIdx }),
             onQuestion: (q) => emit({ question: q, turn: tIdx }),
+            onProgress: (info) => emit({ tool_progress: info, turn: tIdx }),
             onPermRequest: (info) => { const id = crypto.randomUUID(); emit({ permreq: { id, agent: 'chat', ...info }, turn: tIdx }); return waitPermReq(id) },
           })
           const detail = call.path || call.command || call.query || call.plugin || call.url || ''
@@ -3285,6 +3847,7 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
             onQuestion: (q) => emit({ question: q }),
             onAsk: (info) => { rec({ kind: 'team-ask', from: info.from, to: info.to, question: info.question }); emit({ ask: info }) },
             onAskDone: (info) => { rec({ kind: 'team-ask-done', from: info.from, to: info.to, answer: String(info.answer || '').slice(0, 2000) }); emit({ ask_done: info }) },
+            onProgress: (info) => emit({ tool_progress: info }),
             onPermRequest: (info) => { const id = crypto.randomUUID(); emit({ permreq: { id, agent: role.id, ...info } }); return waitPermReq(id) },
           })
           emit({ tool: call.tool, detail: call.path || call.command || call.query || call.plugin || call.url || '', result: result.slice(0, 3000) })
@@ -3401,6 +3964,19 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
     const limit = Math.min(10, Number(url.searchParams.get('limit') || 5) || 5)
     const results = await kbSearch(root, q, limit)
     return sendJson(res, 200, { ok: true, results })
+  }
+  // ★ 媒体引擎：状态 / 安装 ffmpeg
+  if (pathname === '/api/media/status' && method === 'GET') {
+    return sendJson(res, 200, {
+      ok: true, ffmpeg: ffmpegReady(),
+      voiceBackend: settings.voiceBackend === 'voicestudio' ? 'voicestudio' : 'cloud',
+      ttsProviderId: settings.ttsProviderId || '', ttsModel: settings.ttsModel || '', ttsVoice: settings.ttsVoice || '',
+      bgmDir: path.join(getActiveRoot(), 'bgm'),
+    })
+  }
+  if (pathname === '/api/media/install-ffmpeg' && method === 'POST') {
+    try { await ensureFfmpeg(); audit(req, 'media.ffmpeg_install', {}); return sendJson(res, 200, { ok: true }) }
+    catch (e) { return sendJson(res, 200, { ok: false, error: e.message }) }
   }
   // ★ .oat 常驻项目档案：查看 / 覆盖 / 清空（存于 工作区/.oat/PROJECT.md，随项目迁移）
   if (pathname === '/api/project-memory' && method === 'GET') {
