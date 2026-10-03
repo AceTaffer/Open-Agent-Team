@@ -46,7 +46,13 @@ MIT 许可证全文见 `licenses/qrcode-generator-LICENSE.txt`（其余组件许
   其官方本地 HTTP API（默认 127.0.0.1:3900）以独立进程/独立服务方式调用**
   （不修改其代码、不与其链接、不随包分发其二进制）。VoiceStudio 及其模型受各自许可
   （AGPL-3.0 与模型自带许可）约束，商业使用前请自行核实；克隆音色须获得声音权利人同意。
+- **Qwen TTS WebUI（可选，进阶）**：本软件可连接用户自行安装的
+  licyk「Qwen TTS WebUI」（https://github.com/licyk/qwen-tts-webui ）本地服务，
+  仅通过其官方本地 REST API（/qwenapi/v1）以独立服务方式调用；**不随包分发其代码、
+  运行环境与模型**。该 WebUI 与其使用的 Qwen3-TTS 模型受各自许可证约束（模型许可见
+  对应 HuggingFace/ModelScope 模型卡），使用与商用前请自行核实；克隆音色须获得声音
+  权利人同意。
 - 本软件调用第三方 AI 接口（DeepSeek、阿里云百炼、智谱、OpenCode Zen 等）所产生的
   内容与费用由用户与其服务商之间的协议约束，本软件不承担相关责任。
 
-最后更新：2026-10-03（v1.6.0）
+最后更新：2026-10-03（v1.8.0）

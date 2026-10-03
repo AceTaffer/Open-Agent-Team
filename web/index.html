@@ -10,8 +10,8 @@
  <link rel="manifest" href="/manifest.json" />
  <title>Open Agent Team</title>
  <link rel="icon" href="/oat.png" />
- <link rel="stylesheet" href="/style.css?v=1.7.2" />
- <link rel="stylesheet" href="/team.css?v=1.7.2" />
+ <link rel="stylesheet" href="/style.css?v=1.8.0" />
+ <link rel="stylesheet" href="/team.css?v=1.8.0" />
 </head>
 <body>
  <!-- ═══ 顶栏 ═══ -->
@@ -715,15 +715,19 @@
   <p class="dim small">ffmpeg 用于视频合成（转场/混音/字幕烧录）与媒体探测；TTS 用于配音；背景音乐优先使用工作区 <code>bgm/</code> 目录里的音乐，没有时可用内置合成氛围乐。团队预设「短视频制作组」使用本卡片配置。</p>
   <div id="media-status" class="dim small">…</div>
   <label class="set-row"><span>ffmpeg</span><button id="btn-media-install-ffmpeg" class="btn ghost">安装 / 更新</button></label>
-  <label class="set-row"><span>声音后端</span><select id="media-voice-backend"><option value="cloud">云端 TTS（推荐）</option><option value="voicestudio">本地 VoiceStudio</option></select></label>
+  <label class="set-row"><span>声音后端</span><select id="media-voice-backend"><option value="cloud">云端 TTS（推荐）</option><option value="voicestudio">本地 VoiceStudio</option><option value="qwen">本地 Qwen-TTS（licyk WebUI，仅电脑端）</option></select></label>
   <label class="set-row"><span>TTS 提供方</span><select id="media-tts-provider"></select></label>
   <label class="set-row"><span>云端模型</span><input id="media-tts-model" placeholder="默认 qwen-tts" /></label>
   <label class="set-row"><span>云端音色</span><input id="media-tts-voice" placeholder="默认 Cherry" /></label>
   <label class="set-row"><span>VS 地址</span><input id="vs-url" placeholder="http://127.0.0.1:3900" /></label>
   <label class="set-row"><span>本地音色</span><input id="vs-voice" placeholder="profile_id（可留空）" /></label>
-  <div class="gh-row"><button id="btn-media-save" class="btn ghost">保存</button><button id="btn-vs-check" class="btn ghost">检测连接</button><button id="btn-vs-download" class="btn ghost">下载安装包</button><button id="btn-vs-launch" class="btn ghost">运行安装包</button><span id="media-msg" class="dim small"></span><span id="vs-msg" class="dim small"></span></div>
+  <label class="set-row"><span>Qwen 地址</span><input id="qwen-url" placeholder="http://127.0.0.1:7860" /></label>
+  <label class="set-row"><span>Qwen 模型</span><input id="qwen-model" placeholder="默认 Qwen/Qwen3-TTS-12Hz-0.6B-Base（克隆）" /></label>
+  <label class="set-row"><span>预设音色</span><input id="qwen-speaker" placeholder="默认取 WebUI 第一个音色（克隆音色优先）" /></label>
+  <div class="gh-row"><button id="btn-media-save" class="btn ghost">保存</button><button id="btn-vs-check" class="btn ghost">检测连接</button><button id="btn-vs-download" class="btn ghost">下载安装包</button><button id="btn-vs-launch" class="btn ghost">运行安装包</button><button id="btn-qwen-check" class="btn ghost">检测 Qwen</button><span id="media-msg" class="dim small"></span><span id="vs-msg" class="dim small"></span><span id="qwen-msg" class="dim small"></span></div>
   <div id="vs-status" class="dim small"></div>
-  <p class="dim small">本地声音引擎：VoiceStudio（开源本地语音工作室）——少样本音色克隆、离线配音；首次合成会下载语音模型（约 2.3GB）。</p>
+  <div id="qwen-status" class="dim small"></div>
+  <p class="dim small">本地声音引擎（均为可选，均在电脑端）：VoiceStudio——少样本音色克隆、离线配音（首次合成下载模型约 2.3GB）；<b>Qwen-TTS（进阶可选）</b>——连接 licyk Qwen TTS WebUI 的本地 API（默认 127.0.0.1:7860，需自行准备整合包与模型；OAT 只做 API 调用，不随包分发引擎与模型）。</p>
   </div>
   <div class="set-card">
   <h3 data-i18n="updateTitle">更新</h3>
@@ -964,6 +968,6 @@
  </div>
 
  <script src="/vendor/qrcode.js"></script>
- <script src="/app.js?v=1.7.2"></script>
+ <script src="/app.js?v=1.8.0"></script>
 </body>
 </html>

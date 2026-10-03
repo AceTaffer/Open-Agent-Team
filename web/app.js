@@ -295,8 +295,12 @@ const TEAM_PRESETS = {
 }
 
 /* 版本迭代记录（设置页展示） */
-const APP_VERSION = '1.7.2'
+const APP_VERSION = '1.8.0'
 const CHANGELOG = [
+  ['P9.9', '2026-10', [
+    '新增「Qwen-TTS 本地 API」接入（进阶可选，仅电脑端）：设置 → 媒体引擎 可选「本地 Qwen-TTS（licyk WebUI）」——连接其本地 REST API（/qwenapi/v1，默认 127.0.0.1:7860）进行本地合成；支持预设音色与参考音频登记（clone_voice）后按音色名调用；OAT 只做 API 调用，不随包提供引擎与模型（首次合成自动下载），欢迎社区用户按需扩展训练/微调等能力',
+    '媒体引擎卡片同步更新：Qwen 地址/模型/预设音色配置与「检测 Qwen」（检测不会触发大模型加载）',
+  ]],
   ['P9.8', '2026-10', ['手机端修复：权限/推理搬入折叠条后不再被工具条隐藏规则误伤（此前进折叠条后为空白）；去掉重复的「工具」文字；团队任务折叠条独占一行，展开不再把输入框挤到一边']],
   ['P9.7', '2026-10', [
     '手机端交互大修：对话/任务输入框上方的折叠条整合「工具 / 权限 / 自动续跑 / 推理等级」（窄屏搬入真实控件、宽屏自动归位；点击展开/再点折叠）',
@@ -3149,6 +3153,22 @@ async function renderMedia() {
   if ($('media-tts-voice')) $('media-tts-voice').value = r.ttsVoice || ''
   if ($('vs-url')) $('vs-url').value = r.vsUrl || 'http://127.0.0.1:3900'
   if ($('vs-voice')) $('vs-voice').value = r.vsVoice || ''
+  if ($('qwen-url')) $('qwen-url').value = r.qwenUrl || 'http://127.0.0.1:7860'
+  if ($('qwen-model')) $('qwen-model').value = r.qwenModel || ''
+  if ($('qwen-speaker')) $('qwen-speaker').value = r.qwenSpeaker || ''
+  // Qwen-TTS 运行状态
+  const qs = await api('GET', '/api/qwen/status').catch(() => ({ ok: false }))
+  const qbox = $('qwen-status')
+  if (qbox) {
+    if (qs.ok && qs.running) {
+      const cloneModels = (qs.models || []).filter((m) => m.type === 'voice_clone').length
+      qbox.textContent = `Qwen-TTS：运行中（${qs.url}）｜模型 ${(qs.models || []).length} 个（克隆模型 ${cloneModels}）${qs.cloned && qs.cloned.length ? `｜OAT 已登记克隆音色 ${qs.cloned.length} 个` : ''}（首次合成会自动下载模型：克隆约 1.8GB，仅一次）`
+      qbox.classList.add('ok-text')
+    } else {
+      qbox.textContent = `Qwen-TTS：未连接（${(qs && qs.url) || 'http://127.0.0.1:7860'}）——双击整合包里的「启动.bat」后再点「检测 Qwen」`
+      qbox.classList.remove('ok-text')
+    }
+  }
   // VoiceStudio 运行状态
   const st = await api('GET', '/api/voicestudio/status').catch(() => ({ ok: false }))
   const box2 = $('vs-status')
@@ -3632,11 +3652,13 @@ async function main() {
       renderMedia()
     }
     $('btn-media-save').onclick = async () => {
-      const body = { voiceBackend: $('media-voice-backend').value, ttsProviderId: $('media-tts-provider').value, ttsModel: $('media-tts-model').value.trim(), ttsVoice: $('media-tts-voice').value.trim(), vsVoice: $('vs-voice') ? $('vs-voice').value.trim() : '', voiceStudio: { url: ($('vs-url') ? $('vs-url').value.trim() : '') || 'http://127.0.0.1:3900' } }
+      const body = { voiceBackend: $('media-voice-backend').value, ttsProviderId: $('media-tts-provider').value, ttsModel: $('media-tts-model').value.trim(), ttsVoice: $('media-tts-voice').value.trim(), vsVoice: $('vs-voice') ? $('vs-voice').value.trim() : '', voiceStudio: { url: ($('vs-url') ? $('vs-url').value.trim() : '') || 'http://127.0.0.1:3900' }, qwenTts: { url: ($('qwen-url') ? $('qwen-url').value.trim() : '') || 'http://127.0.0.1:7860' }, qwenModel: $('qwen-model') ? $('qwen-model').value.trim() : '', qwenSpeaker: $('qwen-speaker') ? $('qwen-speaker').value.trim() : '' }
       const r = await api('PUT', '/api/settings', body).catch(() => ({ ok: false }))
       $('media-msg').textContent = r.ok ? t('savedOk') : (r.error || t('failure'))
       renderMedia()
     }
+    // ★ Qwen-TTS 检测连接
+    if ($('btn-qwen-check')) $('btn-qwen-check').onclick = async () => { $('qwen-msg').textContent = '检测中…'; await renderMedia(); $('qwen-msg').textContent = '' }
   }
   // ★ VoiceStudio：检测连接 / 下载安装包 / 运行安装包
   if ($('btn-vs-check')) {

@@ -145,7 +145,7 @@ let plugins = []        // HTTP API 插件
 let skills = []         // ★ Agent 技能预设 [{id,name,description,prompt}]
 let sessions = []       // ★ 会话：每个 API 下可多个独立会话（含消息、工作区、模型）
 let devices = []        // ★ TAT：已配对的手机设备 [{id,name,tokenHash,perm,revoked,createdAt,lastSeen,lastIp}]
-let settings = { developerMode: false, exeEnabled: false, exeAllowlist: [], githubLogin: '', workspaces: [], activeWorkspace: '', language: '', taskBudgetCost: 0, chatTools: true, defaultPermission: 'modify', reasoningEffort: 'low', artProvider: '', artModel: '', videoProvider: '', videoModel: '', updateRepo: 'AceTaffer/Open-Agent-Team', updateBranch: 'main', toolLimits: { chat: 0, team: 0, roleChat: 0 }, lanListen: false, pauseOnDisconnect: false, easytier: { networkName: '', networkSecret: '', virtualIp: '10.126.126.1', peerUrl: 'tcp://public.easytier.cn:11010' }, ui: { theme: 'dark', accent: '#2f9e8f', fontSize: 13, spacing: 'normal', teamInputPos: 'bottom' } }
+let settings = { developerMode: false, exeEnabled: false, exeAllowlist: [], githubLogin: '', workspaces: [], activeWorkspace: '', language: '', taskBudgetCost: 0, chatTools: true, defaultPermission: 'modify', reasoningEffort: 'low', artProvider: '', artModel: '', videoProvider: '', videoModel: '', updateRepo: 'AceTaffer/Open-Agent-Team', updateBranch: 'main', toolLimits: { chat: 0, team: 0, roleChat: 0 }, lanListen: false, pauseOnDisconnect: false, easytier: { networkName: '', networkSecret: '', virtualIp: '10.126.126.1', peerUrl: 'tcp://public.easytier.cn:11010' }, ui: { theme: 'dark', accent: '#2f9e8f', fontSize: 13, spacing: 'normal', teamInputPos: 'bottom' }, qwenTts: { url: 'http://127.0.0.1:7860' }, qwenModel: 'Qwen/Qwen3-TTS-12Hz-0.6B-Base', qwenModelCV: 'Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice', qwenSpeaker: '', qwenVoice: '', qwenLanguage: 'auto' }
 
 /* ═══════════════════════════════════════════════════════════════
  * ★ TAT 手机互联基础：事件流（rev）、审计、设备配对
@@ -221,7 +221,7 @@ const BUILTIN_SKILLS = [
   // ★ 短视频流水线技能（project.json 工程规范 / 图生视频 / 配音 / 配乐 / 合成与媒体质检）
   { id: 'mk_video_project', name: '短视频工程规范（project.json）', description: '分镜工程单一事实源：场景表结构与时序约定', tags: ['视频', '规范'], prompt: '短视频项目以 video-project/project.json 为唯一事实源，所有角色都读写它、不要各自发明格式。结构：{"meta":{"title":"","aspect":"9:16 或 16:9","width":1080,"height":1920,"fps":30,"style":"风格关键词","music":{"file":"audio/bgm.mp3","volumeDb":-18},"subtitle":true},"scenes":[{"id":1,"dur":5,"narration":"中文文案（用于配音与字幕）","subtitleText":"可选覆盖字幕文本","visualPrompt":"可直接用于出图/视频的英文提示词","negative":"负面提示词","mode":"i2v","keyframe":"keyframes/k01.png","shot":"shots/shot01.mp4","voice":"audio/vo01.mp3"}]}。路径规范（重要）：project.json 内字段一律写「工程内相对路径」，直接以 shots/、audio/、keyframes/ 开头，**不要带 video-project/ 前缀**（如 "shots/shot01.mp4"、"audio/vo01.mp3"、"keyframes/k01.png"）；调用工具时一律用「工作区相对路径」（带 video-project/ 前缀）。工作纪律：先写全场景表再开工；每完成一个产物立即回写对应字段；时长以配音实测时长为准（合成工具会自动对齐全片时间线）。' },
   { id: 'mk_i2v', name: '图生视频规范', description: '关键帧先行、镜头风格一致性与重试策略', tags: ['视频', '生成'], prompt: '短视频镜头生成策略：1) 先用 generate_image 生成关键帧，必须带 out 参数写入工程目录，如 out:"video-project/keyframes/k01.png"（工具参数一律用「工作区相对路径」= video-project/ 开头；project.json 内字段才用工程内相对路径如 keyframes/k01.png）；画幅与 meta 一致（9:16 用 720x1280、16:9 用 1280x720），全片共用同一风格前缀；2) 再用 generate_video 携带 image:"video-project/keyframes/k01.png" 走图生视频（out 写 "video-project/shots/shot01.mp4"；被拒会自动回退文生视频；关键帧缺失会明确报错）；3) 多镜可用 shots:[...] 一次批量（默认 2 路并发）；4) 失败镜头先改提示词再重试，最多 3 次，仍失败要报告缺哪一镜并给替代方案；5) 完成后用 list_files 核对文件真实存在，并把「工程内相对路径」写回 project.json.shot。' },
-  { id: 'mk_dubbing', name: '配音规范', description: '音色一致、少样本克隆、语速与镜头时长匹配', tags: ['视频', '配音'], prompt: '配音工作规范：1) 先确定音色：云端后端用设置页的 TTS 音色；本地 VoiceStudio 后端可用 clone_voice 少样本克隆（sample 指向工作区里 10 秒~2 分钟干净人声，如 uploads/voice-ref.wav；先 clone_voice list:true 查看已有音色），克隆返回的 profile_id 作为后续 generate_speech 的 voice；2) 逐镜用 generate_speech 生成配音，out 用「工作区相对路径」如 "video-project/audio/vo01.mp3"（工具参数 = video-project/ 开头），并在 project.json.voice 写「工程内相对路径」如 audio/vo01.mp3；3) 语速与镜头时长相配：文案预计朗读超过 scene.dur - 0.5s 时先精简文案而不是硬加速；4) 数字、英文缩写、多音字改写为口语化表达避免读错；5) 配音完成后用 media_probe（path 用 video-project/audio/vo01.mp3）核对时长与音轨。' },
+  { id: 'mk_dubbing', name: '配音规范', description: '音色一致、少样本克隆、语速与镜头时长匹配', tags: ['视频', '配音'], prompt: '配音工作规范：1) 先确定音色：云端后端用设置的 TTS 音色；本地 Qwen-TTS 后端先 clone_voice 登记克隆音色（sample 指向工作区里 10 秒~2 分钟干净人声，如 uploads/voice-ref.wav；先 clone_voice list:true 可查看已登记音色与 WebUI 预设音色），之后 generate_speech 的 voice 传音色名即可（或直接传 WebUI 预设音色名走预设合成）；本地 VoiceStudio 后端用其 profile_id；2) 逐镜用 generate_speech 生成配音，out 用「工作区相对路径」如 "video-project/audio/vo01.mp3"（工具参数 = video-project/ 开头），并在 project.json.voice 写「工程内相对路径」如 audio/vo01.mp3；3) 语速与镜头时长相配：文案预计朗读超过 scene.dur - 0.5s 时先精简文案而不是硬加速；4) 数字、英文缩写、多音字改写为口语化表达避免读错；5) 配音完成后用 media_probe 核对时长与音轨。' },
   { id: 'mk_music', name: '配乐规范', description: 'BGM 选择/生成、音量包络与对白避让', tags: ['视频', '配乐'], prompt: '配乐工作规范：1) 先 generate_music list:true 查看工作区 bgm/ 已有音乐，有合适的直接 pick:"文件名"；没有就用 generate_music style 合成氛围配乐（calm/warm/tense/uplift），out 用 "video-project/audio/bgm.mp3"；2) project.json.meta.music.file 写工程内相对路径 "audio/bgm.mp3"，volumeDb 默认 -18（对白为主，音乐垫底）；3) 风格与情绪匹配：舒缓 calm、温情 warm、紧张 tense、高潮 uplift；4) 成片后如质检指出音乐盖住人声，把 volumeDb 调低 2~4dB 后重新合成。' },
   { id: 'mk_compose', name: '合成与媒体验收规范', description: 'ffmpeg 合成参数标准与成片验收清单', tags: ['视频', '质量'], prompt: '合成与验收规范：1) 合成前先 make_subtitles 生成字幕（会同时产出 ASS 与 SRT，ASS 用于烧录）；2) compose_video 一步完成归一化/转场/混音/烧字幕，输出 video-project/cut/final.mp4；缺镜头会黑场占位并在结果中警告，出现该警告一律不通过、必须补生成镜头后重新合成；3) 成片验收硬指标（全部用 media_probe 取证据）：分辨率符合 meta、有音轨、时长≈Σ镜头时长-转场重叠、响度约 -16 LUFS（±3）、**平均亮度 avgY ≥ 25（黑屏不通过；夜景等暗调题材 ≥ 18 且报告需说明）**、black 字段不得为 true；4) shot 与 final 都要探测；5) 字幕必须与配音逐句对齐（对照 subs/final.srt 与 scenes 文案），缺句/错句算不通过；6) 不通过时明确列出「哪个镜头/哪条配音/哪段字幕」需要返工，返工后重新合成再复审。' },
 ]
@@ -2131,6 +2131,30 @@ async function buildSrt(root, proj, tl) {
   }
   return parts.join('\n')
 }
+/* ★ Qwen-TTS 本地引擎（licyk Qwen TTS WebUI 的 REST API：/qwenapi/v1，默认 127.0.0.1:7860）
+ *   预设音色(custom-voice) / 音色设计(voice-design) / 音色克隆(voice-clone，几秒参考音频即可)
+ *   说明：模型首次使用自动下载（ModelScope）；仅电脑端接入，手机端不部署 */
+function qwenUrl() { return String((settings.qwenTts && settings.qwenTts.url) || 'http://127.0.0.1:7860').replace(/\/+$/, '') }
+async function qwenGet(path, timeoutMs = 8000) {
+  const r = await fetch(qwenUrl() + path, { signal: AbortSignal.timeout(timeoutMs) })
+  if (!r.ok) throw new Error(`HTTP ${r.status}`)
+  return await r.json().catch(() => null)
+}
+async function qwenHealth() {
+  try { const j = await qwenGet('/qwenapi/v1/models', 2500); return { ok: true, models: (j && j.models) || [] } } catch { return { ok: false, models: [] } }
+}
+async function qwenSpeakers() {
+  try { const j = await qwenGet('/qwenapi/v1/speakers', 6000); return (j && (j.speakers || j.data || j.voices)) || [] } catch { return [] }
+}
+async function qwenPost(path, body, timeoutMs = 1800000) {
+  const r = await fetch(qwenUrl() + path, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    signal: AbortSignal.timeout(timeoutMs),
+  })
+  const j = await r.json().catch(() => null)
+  if (!r.ok) throw new Error(j && (j.detail || j.message) ? String(j.detail || j.message).slice(0, 220) : `HTTP ${r.status}`)
+  return j
+}
 /* ★ VoiceStudio 本地声音引擎（OpenAI 兼容 TTS：POST /v1/audio/speech；克隆：POST /api/profiles；默认 127.0.0.1:3900） */
 const VOICES_FILE = path.join(DATA_DIR, 'voices.json')
 let localVoices = [] // OAT 侧克隆记录 [{id,name,engine,sample,createdAt}]
@@ -2161,6 +2185,29 @@ async function vsResolveVoice(v) {
 }
 // 克隆音色：参考音频 → VoiceStudio 音色档案（少样本克隆）
 async function toolCloneVoice(call, ctx) {
+  // ★ Qwen-TTS 分支：登记本地音色档案（参考音频 + 可选参考文本），合成时走 voice-clone
+  if (settings.voiceBackend === 'qwen') {
+    const qh = await qwenHealth()
+    if (call.list || call.action === 'list') {
+      const mine = localVoices.filter((v) => v.engine === 'qwen')
+      let extra = ''
+      if (qh.ok) {
+        const sp = await qwenSpeakers()
+        const spText = Array.isArray(sp) && sp.length ? sp.slice(0, 40).map((x) => (typeof x === 'string' ? x : (x.name || x.id || ''))).filter(Boolean).join('、') : '（无）'
+        extra = `\nWebUI 预设音色（custom-voice 可直接把 voice 传音色名）：${spText}\nWebUI 可用模型：${(qh.models || []).map((m) => m.name).join('；')}`
+      } else extra = `\n（Qwen TTS WebUI 未连接：${qwenUrl()} —— 启动后可用预设音色；克隆登记不需要它在线）`
+      return `已登记的克隆音色（Qwen-TTS）：\n${mine.map((v) => `- ${v.name}｜voice:"${v.name}"（参考：${v.refAudio}）`).join('\n') || '（无）'}${extra}`
+    }
+    const sample = String(call.sample || call.path || '').trim()
+    if (!sample) return '缺少 sample（参考音频路径，工作区内；建议 10 秒 ~ 2 分钟的干净人声，wav/mp3 均可）'
+    const abs = resolveInWorkspace(sample, ctx.root)
+    if (!existsSync(abs)) return `参考音频不存在：${sample}`
+    const name = String(call.name || 'OAT克隆音色').slice(0, 30)
+    localVoices.unshift({ id: crypto.randomUUID(), name, engine: 'qwen', refAudio: abs, refText: String(call.refText || ''), model: String(call.model || settings.qwenModel || 'Qwen/Qwen3-TTS-12Hz-0.6B-Base'), createdAt: Date.now() })
+    while (localVoices.length > 200) localVoices.pop()
+    await saveLocalVoices()
+    return `已登记克隆音色「${name}」（Qwen-TTS，参考音频：${sample}${call.refText ? '，含参考文本' : '，无参考文本→x-vector 模式'}）\n之后 generate_speech 时把 voice 设为 "${name}" 即可用该音色（首次合成会自动下载模型：0.6B 约 1~2GB，仅一次）。`
+  }
   const h = await vsHealth()
   if (!h.ok) return `本地声音引擎（VoiceStudio）未运行：请先启动 VoiceStudio（默认 ${vsUrl()}），或在 设置 → 媒体引擎 中修改地址。`
   if (call.list || call.action === 'list') {
@@ -2201,7 +2248,52 @@ async function generateSpeech(call, ctx) {
   const out = String(call.out || `audio/vo-${Date.now()}.mp3`).replace(/\\/g, '/')
   const abs = resolveInWorkspace(out, ctx.root)
   await mkdir(path.dirname(abs), { recursive: true })
-  const backend = settings.voiceBackend === 'voicestudio' ? 'voicestudio' : 'cloud'
+  const backend = ['voicestudio', 'qwen'].includes(settings.voiceBackend) ? settings.voiceBackend : 'cloud'
+  if (backend === 'qwen') {
+    // ★ 本地 Qwen-TTS（licyk WebUI）：已登记音色→克隆合成；否则→预设音色合成
+    const h = await qwenHealth()
+    if (!h.ok) return `本地 Qwen-TTS 未连接：请先启动 Qwen TTS WebUI（双击整合包里的 启动.bat，默认 ${qwenUrl()}），或在 设置 → 媒体引擎 修改地址后重试。`
+    const text2 = String(text).slice(0, 4000)
+    const voiceRaw = String(call.voice || settings.qwenVoice || '').trim()
+    const language = String(call.language || settings.qwenLanguage || 'auto')
+    const prof = voiceRaw ? localVoices.find((v) => v.engine === 'qwen' && (v.id === voiceRaw || v.name === voiceRaw)) : null
+    try {
+      let j = null
+      if (prof) {
+        const refAbs = prof.refAudio && existsSync(prof.refAudio) ? prof.refAudio : ''
+        if (!refAbs) return `音色「${prof.name}」的参考音频不存在：${prof.refAudio}（请重新用 clone_voice 登记）`
+        const b64 = (await readFile(refAbs)).toString('base64')
+        j = await qwenPost('/qwenapi/v1/voice-clone', {
+          model_name: call.model || prof.model || settings.qwenModel || 'Qwen/Qwen3-TTS-12Hz-0.6B-Base',
+          text: text2,
+          ...(language && language !== 'auto' ? { language } : {}),
+          ref_audio_base64: b64,
+          ...(prof.refText ? { ref_text: prof.refText } : {}),
+        })
+      } else {
+        const speakers = await qwenSpeakers()
+        const sp = voiceRaw || settings.qwenSpeaker || (Array.isArray(speakers) && speakers.length ? (typeof speakers[0] === 'string' ? speakers[0] : (speakers[0].id || speakers[0].name)) : '')
+        j = await qwenPost('/qwenapi/v1/custom-voice', {
+          model_name: call.model || settings.qwenModelCV || 'Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice',
+          text: text2,
+          ...(sp ? { speaker: String(sp) } : {}),
+          ...(language && language !== 'auto' ? { language } : {}),
+          ...(call.instruct ? { instruct: String(call.instruct) } : {}),
+        })
+      }
+      const b64out = (j && j.audio_files_base64 && j.audio_files_base64[0]) || ''
+      if (!b64out) return `Qwen-TTS 未返回音频：${JSON.stringify(j).slice(0, 200)}`
+      const buf = Buffer.from(b64out, 'base64')
+      const isWav = buf.slice(0, 4).toString('ascii') === 'RIFF'
+      let outRel = String(call.out || `audio/vo-${Date.now()}${isWav ? '.wav' : '.mp3'}`).replace(/\\/g, '/')
+      if (isWav && /\.mp3$/i.test(outRel)) outRel = outRel.replace(/\.mp3$/i, '.wav')
+      const abs2 = resolveInWorkspace(outRel, ctx.root)
+      await mkdir(path.dirname(abs2), { recursive: true })
+      await writeFile(abs2, buf)
+      const info = await probeMedia(abs2).catch(() => ({ duration: 0, hasAudio: false }))
+      return `已生成本地配音：${outRel}（${info.duration}s${info.hasAudio ? '，含音轨' : ''}；引擎 Qwen-TTS${prof ? `（克隆音色「${prof.name}」）` : `（预设音色 ${voiceRaw || '默认'}）`}）\n请把路径登记到 project.json 对应场景的 voice 字段。`
+    } catch (e) { return `Qwen-TTS 调用失败：${e.message}` }
+  }
   if (backend === 'voicestudio') {
     // ★ 本地引擎：OpenAI 兼容 TTS（VoiceStudio 默认 127.0.0.1:3900；音色可用 profile_id 或音色名）
     const h = await vsHealth()
@@ -3208,8 +3300,9 @@ async function handleApi(req, res, url) {
     if (b.lanListen != null) b.lanListen = !!b.lanListen
     if (b.pauseOnDisconnect != null) b.pauseOnDisconnect = !!b.pauseOnDisconnect
     if (b.kbAuto != null) b.kbAuto = !!b.kbAuto // ★ 知识库自动检索注入开关
-    if (b.voiceBackend != null) b.voiceBackend = b.voiceBackend === 'voicestudio' ? 'voicestudio' : 'cloud' // ★ 声音后端
+    if (b.voiceBackend != null) b.voiceBackend = ['voicestudio', 'qwen'].includes(b.voiceBackend) ? b.voiceBackend : 'cloud' // ★ 声音后端（cloud/voicestudio/qwen）
     if (b.voiceStudio && typeof b.voiceStudio === 'object') b.voiceStudio = { ...(settings.voiceStudio || {}), ...b.voiceStudio } // ★ 本地声音引擎配置合并
+    if (b.qwenTts && typeof b.qwenTts === 'object') b.qwenTts = { ...(settings.qwenTts || {}), ...b.qwenTts } // ★ Qwen-TTS 配置合并
     // ★ TAT：EasyTier 组网配置合并
     if (b.easytier && typeof b.easytier === 'object') b.easytier = { ...(settings.easytier || {}), ...b.easytier }
     settings = { ...settings, ...b }
@@ -4083,7 +4176,17 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
       voiceBackend: settings.voiceBackend === 'voicestudio' ? 'voicestudio' : 'cloud',
       ttsProviderId: settings.ttsProviderId || '', ttsModel: settings.ttsModel || '', ttsVoice: settings.ttsVoice || '',
       vsUrl: vsUrl(), vsVoice: settings.vsVoice || '', vsModel: settings.vsModel || 'omnivoice',
+      qwenUrl: qwenUrl(), qwenModel: settings.qwenModel || '', qwenSpeaker: settings.qwenSpeaker || '', qwenVoice: settings.qwenVoice || '',
       bgmDir: path.join(getActiveRoot(), 'bgm'),
+    })
+  }
+  // ★ Qwen-TTS 本地引擎：连接检测 / 模型列表（注意：不主动查音色列表——那会触发 WebUI 加载大模型）
+  if (pathname === '/api/qwen/status' && method === 'GET') {
+    const h = await qwenHealth()
+    return sendJson(res, 200, {
+      ok: true, url: qwenUrl(), running: h.ok,
+      models: (h.models || []).map((m) => ({ name: m.name, type: m.type })),
+      cloned: localVoices.filter((v) => v.engine === 'qwen').slice(0, 50),
     })
   }
   // ★ VoiceStudio 本地声音引擎：状态 / 检测 / 下载安装包 / 运行安装包
