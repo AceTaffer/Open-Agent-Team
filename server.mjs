@@ -3830,9 +3830,14 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
       // ★ purge=1：连同该会话的工作区文件夹与任务记录一起彻底删除
       const purge = url.searchParams.get('purge') === '1'
       sessions = sessions.filter((x) => x.id !== s.id); await saveSessions()
-      // ★ 游戏会话：先终止内存中的对局引擎，再删除对局状态/事件流/复盘目录（属于会话数据，不删工作区）
+      // ★ 游戏会话：先终止内存中的对局引擎（并阻止其延迟保存复活目录），再删除对局状态/事件流/复盘目录（属于会话数据，不删工作区）
       const eng = gameEngines.get(s.id)
-      if (eng) { eng.abort = true; eng.paused = false; if (eng.state.waiting) engineSubmitAction(eng, { auto: true }); gameNotify(eng); gameEngines.delete(s.id) }
+      if (eng) {
+        eng.abort = true; eng.paused = false; eng.replaced = true
+        clearTimeout(eng._sv)
+        if (eng.state.waiting) engineSubmitAction(eng, { auto: true })
+        gameNotify(eng); gameEngines.delete(s.id)
+      }
       if ((s.kind || '') === 'game') { try { await rm(gameDir(s.id), { recursive: true, force: true }) } catch { /* ignore */ } }
       let purged = '', purgeError = ''
       if (purge && s.workspace) {
