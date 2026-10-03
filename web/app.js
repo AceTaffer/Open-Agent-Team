@@ -292,8 +292,13 @@ const TEAM_PRESETS = {
 }
 
 /* 版本迭代记录（设置页展示） */
-const APP_VERSION = '1.2.0'
+const APP_VERSION = '1.3.0'
 const CHANGELOG = [
+  ['P9.2', '2026-10', [
+    '定时任务 / 心跳（借鉴 Paperclip）：设置页可视化创建「每隔 N 分钟」或「每天 HH:MM」自动任务，到点自动给团队下达指令并跑完整流程；结果写入团队会话与 .oat 项目档案；状态回显（运行中 / 上次成功费用 / 连续失败次数）；失败 5 分钟后自动重试，连续 3 次自动停用',
+    '首启向导：未配置任何 API 时对话页顶部显示三步引导（添加 API → 选择团队预设 → 一键填入示例任务），配置完成后自动消失，可点「不再提示」',
+    'PWA / 添加到主屏幕：新增 manifest 与移动端 meta，手机浏览器可将页面添加到主屏幕当 App 用（Android 原生壳在规划中）',
+  ]],
   ['P9.1', '2026-10', [
     '.oat 常驻项目档案（借鉴 hindsight 思路）：团队任务收尾自动把「任务/步骤/产物线索/状态/汇总节选」写入 工作区/.oat/PROJECT.md，角色对话与团队每个步骤自动注入——新会话不翻文件也能记得项目历史；设置页可查看/编辑/清空，档案随项目复制迁移',
     '自动续跑（团队任务栏，0-5 次）：任务完成后自动检查并继续未完成项，直到汇总写出「【全部完成】」或次数用尽；续跑任务照常落盘，随时可「接回任务」；同时修复了「接回任务」横幅此前不会自动出现的隐藏问题',
@@ -418,7 +423,7 @@ function remoteToast(msg) {
 function onRemoteChange(ev) {
   try {
     if (ev.key === 'sessions') { refreshSessions().catch(() => {}); if (state.teamLoaded) refreshTeamSessions(state.teamSessionId).catch(() => {}); checkActiveRuns(true).catch(() => {}) }
-    else if (ev.key === 'tasks') { refreshTasks(); checkActiveRuns(true).catch(() => {}) }
+    else if (ev.key === 'tasks') { refreshTasks(); checkActiveRuns(true).catch(() => {}); renderSchedules().catch(() => {}) }
     else if (ev.key === 'art') refreshArtGallery()
     else if (ev.key === 'stats') refreshStats()
     else if (['settings', 'roles', 'providers', 'devices'].includes(ev.key) && Date.now() - lastLocalWrite > 3000) remoteToast('另一台设备更新了配置，刷新页面后生效')
@@ -650,7 +655,8 @@ function renderSettings() {
  $('set-teampos').value = ui.teamInputPos || 'bottom'
  $('update-current').textContent = 'v' + APP_VERSION
  $('set-update-repo').value = state.settings.updateRepo || ''
- $('set-update-branch').value = state.settings.updateBranch || 'main'
+  $('set-update-branch').value = state.settings.updateBranch || 'main'
+  renderSchedules() // ★ 定时任务列表
  // ★ 工具调用限制（0=无限、-1=禁止、custom=自定义）
  const tl = state.settings.toolLimits || {}
  for (const [key, selId, numId] of [['chat', 'set-limit-chat', 'set-limit-chat-n'], ['team', 'set-limit-team', 'set-limit-team-n'], ['roleChat', 'set-limit-rolechat', 'set-limit-rolechat-n']]) {
@@ -2914,6 +2920,67 @@ async function doUpdateApply() {
 }
 
 /* ══════════════ 初始化 ══════════════ */
+/* ★ 定时任务/心跳：设置页列表渲染（启用开关 / 下次运行 / 上次状态 / 删除） */
+async function renderSchedules() {
+ try {
+  const box = $('sched-list'); if (!box) return
+  const r = await api('GET', '/api/schedules').catch(() => ({ ok: false }))
+  if (!r.ok) { box.textContent = '读取失败'; return }
+  const sel = $('sched-session')
+  if (sel) {
+   const cur = sel.value
+   sel.innerHTML = `<option value="">（使用当前激活工作区）</option>` + (state.teamSessions || []).map((s) => `<option value="${s.id}" ${s.id === cur ? 'selected' : ''}>${esc(s.title || '(未命名会话)')}</option>`).join('')
+  }
+  const list = r.schedules || []
+  if (!list.length) { box.textContent = '（暂无定时任务）'; return }
+  box.innerHTML = list.map((s) => {
+   const freq = s.kind === 'daily' ? `每天 ${esc(s.at || '09:00')}` : `每隔 ${s.intervalMinutes || 60} 分钟`
+   const next = s.enabled && s.nextRun ? new Date(s.nextRun).toLocaleString('zh-CN', { hour12: false }) : '—'
+   const st = s.running ? '运行中…' : (s.lastStatus === 'done' ? `上次成功 ¥${Number(s.lastCost || 0).toFixed(4)}` : s.lastStatus === 'failed' ? `上次失败${s.consecutiveFails ? `（连续 ${s.consecutiveFails} 次）` : ''}` : s.lastStatus === 'stopped' ? '上次被终止' : '未运行')
+   return `<div class="sched-row" data-id="${s.id}">
+   <label class="chk"><input type="checkbox" class="sch-en" ${s.enabled ? 'checked' : ''} /></label>
+   <div class="sch-info"><b>${esc(s.name)}</b> <span class="dim">${freq} · 下次 ${next}</span><div class="dim small">${esc(String(s.task).slice(0, 70))}${String(s.task).length > 70 ? '…' : ''}</div></div>
+   <span class="dim small">${st}</span>
+   <button class="btn ghost tiny sch-del">删除</button>
+   </div>`
+  }).join('')
+  box.querySelectorAll('.sched-row').forEach((row) => {
+   const id = row.dataset.id
+   row.querySelector('.sch-en').onchange = async (e) => { await api('PUT', `/api/schedules/${id}`, { enabled: e.target.checked }); renderSchedules() }
+   row.querySelector('.sch-del').onclick = async () => { if (confirm('删除该定时任务？')) { await api('DELETE', `/api/schedules/${id}`); renderSchedules() } }
+  })
+ } catch { /* ignore */ }
+}
+/* ★ 首启向导：未配置任何 API 时在对话页顶部显示三步引导（配置后或点"不再提示"自动消失） */
+const ONBOARD_DEMO_TASK = '团队热身任务：在工作区创建 demo 文件夹，写一个单文件欢迎页 demo/index.html（纯 HTML+CSS、无任何外链），用于介绍 Open Agent Team；写完后由测试核验文件真实存在且内容正确，最后队长汇总。'
+function renderOnboarding() {
+ try {
+  const box = $('chat-messages'); if (!box) return
+  const hasApi = (state.providers || []).length > 0
+  const dismissed = localStorage.getItem('oat-welcome') === 'off'
+  const card = document.getElementById('onboard-card')
+  if (hasApi || dismissed) { if (card) card.remove(); return }
+  if (card) return
+  const el = document.createElement('div')
+  el.id = 'onboard-card'
+  el.className = 'onboard-card'
+  el.innerHTML = `<div class="ob-head">欢迎使用 Open Agent Team</div>
+  <div class="ob-sub dim small">三步开跑：接入你的 AI API → 选一个团队 → 下达第一个任务（全程数据在本机）</div>
+  <div class="ob-step"><span class="ob-num">1</span><div class="ob-body"><b>添加 API</b><div class="dim small">支持 DeepSeek / 百炼 / OpenAI / Claude / 智谱 / Kimi / OpenCode Zen 等十多家，Key 本机加密保存</div></div><button class="btn primary tiny" data-a="api">去添加</button></div>
+  <div class="ob-step"><span class="ob-num">2</span><div class="ob-body"><b>选择团队</b><div class="dim small">游戏开发 / 软件研发 / 小说写作 / 视频制作等预设，一键带出角色与技能</div></div><button class="btn ghost tiny" data-a="team">选预设</button></div>
+  <div class="ob-step"><span class="ob-num">3</span><div class="ob-body"><b>下达示例任务</b><div class="dim small">用内置热身任务体验"队长规划 → 角色干活 → 测试核验 → 汇总"全流程</div></div><button class="btn ghost tiny" data-a="demo">试用示例</button></div>
+  <div class="ob-foot"><a href="#" data-a="off" class="dim small">不再提示</a></div>`
+  box.prepend(el)
+  el.querySelector('[data-a="api"]').onclick = () => { switchView('providers'); const b = $('btn-add-provider'); if (b) b.click() }
+  el.querySelector('[data-a="team"]').onclick = () => { switchView('team'); const b = $('btn-team-session-new'); if (b) b.click() }
+  el.querySelector('[data-a="demo"]').onclick = () => {
+   switchView('team')
+   if (!state.teamSessions || !state.teamSessions.length) { const b = $('btn-team-session-new'); if (b) b.click() }
+   const ta = $('team-task'); if (ta) { ta.value = ONBOARD_DEMO_TASK; ta.focus() }
+  }
+  el.querySelector('[data-a="off"]').onclick = (e) => { e.preventDefault(); localStorage.setItem('oat-welcome', 'off'); el.remove() }
+ } catch { /* ignore */ }
+}
 async function loadState() {
  const r = await api('GET', '/api/state')
  if (r.ok) {
@@ -2932,6 +2999,7 @@ async function loadState() {
  // 自动恢复上次打开的会话（对话历史不丢）
  const last = localStorage.getItem('oat-last-session')
  if (!state.activeSession && last && state.sessions.some((s) =>s.id === last)) await openSession(last)
+ renderOnboarding() // ★ 首启向导（未配置 API 时显示）
 }
 async function main() {
  // ★ TAT 手机端：扫码自动配对（?pair=）/ 未配对时显示配对门（电脑本机跳过）
@@ -3246,6 +3314,17 @@ async function main() {
     if (!confirm('清空当前工作区的项目档案？（不影响工作区里的任何文件）')) return
     const r = await api('DELETE', '/api/project-memory').catch(() => ({ ok: false }))
     $('projmem-msg').textContent = r.ok ? '已清空' : (r.error || t('failure'))
+  }
+  // ★ 定时任务/心跳：新建表单（间隔/每天切换 + 添加）
+  if ($('sched-kind')) {
+    $('sched-kind').onchange = () => { const daily = $('sched-kind').value === 'daily'; $('sched-interval').classList.toggle('hidden', daily); $('sched-at').classList.toggle('hidden', !daily) }
+    $('btn-sched-add').onclick = async () => {
+      const task = $('sched-task').value.trim()
+      if (!task) { $('sched-msg').textContent = '请填写任务内容'; return }
+      const r = await api('POST', '/api/schedules', { kind: $('sched-kind').value, task, sessionId: $('sched-session').value, intervalMinutes: Number($('sched-interval').value) || 60, at: $('sched-at').value || '09:00', name: task.slice(0, 18) }).catch(() => ({ ok: false }))
+      $('sched-msg').textContent = r.ok ? '已添加' : (r.error || '添加失败')
+      if (r.ok) { $('sched-task').value = ''; renderSchedules() }
+    }
   }
   $('set-effort').onchange = async () => { state.settings.reasoningEffort = $('set-effort').value; await api('PUT', '/api/settings', { reasoningEffort: state.settings.reasoningEffort }) }
  $('btn-open-roles').onclick = () =>switchView('teamconfig')

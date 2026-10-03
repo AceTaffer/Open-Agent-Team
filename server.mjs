@@ -378,6 +378,7 @@ async function loadData() {
   await loadRoleChats()
   await loadCustomPresets()
   await loadJsPlugins()
+  await loadSchedules()
   devices = await readJson(DEVICES_FILE, [])
   if (!Array.isArray(devices)) devices = []
 }
@@ -388,6 +389,67 @@ const saveSessions = async () => { await writeFile(SESSIONS_FILE, JSON.stringify
 const savePlugins = async () => { await writeFile(PLUGINS_FILE, JSON.stringify(plugins, null, 2), 'utf8'); bumpRev('plugins') }
 const saveSettings = async () => { await writeFile(SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf8'); bumpRev('settings') }
 const saveDevices = async () => { await writeFile(DEVICES_FILE, JSON.stringify(devices, null, 2), 'utf8'); bumpRev('devices') }
+
+/* ═══════════════════════════════════════════════════════════════
+ * 三.5 ★ 定时任务/心跳（借鉴 Paperclip「任务心跳」：无人值守，
+ *   按间隔或每日定时自动给团队下达任务；失败 5 分钟后自愈重试，连续 3 次自动停用）
+ * ═══════════════════════════════════════════════════════════════ */
+const SCHEDULES_FILE = path.join(DATA_DIR, 'schedules.json')
+let schedules = []
+async function loadSchedules() {
+  try { schedules = JSON.parse(await readFile(SCHEDULES_FILE, 'utf8')); if (!Array.isArray(schedules)) schedules = [] } catch { schedules = [] }
+  for (const s of schedules) s.activeTaskId = '' // 重启后清理运行态（避免卡死判定）
+}
+const saveSchedules = () => writeFile(SCHEDULES_FILE, JSON.stringify(schedules, null, 2), 'utf8')
+function computeNextRun(s) {
+  const now = Date.now()
+  if (s.kind === 'daily' && /^\d{1,2}:\d{2}$/.test(String(s.at || ''))) {
+    const [h, m] = String(s.at).split(':').map(Number)
+    const d = new Date(); d.setHours(h, m, 0, 0)
+    let t = d.getTime(); if (t <= now) t += 86400000
+    return t
+  }
+  return now + Math.max(1, Number(s.intervalMinutes) || 60) * 60000
+}
+async function runSchedule(s) {
+  const sess = s.sessionId ? sessions.find((x) => x.id === s.sessionId) : null
+  const run = createTeamRun(s.task, sess?.id || '')
+  s.activeTaskId = run.id
+  s.lastRun = Date.now()
+  await saveSchedules()
+  bumpRev('tasks')
+  dbg('schedule.run', { id: s.id, name: s.name })
+  try { await runTeam(s.task, { session: sess || undefined, run }) } catch (e) { runEmit(run, { type: 'error', message: e?.message || String(e) }) }
+  const done = [...run.buffer].reverse().find((e) => e.type === 'done')
+  const ok = !!(done && !done.aborted && !done.budgetStopped)
+  s.lastStatus = ok ? 'done' : (done?.aborted ? 'stopped' : 'failed')
+  s.lastCost = Number(done?.cost || 0)
+  if (ok || done?.aborted) {
+    // 成功 / 用户手动终止：不视为失败，按原计划排下一次
+    s.consecutiveFails = 0
+    s.nextRun = computeNextRun(s)
+  } else {
+    // 失败自愈：5 分钟后重试；连续 3 次自动停用（避免无人值守时反复烧钱）
+    s.consecutiveFails = (s.consecutiveFails || 0) + 1
+    if (s.consecutiveFails >= 3) { s.enabled = false; s.nextRun = 0 }
+    else s.nextRun = Date.now() + 5 * 60000
+  }
+  s.activeTaskId = ''
+  await saveSchedules()
+}
+async function checkSchedules() {
+  const now = Date.now()
+  for (const s of schedules) {
+    if (!s.enabled || s.activeTaskId) continue
+    if (!s.nextRun || s.nextRun > now) continue
+    runSchedule(s).catch(() => {})
+  }
+}
+let schedTimer = null
+function startScheduleTicker() {
+  if (schedTimer) return
+  schedTimer = setInterval(() => { checkSchedules().catch(() => {}) }, 30000)
+}
 
 /* ═══════════════════════════════════════════════════════════════
  * 四、调试事件环形缓冲（开发者面板）
@@ -3067,6 +3129,51 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
       return sendJson(res, 200, { ok: true, urls })
     } catch (e) { return sendJson(res, 200, { ok: false, error: e.message }) }
   }
+  // ★ 定时任务/心跳：列表 / 新建 / 修改 / 删除（无人值守按计划自动跑团队任务）
+  if (pathname === '/api/schedules' && method === 'GET') {
+    return sendJson(res, 200, { ok: true, now: Date.now(), schedules: schedules.map((s) => ({ ...s, running: !!s.activeTaskId })) })
+  }
+  if (pathname === '/api/schedules' && method === 'POST') {
+    const b = await readBody(req)
+    if (!String(b.task || '').trim()) return sendJson(res, 200, { ok: false, error: '缺少任务内容' })
+    const s = {
+      id: crypto.randomUUID(), name: String(b.name || '定时任务').slice(0, 40),
+      kind: b.kind === 'daily' ? 'daily' : 'interval',
+      intervalMinutes: Math.max(1, Math.min(7 * 24 * 60, Math.round(Number(b.intervalMinutes) || 60))),
+      at: /^\d{1,2}:\d{2}$/.test(String(b.at || '')) ? String(b.at) : '09:00',
+      task: String(b.task).slice(0, 4000), sessionId: String(b.sessionId || ''),
+      enabled: true, consecutiveFails: 0, lastStatus: '', lastRun: 0, lastCost: 0, activeTaskId: '', createdAt: Date.now(),
+    }
+    s.nextRun = computeNextRun(s)
+    schedules.unshift(s); await saveSchedules()
+    audit(req, 'schedule.create', { name: s.name })
+    return sendJson(res, 200, { ok: true, schedule: s })
+  }
+  const msch = pathname.match(/^\/api\/schedules\/([^/]+)$/)
+  if (msch) {
+    const s = schedules.find((x) => x.id === msch[1])
+    if (!s) return sendJson(res, 404, { ok: false, error: '定时任务不存在' })
+    if (method === 'PUT') {
+      const b = await readBody(req)
+      if (b.enabled != null) { s.enabled = !!b.enabled; s.consecutiveFails = 0 }
+      if (b.name != null) s.name = String(b.name).slice(0, 40)
+      if (b.task != null && String(b.task).trim()) s.task = String(b.task).slice(0, 4000)
+      if (b.kind === 'daily' || b.kind === 'interval') s.kind = b.kind
+      if (b.intervalMinutes != null) s.intervalMinutes = Math.max(1, Math.min(7 * 24 * 60, Math.round(Number(b.intervalMinutes) || 60)))
+      if (/^\d{1,2}:\d{2}$/.test(String(b.at || ''))) s.at = String(b.at)
+      if (b.sessionId != null) s.sessionId = String(b.sessionId)
+      s.nextRun = computeNextRun(s)
+      await saveSchedules()
+      audit(req, 'schedule.update', { id: s.id, enabled: s.enabled })
+      return sendJson(res, 200, { ok: true, schedule: s })
+    }
+    if (method === 'DELETE') {
+      schedules = schedules.filter((x) => x.id !== s.id)
+      await saveSchedules()
+      audit(req, 'schedule.delete', { id: s.id })
+      return sendJson(res, 200, { ok: true })
+    }
+  }
   // ★ .oat 常驻项目档案：查看 / 覆盖 / 清空（存于 工作区/.oat/PROJECT.md，随项目迁移）
   if (pathname === '/api/project-memory' && method === 'GET') {
     const root = String(url.searchParams.get('root') || '') || getActiveRoot()
@@ -3335,6 +3442,7 @@ const server = http.createServer(async (req, res) => {
   catch (e) { dbg('server.error', { message: String(e?.message || e) }); sendJson(res, e?.statusCode || 500, { ok: false, error: String(e?.message || e) }) }
 })
 await loadData()
+startScheduleTicker() // ★ 定时任务/心跳：每 30 秒检查一次到期任务
 // ★ TAT：监听地址——「手机连接」开启局域网监听时绑 0.0.0.0（所有网卡），否则仅本机
 const bindHost = process.env.HOST || (settings.lanListen ? '0.0.0.0' : '127.0.0.1')
 listenAll = bindHost === '0.0.0.0'

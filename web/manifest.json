@@ -1,0 +1,15 @@
+{
+  "name": "Open Agent Team",
+  "short_name": "OAT",
+  "description": "本机 AI 多智能体工作站：多角色团队协作 + 手机远程操控 + 项目记忆",
+  "lang": "zh-CN",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#14171c",
+  "theme_color": "#2f9e8f",
+  "icons": [
+    { "src": "/oat.png", "sizes": "192x192 512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

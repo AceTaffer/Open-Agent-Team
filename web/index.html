@@ -3,10 +3,15 @@
 <head>
  <meta charset="UTF-8" />
  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+ <meta name="theme-color" content="#2f9e8f" />
+ <meta name="apple-mobile-web-app-capable" content="yes" />
+ <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+ <link rel="apple-touch-icon" href="/oat.png" />
+ <link rel="manifest" href="/manifest.json" />
  <title>Open Agent Team</title>
  <link rel="icon" href="/oat.png" />
- <link rel="stylesheet" href="/style.css?v=1.2.0" />
- <link rel="stylesheet" href="/team.css?v=1.2.0" />
+ <link rel="stylesheet" href="/style.css?v=1.3.0" />
+ <link rel="stylesheet" href="/team.css?v=1.3.0" />
 </head>
 <body>
  <!-- ═══ 顶栏 ═══ -->
@@ -644,6 +649,19 @@
   </div>
   </div>
   <div class="set-card">
+  <h3>定时任务（心跳）</h3>
+  <p class="dim small">无人值守：按「每隔 N 分钟」或「每天 HH:MM」自动给团队下达任务；任务照常写入团队会话与 .oat 项目档案。失败 5 分钟后自动重试，连续 3 次失败自动停用（避免无人时反复烧钱）。</p>
+  <div id="sched-list" class="dim small"></div>
+  <div class="gh-row" style="margin-top:8px;flex-wrap:wrap">
+  <select id="sched-kind" class="mini-sel"><option value="interval">每隔</option><option value="daily">每天</option></select>
+  <input id="sched-interval" type="number" min="1" value="60" style="width:78px" title="间隔（分钟）" />
+  <input id="sched-at" class="hidden" placeholder="HH:MM" style="width:78px" title="每天执行时间" />
+  <select id="sched-session" class="mini-sel" title="任务写入哪个团队会话"></select>
+  </div>
+  <textarea id="sched-task" rows="2" placeholder="要自动执行的任务（例：检查 chapters/ 进度，把未完成章节继续写完并汇总）"></textarea>
+  <div class="gh-row"><button id="btn-sched-add" class="btn primary">添加定时任务</button><span id="sched-msg" class="dim small"></span></div>
+  </div>
+  <div class="set-card">
   <h3 data-i18n="updateTitle">更新</h3>
  <label class="set-row"><span data-i18n="updateCurrent">当前版本</span><b id="update-current">-</b></label>
  <label class="set-row"><span data-i18n="updateRepo">更新源仓库</span><input id="set-update-repo" placeholder="owner/repo（你的 GitHub 仓库）" style="flex:1" /></label>
@@ -882,6 +900,6 @@
  </div>
 
  <script src="/vendor/qrcode.js"></script>
- <script src="/app.js?v=1.2.0"></script>
+ <script src="/app.js?v=1.3.0"></script>
 </body>
 </html>
