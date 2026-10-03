@@ -561,7 +561,8 @@ body[data-spacing="relaxed"] .provider-cards, body[data-spacing="relaxed"] .sett
   .topbar .topbar-actions { display: none !important; }
   .topbar { padding: 10px 10px 10px 56px; }
   /* 对话页：只保留 提供方/模型 两个下拉 + 工具开关 + 新建会话 */
-  #chat-perm, #chat-effort, #chat-ws, #chat-context, #btn-rail-toggle, #btn-clear-chat, #chat-model-tags { display: none !important; }
+  /* ★ 只隐藏"还在工具条里"的控件；被搬进折叠条的（#chat-perm/#chat-effort）不再命中本规则 */
+  .chat-toolbar #chat-perm, .chat-toolbar #chat-effort, #chat-ws, #chat-context, #btn-rail-toggle, #btn-clear-chat, #chat-model-tags { display: none !important; }
   .chat-toolbar { flex-wrap: nowrap; overflow-x: auto; white-space: nowrap; padding: 6px 8px; }
   .chat-toolbar select { max-width: 42vw; }
   /* 团队页轻量化：预算等收纳（续跑/推理已移入折叠条）；隐藏次要按钮 */
@@ -587,6 +588,11 @@ body[data-spacing="relaxed"] .provider-cards, body[data-spacing="relaxed"] .sett
     -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
   }
   .team-input textarea { min-height: 64px; }
+  /* ★ 团队输入区：折叠条独占一行（上方），输入框与按钮正常排布，不再被挤到一边 */
+  .team-input { flex-wrap: wrap; }
+  #team-effort-fold { flex: 0 0 100%; width: 100%; }
+  /* ★ 折叠条内：隐藏被搬入控件的自带文字，避免与行标签重复（如"工具 工具"） */
+  .fold-slot .chk span { display: none; }
 }
 /* ══════════ ★ TAT：会话列表指标悬停卡 + 角色卡片指标行 ══════════ */
 .session-item { position: relative; }
