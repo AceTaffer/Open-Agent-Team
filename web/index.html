@@ -10,8 +10,8 @@
  <link rel="manifest" href="/manifest.json" />
  <title>Open Agent Team</title>
  <link rel="icon" href="/oat.png" />
- <link rel="stylesheet" href="/style.css?v=1.7.0" />
- <link rel="stylesheet" href="/team.css?v=1.7.0" />
+ <link rel="stylesheet" href="/style.css?v=1.7.1" />
+ <link rel="stylesheet" href="/team.css?v=1.7.1" />
 </head>
 <body>
  <!-- ═══ 顶栏 ═══ -->
@@ -136,18 +136,14 @@
   </div>
   <button id="btn-chat-bottom" class="to-bottom hidden" data-i18n="toBottom">回到底部</button>
  <div id="cmd-palette" class="cmd-palette hidden"></div>
- <!-- ★ 推理等级：对话框上方可折叠条（点击展开/再点折叠；窄屏显示） -->
+ <!-- ★ 对话设置（工具/权限/推理）：对话框上方可折叠条（点击展开/再点折叠；窄屏显示）
+      窄屏时真实控件会被搬进这里的槽位，桌面端会自动回到工具条原位（同一控件，双端同步） -->
  <div class="effort-fold mobile-only-block" id="chat-effort-fold">
- <button class="effort-fold-btn" type="button">推理等级：<b id="chat-effort-cur">默认</b> <span class="fold-arrow">▾</span></button>
+ <button class="effort-fold-btn" type="button">对话设置：<b id="chat-effort-cur">默认</b> <span class="fold-arrow">▾</span></button>
  <div class="effort-fold-body hidden">
- <div class="effort-ctl" id="chat-effort-m" title="推理等级（拖动调节，越长越强）">
- <div class="ec-track">
- <div class="ec-fill"></div>
- <div class="ec-knob"></div>
- <span class="ec-spark"></span><span class="ec-spark"></span><span class="ec-spark"></span>
- </div>
- <span class="ec-label">默认</span>
- </div>
+ <div class="fold-row"><span class="fold-label">工具</span><span class="fold-slot" id="slot-chat-tools"></span></div>
+ <div class="fold-row"><span class="fold-label">权限</span><span class="fold-slot" id="slot-chat-perm"></span></div>
+ <div class="fold-row"><span class="fold-label">推理</span><span class="fold-slot" id="slot-chat-effort"></span></div>
  </div>
  </div>
  <div class="chat-input">
@@ -175,18 +171,12 @@
  <div class="team-grid">
  <div class="team-main">
  <div class="team-input">
- <!-- ★ 推理等级：任务框上方可折叠条（点击展开/再点折叠；窄屏显示） -->
+ <!-- ★ 任务设置（自动续跑/推理）：任务框上方可折叠条（窄屏显示；真实控件窄屏时搬入） -->
  <div class="effort-fold mobile-only-block" id="team-effort-fold">
- <button class="effort-fold-btn" type="button">推理等级：<b id="team-effort-cur">默认</b> <span class="fold-arrow">▾</span></button>
+ <button class="effort-fold-btn" type="button">任务设置：<b id="team-effort-cur">默认</b> <span class="fold-arrow">▾</span></button>
  <div class="effort-fold-body hidden">
- <div class="effort-ctl" id="team-effort-m" title="推理等级（拖动调节，越长越强）">
- <div class="ec-track">
- <div class="ec-fill"></div>
- <div class="ec-knob"></div>
- <span class="ec-spark"></span><span class="ec-spark"></span><span class="ec-spark"></span>
- </div>
- <span class="ec-label">默认</span>
- </div>
+ <div class="fold-row"><span class="fold-label">续跑</span><span class="fold-slot" id="slot-team-auto"></span></div>
+ <div class="fold-row"><span class="fold-label">推理</span><span class="fold-slot" id="slot-team-effort"></span></div>
  </div>
  </div>
  <textarea id="team-task" rows="2" data-i18n-ph="teamPlaceholder" placeholder="给团队下达任务…"></textarea>
@@ -974,6 +964,6 @@
  </div>
 
  <script src="/vendor/qrcode.js"></script>
- <script src="/app.js?v=1.7.0"></script>
+ <script src="/app.js?v=1.7.1"></script>
 </body>
 </html>

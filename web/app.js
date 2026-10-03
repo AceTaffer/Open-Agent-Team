@@ -295,8 +295,14 @@ const TEAM_PRESETS = {
 }
 
 /* 版本迭代记录（设置页展示） */
-const APP_VERSION = '1.7.0'
+const APP_VERSION = '1.7.1'
 const CHANGELOG = [
+  ['P9.7', '2026-10', [
+    '手机端交互大修：对话/任务输入框上方的折叠条整合「工具 / 权限 / 自动续跑 / 推理等级」（窄屏搬入真实控件、宽屏自动归位；点击展开/再点折叠）',
+    '手机端会话卡片：新增 ⋯ 操作菜单（统计信息 + 重命名/归档/导出/删除），告别"长按乱弹文本识别"；卡片禁用长按识别、消除粘滞悬浮高亮',
+    '消息可复制：长按/选择复制已放开（消息/团队输出/推理/工具输出），并在每条消息与角色块上新增「复制」按钮（http 局域网下自动回退兼容剪贴板）',
+    '双端并发体验：远程变更加 rev 去重 + 700ms 去抖 + 本机操作 2 秒保护——电脑端忙碌时手机点击会话/新建不再卡顿、闪烁、被"夺舍"',
+  ]],
   ['P9.6', '2026-10', [
     'Android 手机端 v1.7.0（随 Release 提供 APK，arm64）：远程模式（连电脑）+ 本地模式（JNI 内嵌引擎，手机离线可聊天/任务）；手机端热更新（本地引擎文件从 GitHub 更新，重启应用生效）；状态栏/手势条适配',
     '手机端 UI 简约化：顶栏极简（功能收纳进左侧抽屉：九宫格导航/工作区/新建文件）；团队页单行角色条（带实时状态，可单独查看或总览）；对话/团队输入框上方新增「推理等级」可折叠条（点击展开/再点击折叠，与桌面滑块同源）',
@@ -457,19 +463,38 @@ function remoteToast(msg) {
   clearTimeout(remoteToast._t)
   remoteToast._t = setTimeout(() => el.classList.remove('show'), 4000)
 }
+// ★ 远程变更：去重（rev）+ 去抖（多设备同时操作时避免把本机正在点击的列表反复重绘）
+const _revSeen = {}
+const _remoteTimers = {}
+function _scheduleRemote(key, fn, ms = 700) {
+ clearTimeout(_remoteTimers[key])
+ _remoteTimers[key] = setTimeout(() => {
+  if (Date.now() - lastLocalWrite < 2000) { _scheduleRemote(key, fn, 900); return } // 本机刚操作过：延后，避免打断点击
+  fn()
+ }, ms)
+}
 function onRemoteChange(ev) {
  try {
   if (!ev || !ev.key) return
   // ★ 自己发起的变更：忽略回声（服务端广播回带 origin）
   if (ev.origin && ev.origin === CLIENT_ID) return
-  if (ev.key === 'sessions') { refreshSessions().catch(() => {}); if (state.teamLoaded) refreshTeamSessions(state.teamSessionId).catch(() => {}); checkActiveRuns(true).catch(() => {}) }
-  else if (ev.key === 'tasks') { refreshTasks(); checkActiveRuns(true).catch(() => {}); renderSchedules().catch(() => {}) }
-  else if (ev.key === 'art') refreshArtGallery()
-  else if (ev.key === 'stats') refreshStats()
-  else if (['settings', 'roles', 'providers', 'devices'].includes(ev.key)) {
+  if (typeof ev.rev === 'number') { if (_revSeen[ev.key] === ev.rev) return; _revSeen[ev.key] = ev.rev }
+  if (ev.key === 'sessions') {
+   _scheduleRemote('sessions', () => {
+    refreshSessions().catch(() => {})
+    if (state.teamLoaded) refreshTeamSessions(state.teamSessionId).catch(() => {})
+    checkActiveRuns(true).catch(() => {})
+   })
+  } else if (ev.key === 'tasks') {
+   _scheduleRemote('tasks', () => { refreshTasks(); checkActiveRuns(true).catch(() => {}); renderSchedules().catch(() => {}) })
+  } else if (ev.key === 'art') {
+   _scheduleRemote('art', () => refreshArtGallery(), 400)
+  } else if (ev.key === 'stats') {
+   _scheduleRemote('stats', () => refreshStats(), 400)
+  } else if (['settings', 'roles', 'providers', 'devices'].includes(ev.key)) {
    // ★ 按要求：不再弹"另一台设备更新了配置"提示；仅在非编辑态静默同步一次运行态配置（不打断正在编辑的表单）
    const v = document.querySelector('.view.active')?.id || ''
-   if (!['view-settings', 'view-teamconfig', 'view-providers', 'view-plugins'].includes(v)) loadState().catch(() => {})
+   if (!['view-settings', 'view-teamconfig', 'view-providers', 'view-plugins'].includes(v)) _scheduleRemote('settings', () => loadState().catch(() => {}), 900)
   }
  } catch { /* ignore */ }
 }
@@ -645,8 +670,8 @@ function setupEffortControl(id, getValue, onPick) {
  })
   el.addEventListener('pointercancel', () => { dragging = false })
 }
-// ★ 推理等级折叠条（窄屏）：点击标题展开/再点折叠；展开时同步当前等级与滑块位置
-function setupEffortFold(foldId, curId, ctlId, getValue) {
+// ★ 设置折叠条（窄屏）：点击标题展开/再点折叠；展开时同步当前推理等级文案
+function setupEffortFold(foldId, curId, getValue) {
  const fold = $(foldId)
  if (!fold) return
  const body = fold.querySelector('.effort-fold-body')
@@ -655,9 +680,32 @@ function setupEffortFold(foldId, curId, ctlId, getValue) {
   fold.classList.toggle('open', !hidden)
   if (!hidden) {
    const v = getValue()
-   setEffortVisual(ctlId, v)
    const b = $(curId)
    if (b) b.textContent = (EFFORT_LEVELS.find(([x]) => x === v) || EFFORT_LEVELS[2])[1]
+  }
+ }
+}
+// ★ 窄屏时把真实控件（工具/权限/续跑/推理）搬进折叠条槽位；回到宽屏自动归位（同一控件，双端同步）
+const FOLD_HOMES = new Map()
+function relocateMobileSettings() {
+ const narrow = window.innerWidth <= 860
+ const pairs = [
+  [$('chat-tools') ? $('chat-tools').closest('label') : null, $('slot-chat-tools')],
+  [$('chat-perm'), $('slot-chat-perm')],
+  [$('chat-effort'), $('slot-chat-effort')],
+  [$('team-auto-continue'), $('slot-team-auto')],
+  [$('team-effort'), $('slot-team-effort')],
+ ]
+ for (const [node, slot] of pairs) {
+  if (!node) continue
+  if (narrow && slot) {
+   if (!FOLD_HOMES.has(node)) FOLD_HOMES.set(node, { parent: node.parentElement, before: node.nextSibling })
+   if (node.parentElement !== slot) slot.appendChild(node)
+  } else {
+   const h = FOLD_HOMES.get(node)
+   if (h && h.parent && h.parent.isConnected && node.parentElement !== h.parent) {
+    try { h.parent.insertBefore(node, h.before && h.before.parentElement === h.parent ? h.before : null) } catch { h.parent.appendChild(node) }
+   }
   }
  }
 }
@@ -1015,11 +1063,12 @@ function renderSidebar() {
  </span>
  <span class="s-actions">
  <button class="mini" data-act="rename" data-sid="${s.id}" title="rename">✎</button>
-  <button class="mini" data-act="archive" data-sid="${s.id}" title="archive">${s.archived ? '↩' : '▣'}</button>
- <button class="mini" data-act="export" data-sid="${s.id}" title="export">⤓</button>
- <button class="mini" data-act="del" data-sid="${s.id}" title="delete">✕</button>
- </span>
- </div>`).join('') || `<div class="dim small" style="padding:4px 8px">${t('noSessions')}</div>`}
+   <button class="mini" data-act="archive" data-sid="${s.id}" title="archive">${s.archived ? '↩' : '▣'}</button>
+  <button class="mini" data-act="export" data-sid="${s.id}" title="export">⤓</button>
+  <button class="mini" data-act="del" data-sid="${s.id}" title="delete">✕</button>
+  </span>
+  <button class="mini sess-more" data-sid="${s.id}" title="更多操作">⋯</button>
+  </div>`).join('') || `<div class="dim small" style="padding:4px 8px">${t('noSessions')}</div>`}
  </div>` : ''
  return `<div class="provider-card ${p.id === state.selectedId ? 'selected' : ''}" data-id="${p.id}">
  <div class="name"><span class="exp">${expanded ? '▾' : '▸'}</span> ${esc(p.name)} ${p.hasKey ? '' : `<span class="badge">${t('noKey')}</span>`}</div>
@@ -1045,24 +1094,60 @@ function renderSidebar() {
  list.querySelectorAll('.new-session').forEach((b) => { b.onclick = (e) => { e.stopPropagation(); openSessionModal(b.dataset.pid) } })
  list.querySelectorAll('.session-item').forEach((el) => {
  el.onclick = () =>openSession(el.dataset.sid)
- el.querySelectorAll('.mini').forEach((m) => {
- m.onclick = async (e) => {
- e.stopPropagation()
- const sid = m.dataset.sid, act = m.dataset.act
- if (act === 'rename') { const s = state.sessions.find((x) =>x.id === sid); const v = prompt('Title', s?.title || ''); if (v != null) await api('PUT', `/api/sessions/${sid}`, { title: v }) }
- else if (act === 'archive') { const s = state.sessions.find((x) =>x.id === sid); await api('PUT', `/api/sessions/${sid}`, { archived: !s?.archived }) }
- else if (act === 'export') { window.open(`/api/sessions/${sid}/export`, '_blank') ; return }
-  else if (act === 'del') {
-   const sDel = state.sessions.find((x) => x.id === sid)
-   const choice = await askDeleteSession(sDel?.title, sDel?.workspace)
-   if (choice === 'cancel') return
-   await api('DELETE', `/api/sessions/${sid}${choice === 'purge' ? '?purge=1' : ''}`)
-   if (state.activeSession?.id === sid) { state.activeSession = null; localStorage.removeItem('oat-last-session'); renderChatMessages() }
-  }
-  await refreshSessions()
+ el.querySelectorAll('.mini[data-act]').forEach((m) => {
+ m.onclick = async (e) => { e.stopPropagation(); await sessionAction(m.dataset.sid, m.dataset.act) }
+ })
+ const more = el.querySelector('.sess-more')
+ if (more) more.onclick = (e) => { e.stopPropagation(); openSessionMenu(more, el.dataset.sid) }
+ })
+}
+// ★ 会话操作：重命名/归档/导出/删除（工具条小按钮与手机 ⋯ 菜单共用）
+async function sessionAction(sid, act) {
+ if (act === 'rename') { const s = state.sessions.find((x) => x.id === sid); const v = prompt('Title', s?.title || ''); if (v != null) await api('PUT', `/api/sessions/${sid}`, { title: v }) }
+ else if (act === 'archive') { const s = state.sessions.find((x) => x.id === sid); await api('PUT', `/api/sessions/${sid}`, { archived: !s?.archived }) }
+ else if (act === 'export') { window.open(`/api/sessions/${sid}/export`, '_blank'); return }
+ else if (act === 'del') {
+  const sDel = state.sessions.find((x) => x.id === sid)
+  const choice = await askDeleteSession(sDel?.title, sDel?.workspace)
+  if (choice === 'cancel') return
+  await api('DELETE', `/api/sessions/${sid}${choice === 'purge' ? '?purge=1' : ''}`)
+  if (state.activeSession?.id === sid) { state.activeSession = null; localStorage.removeItem('oat-last-session'); renderChatMessages() }
  }
+ await refreshSessions()
+}
+// ★ 通用动作菜单（会话卡片 ⋯ / 可复用）
+function showActionMenu(anchor, items, headText) {
+ const old = document.getElementById('act-menu')
+ if (old) old.remove()
+ const m = document.createElement('div')
+ m.id = 'act-menu'
+ m.innerHTML = (headText ? `<div class="act-head">${esc(headText)}</div>` : '') +
+  items.map((it) => `<button data-k="${esc(it.k)}"${it.danger ? ' class="danger"' : ''}>${esc(it.label)}</button>`).join('')
+ document.body.appendChild(m)
+ const r = anchor.getBoundingClientRect()
+ const w = 176
+ const h = 12 + (items.length * 40) + (headText ? 58 : 0)
+ m.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.right - w)) + 'px'
+ m.style.top = Math.max(8, Math.min(window.innerHeight - h - 8, r.bottom + 6)) + 'px'
+ const close = () => { m.remove(); document.removeEventListener('click', off, true) }
+ const off = (e) => { if (!m.contains(e.target) && e.target !== anchor) close() }
+ setTimeout(() => document.addEventListener('click', off, true), 0)
+ m.querySelectorAll('button').forEach((b) => {
+  b.onclick = () => { close(); const it = items.find((x) => x.k === b.dataset.k); if (it && it.run) it.run() }
  })
- })
+}
+// ★ 手机端会话卡片 ⋯ 菜单：统计信息 + 编辑/归档/导出/删除（不再依赖长按）
+function openSessionMenu(anchor, sid) {
+ const s = state.sessions.find((x) => x.id === sid)
+ if (!s) return
+ const pct = s.contextLimit ? Math.min(999, Math.round((s.lastPrompt || 0) / s.contextLimit * 100)) + '%' : '--'
+ const head = `费用 ${fmtCost(s.cost)} · 使用率 ${pct}\nToken ${fmtNum(s.lastPrompt)}${s.contextLimit ? '/' + fmtNum(s.contextLimit) : ''} · 缓存命中 ${fmtNum(s.cacheHitTokens)}`
+ showActionMenu(anchor, [
+  { k: 'rename', label: '✎ 重命名', run: () => sessionAction(sid, 'rename') },
+  { k: 'archive', label: (s.archived ? '↩ 取消归档' : '▣ 归档'), run: () => sessionAction(sid, 'archive') },
+  { k: 'export', label: '⤓ 导出 JSON', run: () => sessionAction(sid, 'export') },
+  { k: 'del', label: '✕ 删除…', danger: true, run: () => sessionAction(sid, 'del') },
+ ], head)
 }
 function renderChatToolbar() {
  const ps = $('chat-provider')
@@ -1200,6 +1285,8 @@ async function createSessionFromModal() {
  await openSession(r.session.id)
 }
 async function openSession(id) {
+ lastLocalWrite = Date.now() // ★ 标记本机操作：延迟远程触发的列表重绘，避免切换会话时被"夺舍"
+
  const r = await api('GET', `/api/sessions/${id}`)
  if (!r.ok) return
  state.activeSession = r.session
@@ -1221,6 +1308,39 @@ async function reloadActiveSession() {
 }
 
 /* ══════════════ 对话 ══════════════ */
+// ★ 复制到剪贴板（http 局域网下 navigator.clipboard 不可用 → 回退 execCommand）
+async function copyText(text) {
+ try {
+  if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); return true }
+ } catch { /* fallthrough */ }
+ try {
+  const ta = document.createElement('textarea')
+  ta.value = text
+  ta.style.position = 'fixed'; ta.style.left = '-9999px'; ta.style.top = '0'
+  document.body.appendChild(ta)
+  ta.focus(); ta.select()
+  const ok = document.execCommand('copy')
+  ta.remove()
+  return ok
+ } catch { return false }
+}
+// ★ 给块（团队角色块/角色对话块）挂"复制正文"按钮
+function attachCopyButton(boxEl, getText) {
+ const b = document.createElement('button')
+ b.className = 'btn ghost tiny copy-btn'
+ b.type = 'button'
+ b.textContent = '复制'
+ b.title = '复制正文'
+ b.onclick = async (e) => {
+  e.stopPropagation()
+  const ok = await copyText(getText() || '')
+  b.textContent = ok ? '已复制' : '失败'
+  setTimeout(() => { b.textContent = '复制' }, 1200)
+ }
+ const head = boxEl.querySelector('.agent-head')
+ if (head) head.appendChild(b)
+ else boxEl.insertBefore(b, boxEl.firstChild)
+}
 function appendMsg(role, content, meta, idx) {
  const box = $('chat-messages')
  box.querySelector('.empty-tip')?.remove()
@@ -1239,6 +1359,18 @@ function appendMsg(role, content, meta, idx) {
   metaEl.insertAdjacentHTML('beforeend', ` <span>${t('tokens')} ${fmtNum(meta.usage.prompt_tokens)}/${fmtNum(meta.usage.completion_tokens)} · ${t('cache')} ${fmtNum(hit)} · ${t('cost')} ${fmtCost(meta.cost)}</span>`)
   el.appendChild(metaEl)
  }
+ // ★ 消息复制按钮（手机常显 / 桌面悬停；原生长按选择也在 CSS 中放开了）
+ const cp = document.createElement('button')
+ cp.className = 'msg-copy'
+ cp.type = 'button'
+ cp.textContent = '复制'
+ cp.onclick = async (e) => {
+  e.stopPropagation()
+  const ok = await copyText(el.querySelector('.content').textContent || '')
+  cp.textContent = ok ? '已复制' : '失败'
+  setTimeout(() => { cp.textContent = '复制' }, 1200)
+ }
+ el.appendChild(cp)
  box.appendChild(el); box.scrollTop = box.scrollHeight
  return el.querySelector('.content')
 }
@@ -1474,9 +1606,10 @@ function runBlock(run, agent, label, subtitle) {
   const r = await api('POST', '/api/team/control', { taskId: state.currentTeamTaskId, action: paused ? 'resumeAgent' : 'pauseAgent', agent })
   if (r.ok && Array.isArray(r.pausedAgents)) { state.agentPaused = new Set(r.pausedAgents); pb.textContent = state.agentPaused.has(agent) ? '▷' : '‖' }
  }
- run.body.appendChild(box)
- scrollIfNearBottom(document.getElementById('team-stream'))
- return box.querySelector('.agent-body')
+  run.body.appendChild(box)
+  attachCopyButton(box, () => box.querySelector('.agent-body')?.innerText || '')
+  scrollIfNearBottom(document.getElementById('team-stream'))
+  return box.querySelector('.agent-body')
 }
 /* 团队会话：先建会话（选工作区）再下任务 */
 async function refreshTeamSessions(selectId) {
@@ -1864,6 +1997,7 @@ async function roleChatSend() {
   box.innerHTML = `<div class="agent-head"><span class="agent-name">你 → ${esc(roleLabel(roleId))}</span></div><div class="rc-user"></div><div class="rc-ai"></div>`
   box.querySelector('.rc-user').textContent = text
   $('team-stream').appendChild(box)
+ attachCopyButton(box, () => box.querySelector('.rc-ai')?.innerText || '')
  applyTeamFilter()
  scrollIfNearBottom($('team-stream'), true)
  // 任务进行中：同时作为中途指令发给该角色（它会真正采纳）
@@ -3329,17 +3463,12 @@ async function main() {
   if (state.teamSessionId) { await api('PUT', `/api/sessions/${state.teamSessionId}`, { effort: v }); await refreshTeamSessions(state.teamSessionId) }
   else { state.settings.reasoningEffort = v; await api('PUT', '/api/settings', { reasoningEffort: v }) }
  })
- // ★ 窄屏：对话框/任务框上方的「推理等级」折叠条（与工具条滑块同源、同步写入）
- setupEffortFold('chat-effort-fold', 'chat-effort-cur', 'chat-effort-m', () => (state.activeSession?.effort || state.settings.reasoningEffort || 'default'))
- setupEffortControl('chat-effort-m', () => (state.activeSession?.effort || state.settings.reasoningEffort || 'default'), async (v) => {
-  if (state.activeSession) { state.activeSession.effort = v; await api('PUT', `/api/sessions/${state.activeSession.id}`, { effort: v }); refreshSessions() }
-  else { state.settings.reasoningEffort = v; await api('PUT', '/api/settings', { reasoningEffort: v }) }
- })
- setupEffortFold('team-effort-fold', 'team-effort-cur', 'team-effort-m', () => ((state.teamSessions.find((s) => s.id === state.teamSessionId) || {}).effort || state.settings.reasoningEffort || 'default'))
- setupEffortControl('team-effort-m', () => ((state.teamSessions.find((s) => s.id === state.teamSessionId) || {}).effort || state.settings.reasoningEffort || 'default'), async (v) => {
-  if (state.teamSessionId) { await api('PUT', `/api/sessions/${state.teamSessionId}`, { effort: v }); await refreshTeamSessions(state.teamSessionId) }
-  else { state.settings.reasoningEffort = v; await api('PUT', '/api/settings', { reasoningEffort: v }) }
- })
+ // ★ 窄屏：对话/任务设置折叠条（工具/权限/续跑/推理——真实控件窄屏搬入、宽屏归位）
+ setupEffortFold('chat-effort-fold', 'chat-effort-cur', () => (state.activeSession?.effort || state.settings.reasoningEffort || 'default'))
+ setupEffortFold('team-effort-fold', 'team-effort-cur', () => ((state.teamSessions.find((s) => s.id === state.teamSessionId) || {}).effort || state.settings.reasoningEffort || 'default'))
+ relocateMobileSettings()
+ let _relocT = null
+ window.addEventListener('resize', () => { clearTimeout(_relocT); _relocT = setTimeout(relocateMobileSettings, 200) })
  setupDropzone($('chat-messages'), $('chat-text'))
  setupDropzone($('chat-text'), $('chat-text'))
  // ★ 团队：聚焦某角色时拖入 → 发给该角色的单独对话；否则 → 团队任务输入框

@@ -529,6 +529,30 @@ body[data-spacing="relaxed"] .provider-cards, body[data-spacing="relaxed"] .sett
 .effort-fold-btn .fold-arrow { float: right; opacity: .7; }
 .effort-fold.open .effort-fold-btn .fold-arrow { transform: rotate(180deg); display: inline-block; }
 .effort-fold-body { padding: 0 12px 10px; }
+.fold-row { display: flex; align-items: center; gap: 10px; min-height: 36px; }
+.fold-row .fold-label { flex: 0 0 44px; color: var(--text-dim); font-size: 12px; }
+.fold-row .fold-slot { flex: 1; display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.fold-row .fold-slot select { max-width: 60vw; }
+/* ★ 消息复制按钮（手机常显 / 桌面悬停显示） */
+.msg, .agent-block { position: relative; }
+.msg-copy, .copy-btn { font-size: 11px; }
+.msg-copy { position: absolute; right: 6px; top: 4px; opacity: 0; transition: opacity .15s; background: var(--bg-soft, #1b2027); border: 1px solid var(--border); color: var(--text-dim); border-radius: 8px; padding: 3px 8px; cursor: pointer; z-index: 2; }
+.msg:hover .msg-copy { opacity: 1; }
+@media (max-width: 860px) { .msg-copy { opacity: .85; } }
+/* ★ 会话卡片：手机端 ⋯ 菜单（避免依赖 hover/长按） */
+.session-item .sess-more { display: none; }
+/* ★ 通用动作菜单（会话卡片/附件共用外观） */
+#act-menu {
+  position: fixed; z-index: 1200; background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 12px; padding: 6px; display: flex; flex-direction: column; gap: 4px; box-shadow: 0 8px 24px rgba(0,0,0,.4); min-width: 150px;
+}
+#act-menu button {
+  border: none; background: transparent; color: var(--text); text-align: left;
+  padding: 10px 16px; border-radius: 8px; font-size: 14px; cursor: pointer;
+}
+#act-menu button:hover { background: var(--bg-soft, #1b2027); }
+#act-menu button.danger { color: #e05656; }
+#act-menu .act-head { padding: 6px 12px; font-size: 11px; color: var(--text-dim); white-space: pre-wrap; border-bottom: 1px dashed var(--border); margin-bottom: 4px; }
 
 @media (max-width: 860px) {
   .mobile-only-block { display: block; }
@@ -540,10 +564,28 @@ body[data-spacing="relaxed"] .provider-cards, body[data-spacing="relaxed"] .sett
   #chat-perm, #chat-effort, #chat-ws, #chat-context, #btn-rail-toggle, #btn-clear-chat, #chat-model-tags { display: none !important; }
   .chat-toolbar { flex-wrap: nowrap; overflow-x: auto; white-space: nowrap; padding: 6px 8px; }
   .chat-toolbar select { max-width: 42vw; }
-  /* 团队页轻量化：预算/续跑/推理/清空 收纳（桌面端可调）；隐藏次要按钮 */
+  /* 团队页轻量化：预算等收纳（续跑/推理已移入折叠条）；隐藏次要按钮 */
   .team-budget { display: none !important; }
   #btn-team-session-rename, #btn-team-session-export, #btn-team-session-del, #team-session-ws { display: none !important; }
   .team-input-actions #btn-open-roles { display: none !important; }
+  /* ★ 会话卡片：禁用长按文本识别；隐藏悬浮统计卡与悬浮按钮，改用 ⋯ 菜单 */
+  .session-item { -webkit-touch-callout: none; user-select: none; }
+  .session-item:hover { border-color: var(--border); }
+  .session-item .s-actions { display: none !important; }
+  .session-item .sess-tip { display: none !important; }
+  .session-item .sess-more {
+    display: inline-flex; align-items: center; justify-content: center;
+    position: absolute; right: 4px; top: 4px; width: 30px; height: 26px;
+    border-radius: 8px; border: 1px solid var(--border); background: var(--bg-soft, #1b2027);
+    color: var(--text-dim); z-index: 3;
+  }
+  /* ★ 正文可选择复制（消息/团队输出/推理/工具输出）；界面装饰元素禁止长按识别 */
+  .chat-messages, .chat-messages .content, .agent-body, .reasoning-body, .tool-box pre, .ask-box, .notice-box, .rc-ai {
+    -webkit-user-select: text; user-select: text; -webkit-touch-callout: default;
+  }
+  .sidebar, .topbar, .tabs, .team-activity, .s-title, .s-meta, .session-item .sess-more {
+    -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
+  }
   .team-input textarea { min-height: 64px; }
 }
 /* ══════════ ★ TAT：会话列表指标悬停卡 + 角色卡片指标行 ══════════ */
