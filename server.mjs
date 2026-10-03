@@ -218,6 +218,12 @@ const BUILTIN_SKILLS = [
   { id: 'mk_novel_proofread', name: '小说校对规范', description: '逻辑/人设/时间线/文字逐项校对', tags: ['小说', '质量'], prompt: '校对小说话稿时逐项检查并给出证据：1) 剧情逻辑漏洞（动机不足、前后矛盾）；2) 人设一致性（性格、能力、称呼是否走形）；3) 时间线/空间线错误（季节、昼夜、路程）；4) 重复用词、口头禅滥用、错别字；5) 节奏问题（拖沓/跳跃）与建议删改段。输出「文件+段落位置+问题类型+修改建议」清单，重大问题用 ask_role 反馈给写手，改后必须复审。' },
   // ★ Paperclip 要点②：验收证据门——任何「完成/通过」结论必须附可复核证据（借鉴 Paperclip 的"无证据不算完成"）
   { id: 'mk_evidence', name: '验收证据规范', description: '完成/通过必须附命令、输出与读回证据', tags: ['质量', '规范'], prompt: '任何「完成 / 通过 / 已修复」结论都必须附可复核证据（禁止只声称）：1) 文件类：给出完整路径 + 用 read_file 读回的关键片段（或 list_files 结果）；2) 命令类：给出执行的命令原文 + 关键输出片段（如语法检查、字节比对、测试通过行）；3) 数据类：给出统计口径与原始数字；4) 若某项无法验证，明确写「未验证」并说明原因，不得默认通过；5) 汇报格式：结论 → 证据（逐项）→ 遗留问题。' },
+  // ★ 角色扮演/世界观推演技能（V2 角色卡 / 世界书 / 群像演出 / 情景推演 / 一致性审校）
+  { id: 'mk_roleplay_card', name: '角色卡规范（V2 兼容）', description: 'SillyTavern V2 字段映射 + 心理四要素 + 关系网', tags: ['角色扮演', '设定'], prompt: '角色卡规范（兼容 SillyTavern V2 / chara_card_v2）：每名主要角色产出一张卡，字段映射——description=身份/外观/背景与稳定事实；personality=性格与口吻（用 W++ 风格列特质，附口癖与语气例句）；scenario=所处情境与与主角关系；first_mes=该角色开场消息（用 {{user}} 占位）；mes_example=2~3 组语气校准（<START> 分隔，{{char}}/{{user}} 占位）。心理四要素必写：核心欲望 / 核心恐惧 / 核心谎言 / 需要学会的真相。另维护「角色关系网」（对谁：态度/张力/秘密）。交付 roleplay/characters.md + 每卡一份 roleplay/cards/*.json（chara_card_v2 兼容信封：spec/spec_version/data）。' },
+  { id: 'mk_world_bible', name: '世界书规范（Lorebook）', description: '条目化世界观：关键词触发与分层', tags: ['角色扮演', '设定'], prompt: '世界书规范（Lorebook 思路）：世界观拆成「条目」而非长文——每条：标题、关键词 keys（2~6 个，含常见别名）、触发方式（constant 常驻 / selective 主键+副键）、优先级、30~120 字正文。按层组织：世界规则与禁忌、地理与气候、势力与政治、历史与纪年、经济与技术、日常文化与用语。禁止矛盾条目并存；拿不准的挂「待裁定」交主持；关键词避免用「你/我/这里」这类高频词（防误触发）。交付 roleplay/worldbook.md（条目表）。' },
+  { id: 'mk_group_stage', name: '群像演出规范（GM 主持）', description: '多角色同场：轮转发言、防抢话、防全知', tags: ['角色扮演', '演出'], prompt: '群像演出规范：多角色同场时——1) 每轮按发言顺序轮流发言，用「角色名：」开头，每人一次 1~3 句，不得替他人说话；2) 严格遵守角色卡的口癖、学识、立场与已知信息：只能知道本场景亲历或他人明确告知的信息，禁止全知视角；3) 场景推进、时间流逝与突发事件由主持（GM）裁定与描述，演员只扮演自己的角色；4) 情绪与冲突要延续前文，不跳戏、不出戏（不写"作为AI…"之类）；5) 每幕结束由 GM 小结局面与悬念。' },
+  { id: 'mk_roleplay_sim', name: '情景推演规范', description: '回合制多角色推演、因果链与分支钩子', tags: ['角色扮演', '推演'], prompt: '多智能体情景推演规范：1) 输入：情景设定、角色卡、各角色当前目标与可选手段；2) 按回合推演：每个角色从自身立场选行动并说明理由 → 主持依据世界规则裁定结果（成功/代价/新信息）；3) 记录因果链：时间、地点、行动者、行动、结果、影响；4) 每轮更新状态表（位置/关系/资源/情绪/已知信息）；5) 输出 2~3 条「如果…则…」分支钩子与后续冲突建议；6) 禁止上帝视角与结果钦定，每次裁定必须给出依据。' },
+  { id: 'mk_continuity_check', name: '设定一致性审校', description: '规则/口吻/时间线/信息可知性逐项核对', tags: ['角色扮演', '质量'], prompt: '设定一致性审校：逐项检查并给证据（文件/条目/位置）：1) 世界观规则与禁忌是否被违反（能力边界、代价、限制）；2) 角色口吻、称呼、关系网是否走形（对照角色卡例句核验）；3) 时间线与空间线是否自洽（季节/昼夜/路程/纪年）；4) 信息可知性：角色是否使用了本不该知道的信息；5) 重复设定 / 吃书 / 互斥条目。输出「问题+位置+依据+修改建议」清单；出现设定级冲突必须判不通过并点名返工对象，修改后复审。' },
   // ★ 短视频流水线技能（project.json 工程规范 / 图生视频 / 配音 / 配乐 / 合成与媒体质检）
   { id: 'mk_video_project', name: '短视频工程规范（project.json）', description: '分镜工程单一事实源：场景表结构与时序约定', tags: ['视频', '规范'], prompt: '短视频项目以 video-project/project.json 为唯一事实源，所有角色都读写它、不要各自发明格式。结构：{"meta":{"title":"","aspect":"9:16 或 16:9","width":1080,"height":1920,"fps":30,"style":"风格关键词","music":{"file":"audio/bgm.mp3","volumeDb":-18},"subtitle":true},"scenes":[{"id":1,"dur":5,"narration":"中文文案（用于配音与字幕）","subtitleText":"可选覆盖字幕文本","visualPrompt":"可直接用于出图/视频的英文提示词","negative":"负面提示词","mode":"i2v","keyframe":"keyframes/k01.png","shot":"shots/shot01.mp4","voice":"audio/vo01.mp3"}]}。路径规范（重要）：project.json 内字段一律写「工程内相对路径」，直接以 shots/、audio/、keyframes/ 开头，**不要带 video-project/ 前缀**（如 "shots/shot01.mp4"、"audio/vo01.mp3"、"keyframes/k01.png"）；调用工具时一律用「工作区相对路径」（带 video-project/ 前缀）。工作纪律：先写全场景表再开工；每完成一个产物立即回写对应字段；时长以配音实测时长为准（合成工具会自动对齐全片时间线）。' },
   { id: 'mk_i2v', name: '图生视频规范', description: '关键帧先行、镜头风格一致性与重试策略', tags: ['视频', '生成'], prompt: '短视频镜头生成策略：1) 先用 generate_image 生成关键帧，必须带 out 参数写入工程目录，如 out:"video-project/keyframes/k01.png"（工具参数一律用「工作区相对路径」= video-project/ 开头；project.json 内字段才用工程内相对路径如 keyframes/k01.png）；画幅与 meta 一致（9:16 用 720x1280、16:9 用 1280x720），全片共用同一风格前缀；2) 再用 generate_video 携带 image:"video-project/keyframes/k01.png" 走图生视频（out 写 "video-project/shots/shot01.mp4"；被拒会自动回退文生视频；关键帧缺失会明确报错）；3) 多镜可用 shots:[...] 一次批量（默认 2 路并发）；4) 失败镜头先改提示词再重试，最多 3 次，仍失败要报告缺哪一镜并给替代方案；5) 完成后用 list_files 核对文件真实存在，并把「工程内相对路径」写回 project.json.shot。' },
@@ -2146,14 +2152,33 @@ async function qwenHealth() {
 async function qwenSpeakers() {
   try { const j = await qwenGet('/qwenapi/v1/speakers', 6000); return (j && (j.speakers || j.data || j.voices)) || [] } catch { return [] }
 }
-async function qwenPost(path, body, timeoutMs = 1800000) {
-  const r = await fetch(qwenUrl() + path, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-    signal: AbortSignal.timeout(timeoutMs),
+// ★ 用 node:http 直连本地 WebUI（避免 fetch/undici 的 300 秒 bodyTimeout 把"冷启动下载模型"的长请求掐断）
+function httpJsonPostSync(urlStr, bodyObj, timeoutMs = 1800000) {
+  return new Promise((resolve, reject) => {
+    let u
+    try { u = new URL(urlStr) } catch (e) { reject(e); return }
+    const payload = Buffer.from(JSON.stringify(bodyObj))
+    const req = http.request({
+      hostname: u.hostname, port: u.port || 80, path: u.pathname + u.search, method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': payload.length }, timeout: 0,
+    }, (res) => {
+      const chunks = []
+      res.on('data', (c) => chunks.push(c))
+      res.on('end', () => {
+        const text = Buffer.concat(chunks).toString('utf8')
+        let j = null; try { j = JSON.parse(text) } catch { /* ignore */ }
+        if (res.statusCode >= 200 && res.statusCode < 300 && j) resolve(j)
+        else reject(new Error(j && (j.detail || j.message) ? String(j.detail || j.message).slice(0, 220) : `HTTP ${res.statusCode} ${text.slice(0, 120)}`))
+      })
+    })
+    const killer = setTimeout(() => { try { req.destroy(new Error(`等待超时（${Math.round((timeoutMs || 0) / 1000)}s）`)) } catch { /* ignore */ } }, timeoutMs || 1800000)
+    req.on('error', (e) => { clearTimeout(killer); reject(e) })
+    req.on('close', () => clearTimeout(killer))
+    req.end(payload)
   })
-  const j = await r.json().catch(() => null)
-  if (!r.ok) throw new Error(j && (j.detail || j.message) ? String(j.detail || j.message).slice(0, 220) : `HTTP ${r.status}`)
-  return j
+}
+async function qwenPost(path, body, timeoutMs = 1800000) {
+  return await httpJsonPostSync(qwenUrl() + path, body, timeoutMs)
 }
 /* ★ VoiceStudio 本地声音引擎（OpenAI 兼容 TTS：POST /v1/audio/speech；克隆：POST /api/profiles；默认 127.0.0.1:3900） */
 const VOICES_FILE = path.join(DATA_DIR, 'voices.json')
