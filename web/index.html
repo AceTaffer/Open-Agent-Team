@@ -10,8 +10,8 @@
  <link rel="manifest" href="/manifest.json" />
  <title>Open Agent Team</title>
  <link rel="icon" href="/oat.png" />
- <link rel="stylesheet" href="/style.css?v=1.3.0" />
- <link rel="stylesheet" href="/team.css?v=1.3.0" />
+ <link rel="stylesheet" href="/style.css?v=1.4.0" />
+ <link rel="stylesheet" href="/team.css?v=1.4.0" />
 </head>
 <body>
  <!-- ═══ 顶栏 ═══ -->
@@ -662,6 +662,17 @@
   <div class="gh-row"><button id="btn-sched-add" class="btn primary">添加定时任务</button><span id="sched-msg" class="dim small"></span></div>
   </div>
   <div class="set-card">
+  <h3>本地知识库（RAG）</h3>
+  <p class="dim small">给当前工作区的文档（md / txt / PDF 等）建本地索引：角色对话与团队步骤会自动检索并引用相关内容，AI 也可用 kb_search 工具主动查。索引保存在 工作区/.oat/index.json（随项目迁移），纯本机、无外部服务；PDF 抽取为尽力而为（扫描版不支持）。</p>
+  <div id="kb-stats" class="dim small">…</div>
+  <div class="gh-row">
+  <button id="btn-kb-rebuild" class="btn ghost">重建索引</button>
+  <button id="btn-kb-test" class="btn ghost">检索测试</button>
+  <label class="chk"><input type="checkbox" id="kb-auto" checked /> 自动检索注入</label>
+  <span id="kb-msg" class="dim small"></span>
+  </div>
+  </div>
+  <div class="set-card">
   <h3 data-i18n="updateTitle">更新</h3>
  <label class="set-row"><span data-i18n="updateCurrent">当前版本</span><b id="update-current">-</b></label>
  <label class="set-row"><span data-i18n="updateRepo">更新源仓库</span><input id="set-update-repo" placeholder="owner/repo（你的 GitHub 仓库）" style="flex:1" /></label>
@@ -900,6 +911,6 @@
  </div>
 
  <script src="/vendor/qrcode.js"></script>
- <script src="/app.js?v=1.3.0"></script>
+ <script src="/app.js?v=1.4.0"></script>
 </body>
 </html>

@@ -17,6 +17,7 @@ import dgram from 'node:dgram'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import crypto from 'node:crypto'
+import zlib from 'node:zlib'
 import { spawn, exec as execCb, execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 
@@ -649,6 +650,10 @@ const BASE_TOOL_PROTOCOL = `
 {"tool":"web_fetch","url":"https://...","maxChars":6000}
 \`\`\`
 \`\`\`tool
+{"tool":"kb_search","query":"在本项目文档/知识库里检索的问题或关键词","count":4}
+\`\`\`
+（kb_search 在工作区的本地知识库索引里检索 md/txt/PDF 等文档，返回命中的文件路径与原文片段）
+\`\`\`tool
 {"tool":"ask_role","role":"角色id（如 planner/coder）","question":"想与对方商量/确认的问题"}
 \`\`\`
 \`\`\`tool
@@ -930,6 +935,14 @@ async function runTool(call, opts = {}) {
     }
     if (call.tool === 'web_search') return await toolWebSearch(call)
     if (call.tool === 'web_fetch') return await toolWebFetch(call)
+    // ★ 本地知识库检索（RAG）：在项目文档里查相关内容
+    if (call.tool === 'kb_search') {
+      const q = String(call.query || '').trim()
+      if (!q) return '缺少 query（要检索的问题/关键词）'
+      const res = await kbSearch(root, q, Math.min(8, Number(call.count) || 4))
+      if (!res.length) return '（知识库未命中：可换个关键词，或在设置页点「重建索引」；也可能是工作区暂无文档）'
+      return res.map((r, i) => `${i + 1}. 《${r.path}》（相关度 ${r.score}）\n${r.excerpt}`).join('\n\n')
+    }
     if (call.tool === 'http_call') return await toolHttpCall(call)
     if (call.tool === 'vault_call') return await toolVaultCall(call)
     if (call.tool === 'run_exe') return await toolRunExe(call)
@@ -947,7 +960,7 @@ async function runTool(call, opts = {}) {
  * 8.5 ★ 会话权限（查看/修改/受限/完全）与步骤确认
  * ═══════════════════════════════════════════════════════════════ */
 const PERMISSIONS = ['view', 'modify', 'limited', 'full']
-const READ_TOOLS = new Set(['read_file', 'list_files', 'web_search', 'web_fetch'])
+const READ_TOOLS = new Set(['read_file', 'list_files', 'web_search', 'web_fetch', 'kb_search'])
 const WRITE_TOOLS = new Set(['write_file'])
 const EXEC_TOOLS = new Set(['run_command', 'run_exe'])
 function toolCategory(call) {
@@ -1597,6 +1610,193 @@ async function projectMemoryDigest(root, maxChars = 1800) {
 }
 
 /* ═══════════════════════════════════════════════════════════════
+ * 10.5e ★ 本地知识库（RAG）：零依赖 BM25 检索
+ *   · 索引工作区文档（md/txt 等文本 + PDF 尽力抽取），存 工作区/.oat/index.json（随项目迁移）
+ *   · 分词 = 拉丁词 + CJK 二元组；中文无需外部分词库
+ *   · 角色对话 / 团队步骤自动检索注入；AI 也可用 kb_search 工具主动查询
+ * ═══════════════════════════════════════════════════════════════ */
+const KB_EXTS = new Set(['.md', '.markdown', '.mdx', '.txt', '.text', '.json', '.csv', '.tsv', '.yml', '.yaml', '.html', '.htm', '.xml', '.js', '.mjs', '.cjs', '.ts', '.py', '.java', '.kt', '.cs', '.go', '.rs', '.sh', '.bat', '.ps1', '.cmd', '.css', '.sql', '.ini', '.conf', '.log'])
+const KB_MAX_FILE = 1.5 * 1024 * 1024 // 单文件上限 1.5MB
+const KB_MAX_FILES = 600               // 单工作区文件上限
+const KB_STALE_MS = 30 * 60 * 1000     // 索引超过 30 分钟视为陈旧（自动重建）
+const kbCache = new Map()              // root -> { at, idx }
+const kbLastTry = new Map()            // root -> 上次自动重建尝试时间（防抖）
+
+// 分词：拉丁词 + CJK 二元组（"机器学习" → 机器/器学/学习）
+function kbTokenize(text) {
+  const s = String(text || '').toLowerCase()
+  const tokens = []
+  const latin = s.match(/[a-z0-9_]{2,}/g)
+  if (latin) tokens.push(...latin)
+  const cjk = s.match(/[\u4e00-\u9fff]+/g) || []
+  for (const run of cjk) {
+    if (run.length === 1) { tokens.push(run); continue }
+    for (let i = 0; i < run.length - 1; i++) tokens.push(run.slice(i, i + 2))
+  }
+  return tokens
+}
+// PDF 文本抽取（尽力而为）：解析 FlateDecode 流中的 Tj/TJ 文本操作符；扫描版/加密 PDF 不支持
+function decodePdfLiteral(s) {
+  return String(s).replace(/\\([nrtbf()\\]|[0-7]{1,3})/g, (all, g) => {
+    if (/^[0-7]+$/.test(g)) return String.fromCharCode(parseInt(g, 8))
+    return { n: '\n', r: '\r', t: '\t', b: '\b', f: '\f', '(': '(', ')': ')', '\\': '\\' }[g] || g
+  })
+}
+function extractPdfText(buf) {
+  try {
+    const raw = buf.toString('latin1')
+    const out = []
+    const streamRe = /stream\r?\n([\s\S]*?)endstream/g
+    let m
+    while ((m = streamRe.exec(raw))) {
+      let data = Buffer.from(m[1], 'latin1')
+      if (data.length > 2 && data[0] === 0x78) { try { data = zlib.inflateSync(data) } catch { continue } }
+      const s = data.toString('latin1')
+      if (!/BT|Tj|TJ/.test(s)) continue
+      const texts = []
+      let t
+      const tjRe = /\(((?:\\.|[^\\()])*)\)\s*Tj/g
+      while ((t = tjRe.exec(s))) texts.push(decodePdfLiteral(t[1]))
+      const arrRe = /\[((?:[^\][]|\\.)*)\]\s*TJ/g
+      while ((t = arrRe.exec(s))) {
+        const inner = t[1]
+        const sre = /\(((?:\\.|[^\\()])*)\)/g
+        let u
+        while ((u = sre.exec(inner))) texts.push(decodePdfLiteral(u[1]))
+      }
+      if (texts.length) out.push(texts.join(' '))
+    }
+    return out.join('\n')
+  } catch { return '' }
+}
+// 分块：按行聚合成 ~700 字符的块
+function kbChunk(text, size = 700) {
+  const lines = String(text).split(/\r?\n/)
+  const chunks = []
+  let cur = ''
+  for (const line of lines) {
+    if (cur && cur.length + line.length + 1 > size) { chunks.push(cur); cur = '' }
+    cur += (cur ? '\n' : '') + line
+    while (cur.length > size * 1.8) { chunks.push(cur.slice(0, size)); cur = cur.slice(size) }
+  }
+  if (cur.trim()) chunks.push(cur)
+  return chunks.filter((c) => c.trim()).slice(0, 400)
+}
+async function kbLoad(root) {
+  const hit = kbCache.get(root)
+  if (hit && Date.now() - hit.at < 20000) return hit.idx
+  try {
+    const idx = JSON.parse(await readFile(path.join(root, '.oat', 'index.json'), 'utf8'))
+    kbCache.set(root, { at: Date.now(), idx })
+    return idx
+  } catch { kbCache.set(root, { at: Date.now(), idx: null }); return null }
+}
+// 重建索引（增量：mtime+size 未变的文件复用旧分块）
+async function kbBuild(root) {
+  const dir = path.join(root, '.oat')
+  await mkdir(dir, { recursive: true })
+  const file = path.join(dir, 'index.json')
+  let old = null
+  try { old = JSON.parse(await readFile(file, 'utf8')) } catch { old = null }
+  const oldMap = new Map(((old && old.files) || []).map((f) => [f.path, f]))
+  const files = []
+  const walk = async (d, rel, depth) => {
+    if (files.length >= KB_MAX_FILES || depth > 6) return
+    const es = await readdir(d, { withFileTypes: true }).catch(() => [])
+    for (const e of es) {
+      if (files.length >= KB_MAX_FILES) break
+      if (e.name.startsWith('.') || e.name === 'node_modules' || e.name === '.git') continue
+      const p = path.join(d, e.name)
+      const r = rel ? `${rel}/${e.name}` : e.name
+      if (e.isDirectory()) { await walk(p, r, depth + 1); continue }
+      const ext = path.extname(e.name).toLowerCase()
+      if (ext !== '.pdf' && !KB_EXTS.has(ext)) continue
+      const st = await stat(p).catch(() => null)
+      if (!st || st.size > KB_MAX_FILE) continue
+      const prev = oldMap.get(r)
+      if (prev && prev.mtime === st.mtimeMs && prev.size === st.size && Array.isArray(prev.chunks)) { files.push(prev); continue }
+      let text = ''
+      try { text = ext === '.pdf' ? extractPdfText(await readFile(p)) : await readFile(p, 'utf8') } catch { continue }
+      text = text.replace(/\u0000/g, '')
+      if (!text.trim()) continue
+      files.push({ path: r, mtime: st.mtimeMs, size: st.size, chunks: kbChunk(text) })
+    }
+  }
+  await walk(root, '', 0)
+  const idx = { builtAt: Date.now(), root, files }
+  const chunkCount = files.reduce((n, f) => n + (f.chunks?.length || 0), 0)
+  await writeFile(file, JSON.stringify(idx), 'utf8')
+  kbCache.delete(root)
+  dbg('kb.build', { root, files: files.length, chunks: chunkCount })
+  return { files: files.length, chunks: chunkCount, builtAt: idx.builtAt }
+}
+// 自动刷新（防抖 5 分钟；索引缺失或超过 30 分钟陈旧时后台重建）
+async function kbMaybeRefresh(root) {
+  const now = Date.now()
+  if (now - (kbLastTry.get(root) || 0) < 5 * 60 * 1000) return
+  kbLastTry.set(root, now)
+  const idx = await kbLoad(root)
+  if (!idx || !idx.builtAt || now - idx.builtAt > KB_STALE_MS) await kbBuild(root).catch(() => {})
+}
+// BM25 风格检索（对 ≤几千块的工作区毫秒级）
+async function kbSearch(root, query, limit = 4) {
+  const idx = await kbLoad(root)
+  if (!idx || !idx.files || !idx.files.length) return []
+  const qTokens = [...new Set(kbTokenize(query))]
+  if (!qTokens.length) return []
+  const scored = []
+  let total = 0
+  const df = new Map()
+  for (const f of idx.files) {
+    for (const text of f.chunks || []) {
+      total++
+      const lower = text.toLowerCase()
+      let hit = 0
+      for (const tk of qTokens) {
+        const c = lower.split(tk).length - 1
+        if (c > 0) { hit++; df.set(tk, (df.get(tk) || 0) + 1) }
+      }
+      if (hit > 0) scored.push({ path: f.path, text, lower, hit })
+    }
+  }
+  if (!scored.length) return []
+  for (const c of scored) {
+    let s = 0
+    for (const tk of qTokens) {
+      const n = c.lower.split(tk).length - 1
+      if (!n) continue
+      const idf = Math.log(1 + total / (1 + (df.get(tk) || 1)))
+      s += (n / (1 + Math.min(2, c.text.length / 900))) * idf
+    }
+    c.s = s + (c.hit > 1 ? 0.35 : 0)
+  }
+  scored.sort((a, b) => b.s - a.s)
+  const out = []
+  const perFile = new Map()
+  for (const c of scored) {
+    const n = perFile.get(c.path) || 0
+    if (n >= 2) continue
+    perFile.set(c.path, n + 1)
+    out.push({ path: c.path, excerpt: c.text.replace(/\s+/g, ' ').slice(0, 400), score: Number(c.s.toFixed(3)) })
+    if (out.length >= limit) break
+  }
+  return out
+}
+// 检索注入摘要（角色对话 / 团队步骤共用；可在设置里关闭）
+async function kbDigest(root, query, maxChars = 1300) {
+  try {
+    if (settings.kbAuto === false) return ''
+    const q = String(query || '').trim()
+    if (q.length < 4) return ''
+    const res = await kbSearch(root, q, 4)
+    if (!res.length) return ''
+    let body = res.map((r, i) => `${i + 1}. 《${r.path}》（相关度 ${r.score}）：${r.excerpt.slice(0, 300)}`).join('\n')
+    if (body.length > maxChars) body = body.slice(0, maxChars) + '…'
+    return `【本地知识库检索（.oat 索引，命中最相关 ${res.length} 段；引用时请给出文件路径）】\n${body}`
+  } catch { return '' }
+}
+
+/* ═══════════════════════════════════════════════════════════════
  * 10.5c ★ 自定义团队预设（用户保存自己的角色配置，可套用/删除）
  * ═══════════════════════════════════════════════════════════════ */
 const PRESETS_FILE = path.join(DATA_DIR, 'presets.json')
@@ -1873,9 +2073,12 @@ async function runTeam(task, opts = {}) {
     const digest = await projectDigest(root, 50)
     // ★ .oat 常驻项目档案：注入项目历史（任务/产物线索），让每一步都带着项目记忆干活
     const projMem = await projectMemoryDigest(root)
+    // ★ 本地知识库（RAG）：按本步骤内容检索项目文档并注入
+    kbMaybeRefresh(root).catch(() => {})
+    const kb = await kbDigest(root, `${task} ${step.title} ${step.instruction}`)
     const messages = [
       { role: 'system', content: roleSystemPrompt(agent.role) },
-      { role: 'user', content: `总任务：${task}\n（当前工作区目录：${root}）\n\n${digest}${projMem ? '\n\n' + projMem : ''}\n\n本步骤（${step.title}）：${step.instruction}\n\n此前产出：\n${contextText || '（无）'}\n\n（提示：工作区快照已给出文件现状，请直接据此行动；确需细节时再按需读取个别文件，避免全量重复翻查。）` },
+      { role: 'user', content: `总任务：${task}\n（当前工作区目录：${root}）\n\n${digest}${projMem ? '\n\n' + projMem : ''}${kb ? '\n\n' + kb : ''}\n\n本步骤（${step.title}）：${step.instruction}\n\n此前产出：\n${contextText || '（无）'}\n\n（提示：工作区快照已给出文件现状，请直接据此行动；确需细节时再按需读取个别文件，避免全量重复翻查；项目文档检索可用 kb_search 工具。）` },
     ]
     // ★ 工具调用限制：角色单独设置优先，否则用全局「团队任务」限制；0=无限
     const roleLimit = effectiveToolLimit(agent.role, 'team')
@@ -2349,6 +2552,7 @@ async function handleApi(req, res, url) {
     // ★ TAT：布尔开关（局域网监听 / 断线暂停）规范化
     if (b.lanListen != null) b.lanListen = !!b.lanListen
     if (b.pauseOnDisconnect != null) b.pauseOnDisconnect = !!b.pauseOnDisconnect
+    if (b.kbAuto != null) b.kbAuto = !!b.kbAuto // ★ 知识库自动检索注入开关
     // ★ TAT：EasyTier 组网配置合并
     if (b.easytier && typeof b.easytier === 'object') b.easytier = { ...(settings.easytier || {}), ...b.easytier }
     settings = { ...settings, ...b }
@@ -3023,7 +3227,10 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
       const digest = await projectDigest(root, 50)
       // ★ .oat 常驻项目档案：跨会话注入项目历史（新会话问项目历史无需翻文件）
       const projMem = await projectMemoryDigest(root)
-      const userMsg = `【与用户的单独对话】${String(b.message || '').slice(0, 4000)}\n（当前工作区目录：${root}）\n\n${digest}${projMem ? '\n\n' + projMem : ''}${archive ? '\n\n' + archive : ''}\n\n（提示：以上快照与档案已包含当前进度与产物，请直接据此回答，避免不必要的重复读取；如确需细节再调用工具。你可以用 ask_role 询问队友。请以你的角色身份简洁、专业地回复。）`
+      // ★ 本地知识库（RAG）：后台刷新索引 + 按用户问题检索注入
+      kbMaybeRefresh(root).catch(() => {})
+      const kb = await kbDigest(root, b.message)
+      const userMsg = `【与用户的单独对话】${String(b.message || '').slice(0, 4000)}\n（当前工作区目录：${root}）\n\n${digest}${projMem ? '\n\n' + projMem : ''}${kb ? '\n\n' + kb : ''}${archive ? '\n\n' + archive : ''}\n\n（提示：以上快照与档案已包含当前进度与产物，请直接据此回答，避免不必要的重复读取；如确需细节再调用工具（在项目文档里找答案可用 kb_search）。你可以用 ask_role 询问队友。请以你的角色身份简洁、专业地回复。）`
       const messages = [
         { role: 'system', content: roleSystemPrompt(role) },
         ...roleChatHistory(role.id), // ★ 完整角色记忆（不再只取最后 12 条）
@@ -3173,6 +3380,27 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
       audit(req, 'schedule.delete', { id: s.id })
       return sendJson(res, 200, { ok: true })
     }
+  }
+  // ★ 本地知识库（RAG）：索引状态 / 重建 / 检索测试
+  if (pathname === '/api/kb/stats' && method === 'GET') {
+    const root = String(url.searchParams.get('root') || '') || getActiveRoot()
+    const idx = await kbLoad(root)
+    const chunks = idx ? (idx.files || []).reduce((n, f) => n + (f.chunks?.length || 0), 0) : 0
+    return sendJson(res, 200, { ok: true, root, path: path.join(root, '.oat', 'index.json'), exists: !!idx, files: idx ? (idx.files || []).length : 0, chunks, builtAt: idx?.builtAt || 0, auto: settings.kbAuto !== false })
+  }
+  if (pathname === '/api/kb/rebuild' && method === 'POST') {
+    const b = await readBody(req)
+    const root = String(b.root || '') || getActiveRoot()
+    const st = await kbBuild(root)
+    audit(req, 'kb.rebuild', { root })
+    return sendJson(res, 200, { ok: true, ...st })
+  }
+  if (pathname === '/api/kb/search' && method === 'GET') {
+    const root = String(url.searchParams.get('root') || '') || getActiveRoot()
+    const q = String(url.searchParams.get('q') || '')
+    const limit = Math.min(10, Number(url.searchParams.get('limit') || 5) || 5)
+    const results = await kbSearch(root, q, limit)
+    return sendJson(res, 200, { ok: true, results })
   }
   // ★ .oat 常驻项目档案：查看 / 覆盖 / 清空（存于 工作区/.oat/PROJECT.md，随项目迁移）
   if (pathname === '/api/project-memory' && method === 'GET') {

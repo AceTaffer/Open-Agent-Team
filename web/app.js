@@ -292,8 +292,13 @@ const TEAM_PRESETS = {
 }
 
 /* 版本迭代记录（设置页展示） */
-const APP_VERSION = '1.3.0'
+const APP_VERSION = '1.4.0'
 const CHANGELOG = [
+  ['P9.3', '2026-10', [
+    '本地知识库（RAG）：零依赖 BM25 检索——自动给当前工作区文档（md / txt / PDF 等）建索引（存 工作区/.oat/index.json，随项目迁移），CJK 二元分词无需外部分词库；PDF 为尽力而为抽取（扫描版不支持），纯本机、无外部服务',
+    '角色对话与团队每一步自动检索知识库并注入最相关片段（可在设置页关闭）；新增 kb_search 工具，AI 可主动在项目文档里查资料并给出文件路径',
+    '设置页新增「本地知识库」卡片：索引状态（文件数/分块数/更新时间）、重建索引、检索测试、自动注入开关；索引超过 30 分钟自动增量刷新（mtime+size 未变的文件复用旧分块）',
+  ]],
   ['P9.2', '2026-10', [
     '定时任务 / 心跳（借鉴 Paperclip）：设置页可视化创建「每隔 N 分钟」或「每天 HH:MM」自动任务，到点自动给团队下达指令并跑完整流程；结果写入团队会话与 .oat 项目档案；状态回显（运行中 / 上次成功费用 / 连续失败次数）；失败 5 分钟后自动重试，连续 3 次自动停用',
     '首启向导：未配置任何 API 时对话页顶部显示三步引导（添加 API → 选择团队预设 → 一键填入示例任务），配置完成后自动消失，可点「不再提示」',
@@ -657,6 +662,7 @@ function renderSettings() {
  $('set-update-repo').value = state.settings.updateRepo || ''
   $('set-update-branch').value = state.settings.updateBranch || 'main'
   renderSchedules() // ★ 定时任务列表
+  renderKb() // ★ 本地知识库状态
  // ★ 工具调用限制（0=无限、-1=禁止、custom=自定义）
  const tl = state.settings.toolLimits || {}
  for (const [key, selId, numId] of [['chat', 'set-limit-chat', 'set-limit-chat-n'], ['team', 'set-limit-team', 'set-limit-team-n'], ['roleChat', 'set-limit-rolechat', 'set-limit-rolechat-n']]) {
@@ -2920,6 +2926,18 @@ async function doUpdateApply() {
 }
 
 /* ══════════════ 初始化 ══════════════ */
+/* ★ 本地知识库（RAG）：设置页状态渲染（文件数/分块数/更新时间） */
+async function renderKb() {
+ try {
+  const box = $('kb-stats'); if (!box) return
+  const r = await api('GET', '/api/kb/stats').catch(() => ({ ok: false }))
+  if (!r.ok) { box.textContent = '读取失败'; return }
+  box.textContent = r.exists
+    ? `索引：${r.files} 个文件 / ${r.chunks} 段 · 更新于 ${new Date(r.builtAt).toLocaleString('zh-CN', { hour12: false })}`
+    : '（尚未建立索引：点「重建索引」或等首次自动检索时建立）'
+  if ($('kb-auto')) $('kb-auto').checked = r.auto !== false
+ } catch { /* ignore */ }
+}
 /* ★ 定时任务/心跳：设置页列表渲染（启用开关 / 下次运行 / 上次状态 / 删除） */
 async function renderSchedules() {
  try {
@@ -3314,6 +3332,26 @@ async function main() {
     if (!confirm('清空当前工作区的项目档案？（不影响工作区里的任何文件）')) return
     const r = await api('DELETE', '/api/project-memory').catch(() => ({ ok: false }))
     $('projmem-msg').textContent = r.ok ? '已清空' : (r.error || t('failure'))
+  }
+  // ★ 本地知识库：重建索引 / 检索测试 / 自动注入开关
+  if ($('btn-kb-rebuild')) {
+    $('btn-kb-rebuild').onclick = async () => {
+      $('kb-msg').textContent = '重建中…'
+      const r = await api('POST', '/api/kb/rebuild', {}).catch(() => ({ ok: false }))
+      $('kb-msg').textContent = r.ok ? `完成：${r.files} 个文件 / ${r.chunks} 段` : (r.error || '失败')
+      renderKb()
+    }
+    $('btn-kb-test').onclick = async () => {
+      const q = prompt('检索测试：输入关键词或问题（在当前工作区知识库中检索）')
+      if (!q) return
+      const r = await api('GET', `/api/kb/search?q=${encodeURIComponent(q)}&limit=5`).catch(() => ({ ok: false }))
+      if (!r.ok) { $('kb-msg').textContent = '检索失败'; return }
+      const list = r.results || []
+      if (!list.length) { $('kb-msg').textContent = '（未命中：可先重建索引或换关键词）'; return }
+      $('kb-msg').textContent = `命中 ${list.length} 段`
+      alert(list.map((x, i) => `${i + 1}. ${x.path}（相关度 ${x.score}）\n${x.excerpt.slice(0, 180)}`).join('\n\n'))
+    }
+    $('kb-auto').onchange = async () => { state.settings.kbAuto = $('kb-auto').checked; await api('PUT', '/api/settings', { kbAuto: $('kb-auto').checked }) }
   }
   // ★ 定时任务/心跳：新建表单（间隔/每天切换 + 添加）
   if ($('sched-kind')) {
