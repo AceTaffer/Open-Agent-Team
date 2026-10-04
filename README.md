@@ -40,6 +40,11 @@
 - 第三方组件与许可证见 `THIRD_PARTY_NOTICES.md` 与 `licenses/`（qrcode-generator MIT、EasyTier LGPL-3.0 使用方式说明、VoiceStudio AGPL-3.0 使用方式说明、ffmpeg 许可证提示等）
 - "手机端互联"功能合并自作者的实验分支 **Turing Agent Team**；该分支名仅为致敬艾伦·图灵，无官方关联
 
+## 安全与隐私
+- **API Key 只保存在本机**：`data/` 内 AES-256-GCM 加密（密钥为本机 `data/.key`），**绝不随代码上传**；`data/`、`workspace/`、日志、发布物均不入库
+- **双重防泄露**：仓库内置 `.gitignore`；官方上传脚本在上传前自动扫描密钥特征（`sk-`/`AIza`/`ghp_`/`AKIA`/私钥/长 Bearer 等）并拦截敏感文件名，命中即中止上传
+- 仓库与分享包只包含程序文件（server / web / desktop / licenses 等）；如发现安全问题请邮件联系
+
 ## 反馈
 - 邮箱：577940959@qq.com（Bug / 建议欢迎反馈）
 - GitHub：https://github.com/AceTaffer/Open-Agent-Team

@@ -1,0 +1,55 @@
+# ═══════════════════════════════════════════════════════════════
+# Open Agent Team · .gitignore（安全防泄露）
+# 本文件用于：若本项目使用 git 管理时，禁止提交/上传以下内容。
+# 注意：官方上传脚本（gh-push）另有独立的关键词扫描与文件名拦截。
+# ═══════════════════════════════════════════════════════════════
+
+# ── 运行时数据与密钥（API Key 加密保存在 data/，只在本机）──
+data/
+workspace/
+node_modules/
+
+# ── 密钥/凭据类文件（任何位置）──
+*.key
+*.pem
+*.p12
+*.pfx
+*.env
+.env.*
+secrets.json
+vault.json
+devices.json
+audit.jsonl
+providers.json
+settings.json
+sessions.json
+roles.json
+voices.json
+stats.json
+presets.json
+schedules.json
+role-chats.json
+artifacts.json
+tasks/
+games/
+
+# ── 日志与临时/打包产物 ──
+*.log
+*.tmp
+*.zip
+*.gz
+*.7z
+*.rar
+*.apk
+*.exe
+*.msi
+*.lnk
+
+# ── 个人资料 / 发布物 ──
+OAT分享包/
+小黑盒*.txt
+
+# ── 系统文件 ──
+Thumbs.db
+desktop.ini
+.DS_Store
