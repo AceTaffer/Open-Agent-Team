@@ -4598,7 +4598,17 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
     const engine = gameEngines.get(sid)
     res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' })
     const st = engine ? engine.state : await gameLoad(sid)
-    if (!st) { try { res.write(`data: ${JSON.stringify({ type: 'game-error', error: '对局不存在' })}\n\n`); res.end() } catch { /* ignore */ } return }
+    if (!st) {
+      // ★ 未开局（还没有 state.json）：返回预览状态后正常结束，避免前端误报"对局不存在"
+      const sess = sessions.find((s) => s.id === sid && (s.kind || '') === 'game')
+      if (sess) {
+        try { res.write(`data: ${JSON.stringify({ type: 'game-state', state: gameViewFor(makeGameState(sess)) })}\n\n`) } catch { /* ignore */ }
+        try { res.end() } catch { /* ignore */ }
+        return
+      }
+      try { res.write(`data: ${JSON.stringify({ type: 'game-error', error: '对局不存在' })}\n\n`); res.end() } catch { /* ignore */ }
+      return
+    }
     // ★ 双保险：SSE 写入前按用户身份过滤私密事件（与状态视图同一套可见性规则）
     const canSeeNow = (ch) => {
       const S = engine ? engine.state : st

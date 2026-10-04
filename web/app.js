@@ -315,6 +315,8 @@ const CHANGELOG = [
     '夜间投票/技能等私密决策不再对外流式输出；狼人夜聊的流式发言仅狼人与法官/观战可见',
     '狼人杀 AI 行为优化：鼓励上警（警徽 1.5 票）与积极投票，减少全员弃票导致的无尽平安日',
     '新增 AI 经验累积：每局结束后 AI 玩家自动总结一条经验（按座位累计，每人保留最近 10 条），「重新游戏」自动继承并注入提示词——同一会话玩得越多，AI 的判断与套路越强；对局结束会提示"AI 已总结本局经验（累计 N 局）"',
+    '修复：未开局时进入游戏会话会误报「对局不存在」（事件流在未开局时不挂载、服务端对未开局返回预览状态；点击「开始对局」后自动挂载）',
+    '安全：宣传页演示用假 Key 替换为明显虚构字符串；新增 .gitignore 与上传前密钥扫描（命中即中止），密钥与运行数据绝不外传',
   ]],
   ['P9.10', '2026-10', [
     '新增「团队会话（游戏与推演大厅）」：新建团队会话时可选类型——「团队工作」/「团队会话（游戏与推演）」；游戏会话不执行工作，专门陪玩',
@@ -3113,8 +3115,13 @@ async function openGameSession(id) {
   $('gv-actions').innerHTML = ''
   $('gv-review').classList.add('hidden')
   const r = await api('GET', `/api/game/state?sessionId=${encodeURIComponent(id)}`)
-  if (r.ok && r.state) { gv.view = r.state; ensureGameChannel(); renderGameAll() }
-  attachGameStream(id)
+  if (r.ok && r.state) {
+    gv.view = r.state; ensureGameChannel(); renderGameAll()
+    // ★ 只有对局进行中/暂停才挂事件流；未开局（idle）不挂——避免"对局不存在"误报（点开始后会自动挂载）
+    if (['running', 'paused'].includes(r.state.status)) attachGameStream(id)
+  } else {
+    attachGameStream(id)
+  }
 }
 function attachGameStream(id) {
   if (gv.es) { try { gv.es.close() } catch { /* ignore */ } }
