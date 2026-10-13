@@ -11,18 +11,22 @@
  */
 import http from 'node:http'
 import { readFile, writeFile, mkdir, readdir, rm, copyFile, cp, stat, appendFile } from 'node:fs/promises'
-import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
 import os from 'node:os'
 import dgram from 'node:dgram'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import crypto from 'node:crypto'
 import zlib from 'node:zlib'
-import { spawn, exec as execCb, execFile } from 'node:child_process'
+import { spawn, spawnSync, exec as execCb, execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 
 const execAsync = promisify(execCb)
 const execFileAsync = promisify(execFile)
+
+// ★ 平台探测（win32 / android / linux）：运行环境提示与命令建议随平台变化（BUG-01/04/06）
+const PLATFORM = process.platform === 'win32' ? 'win32' : (process.platform === 'android' || process.env.OAT_ANDROID ? 'android' : 'linux')
+const IS_WIN = PLATFORM === 'win32'
 
 // ★ 版本比较（用于 GitHub 热更新检测）
 function appVersion() { try { return JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version || '0.0.0' } catch { return '0.0.0' } }
@@ -659,6 +663,25 @@ async function chatComplete(provider, model, messages, opts = {}) {
  * 七、角色提示词（支持自定义覆盖）
  * ═══════════════════════════════════════════════════════════════ */
 // ★ ROLE_META 已改为由 roles 数组动态重建（见角色区顶部 rebuildRoleMeta）
+// ★ 能力清单（Capability Manifest）：启动时探测系统真实可用命令，注入提示（T-15）
+function detectCapabilities() {
+  const names = ['curl', 'tar', 'gzip', 'unzip', 'base64', 'md5sum', 'sha256sum', 'sed', 'awk', 'sort', 'uniq', 'wc', 'find', 'grep', 'head', 'tail', 'cut', 'tr', 'touch']
+  try {
+    if (IS_WIN) {
+      const r = spawnSync('powershell', ['-NoProfile', '-Command', names.map((n) => `(Get-Command ${n} -ErrorAction SilentlyContinue).Name`).join(',')], { encoding: 'utf8', windowsHide: true, timeout: 8000 })
+      const found = String(r.stdout || '').split(/\r?\n/).map((s) => s.trim().toLowerCase()).filter((n) => names.includes(n))
+      return [...new Set(found)]
+    }
+    const r = spawnSync('/bin/sh', ['-c', `for c in ${names.join(' ')}; do command -v "$c" >/dev/null 2>&1 && printf '%s ' "$c"; done`], { encoding: 'utf8', timeout: 8000 })
+    return [...new Set(String(r.stdout || '').trim().split(/\s+/).filter(Boolean))]
+  } catch { return [] }
+}
+const CAPS = detectCapabilities()
+const CAP_LINE = CAPS.length ? `\n【能力清单】本系统实际可用命令：${CAPS.join(' / ')}（未列出的命令不存在，请勿尝试，改用替代方案或工具）` : ''
+// ★ 运行环境描述随平台变化（不再硬编码 Windows）
+const ENV_LINE = IS_WIN
+  ? '本软件运行在 Windows（run_command 通过 cmd 执行）：列目录用 dir、读文件用 type、搜索用 findstr；读取与列目录请优先用 read_file / list_files 工具。'
+  : '本软件运行在 Android/Linux（run_command 通过 sh 执行）：列目录用 ls、读文件用 cat、搜索用 grep / find；读取与列目录请优先用 read_file / list_files 工具。'
 const BASE_TOOL_PROTOCOL = `
 【工具协议】你可以在回复末尾附加一个或多个工具块（普通文本写在工具块外）：
 \`\`\`tool
@@ -671,7 +694,7 @@ const BASE_TOOL_PROTOCOL = `
 {"tool":"run_command","command":"命令行","timeoutMs":30000}
 \`\`\`
 \`\`\`tool
-{"tool":"web_search","query":"搜索关键词","count":5}
+{"tool":"web_search","query":"搜索关键词（直接使用用户的原始专有名词，不要拆词或翻译）","count":5}
 \`\`\`
 \`\`\`tool
 {"tool":"web_fetch","url":"https://...","maxChars":6000}
@@ -720,7 +743,7 @@ const BASE_TOOL_PROTOCOL = `
 {"tool":"generate_video","prompt":"英文视频提示词","name":"可选英文文件名（MP4，自动保存到工作区 artifacts/）"}
 \`\`\`
 工具在沙箱 workspace/ 内执行（联网工具除外），结果下一轮以【工具结果】发给你。
-【运行环境】本软件运行在 Windows（run_command 通过 cmd 执行）：列目录用 dir、读文件用 type、搜索用 findstr；读取与列目录请优先用 read_file / list_files 工具，禁止使用 cat / ls / grep / head / tail 等 Linux 命令。
+【运行环境】${ENV_LINE}${CAP_LINE}
 【JSON 转义】工具块必须是严格合法的 JSON：字符串里的双引号写成 \\"，Windows 路径的反斜杠写成 \\\\（如 "E:\\\\project\\\\a.txt"）；解析失败的工具块不会被执行。`
 function pluginToolDoc() {
   if (!plugins.length) return ''
@@ -742,6 +765,12 @@ function withSkillsAndTools(role, base) {
   // ★ 上下文复用：优先使用系统附带的记忆/档案/快照，避免反复读取项目文件（省 token、快、准）
   const reuseRule = '【上下文复用】你的对话历史中包含长期记忆；消息中可能附有「工作区快照」「团队会话档案」。请优先依据这些内容判断当前进度与产物，不要惯性重复 list_files/read_file 全量翻查；仅在确需文件细节时按需读取个别文件。做完事情后请用一两句总结「我做了什么、产物在哪」，便于之后回忆与交接。'
   return [base, skillTextFor(role), collabRule, reuseRule, BASE_TOOL_PROTOCOL + pluginToolDoc() + vaultToolDoc() + jsToolDoc()].filter(Boolean).join('\n\n')
+}
+// ★ 模型身份：注入系统提示，让智能体知道自己由哪个模型驱动（能如实回答"你是什么模型"）
+function modelIdentityLine(provider, modelId) {
+  const pname = provider?.name || provider?.id || '未知供应商'
+  const m = String(modelId || '').trim()
+  return `\n【模型身份】你由「${pname}」提供的模型 ${m || '(未指定)'} 驱动。用户问"你是什么模型 / 谁驱动你"时，请如实回答以上信息，不要回答"无法得知"。`
 }
 function chatSystemPrompt(root = getActiveRoot()) {
   // ★ 单智能体对话：允许直接操作工作区（写文件/跑命令），避免只返回文本
@@ -789,11 +818,76 @@ const BLOCKED_CMD = [
   /\brmdir\b.*\/s\b/i, /\brd\b.*\/s\b/i, /\bdel\b.*\/[fsq]\b/i, /remove-item\b.*-recurse/i, /remove-item\b.*-force/i,
   /\breg\s+delete\b/i, /\bnet\s+user\b/i, /\bvssadmin\b.*\bdelete\b/i, /\bcipher\s+\/w/i, /\bwbadmin\b.*\bdelete\b/i,
 ]
+// ★ 真实路径解析（含符号链接）：不存在的路径则对父目录解析（防 SEC-04 符号链接逃逸）
+function canonPath(p) {
+  try { return realpathSync.native ? realpathSync.native(p) : realpathSync(p) } catch {
+    const parent = path.dirname(p)
+    if (parent && parent !== p) { try { return path.join(canonPath(parent), path.basename(p)) } catch { return p } }
+    return p
+  }
+}
 function resolveInWorkspace(p, root = getActiveRoot(), allowOutside = false) {
   const abs = path.resolve(root, p || '.')
-  const r = path.resolve(root) // ★ 统一规范化（避免正/反斜杠混用导致误判越界）
-  if (!allowOutside && abs !== r && !abs.startsWith(r + path.sep)) throw new Error('路径越界（只允许当前工作区内；需要读外部文件请把权限切到「受限」或「完全」）')
+  const c = canonPath(abs) // ★ 解析符号链接后的真实路径（防越权逃逸）
+  const r = canonPath(path.resolve(root)) // ★ 统一规范化（避免正/反斜杠混用导致误判越界）
+  const dataC = canonPath(path.resolve(DATA_DIR))
+  if (c === dataC || c.startsWith(dataC + path.sep)) throw new Error('应用数据目录受保护（存放密钥/会话等，工具不可访问）')
+  if (!allowOutside && c !== r && !c.startsWith(r + path.sep)) throw new Error('路径越界（只允许当前工作区内；需要读外部文件请把权限切到「受限」或「完全」）')
   return abs
+}
+// ★ 命令路径防护（SEC-01/02/04/05）：应用数据目录永远保护；越界路径按权限拒绝
+function guardCommandPaths(cmd, root, allowOutside) {
+  const tokens = String(cmd).match(/"[^"]*"|'[^']*'|[^\s;|&<>()]+/g) || []
+  const rootC = canonPath(path.resolve(root))
+  const dataC = canonPath(path.resolve(DATA_DIR))
+  for (const raw of tokens) {
+    const t = raw.replace(/^["']|["']$/g, '')
+    if (!t || /^[a-z][a-z0-9+.-]*:\/\//i.test(t)) continue // URL 跳过
+    const isHome = t === '~' || t.startsWith('~/') || t.startsWith('~\\')
+    if (!/[\\/]/.test(t) && t !== '..' && !isHome) continue // 无路径成分跳过
+    const abs = isHome ? path.join(os.homedir(), t.slice(1)) : path.resolve(rootC, t)
+    const c = canonPath(abs)
+    if (c === dataC || c.startsWith(dataC + path.sep)) throw new Error(`命令试图访问应用数据目录（受保护）：${t}`)
+    if (!allowOutside && c !== rootC && !c.startsWith(rootC + path.sep)) throw new Error(`路径越界（只允许当前工作区 ${root} 内）：${t}`)
+  }
+}
+// ★ 命令执行：spawn 直跑（不经 exec 拼接），区分 stdout/stderr/退出码（BUG-02/03/05）
+// ★ 命令输出解码：优先 UTF-8；出现替换符（Windows GBK 输出）时按 GBK 重解
+function decodeCmdBuf(bufs) {
+  const b = Buffer.concat(bufs)
+  if (!b.length) return ''
+  const s = b.toString('utf8')
+  if (s.includes('\uFFFD')) { try { return new TextDecoder('gbk').decode(b) } catch { return s } }
+  return s
+}
+function runCommandSafe(cmd, cwd, timeoutMs) {
+  return new Promise((resolve) => {
+    const shell = IS_WIN ? (process.env.ComSpec || 'cmd.exe') : '/bin/sh'
+    // ★ Windows：先切 UTF-8 代码页，否则 cmd 中文输出是 GBK，错误分类与模型阅读都会乱码
+    const args = IS_WIN ? ['/d', '/s', '/c', 'chcp 65001>nul & ' + cmd] : ['-c', cmd]
+    let cp
+    try { cp = spawn(shell, args, { cwd, windowsHide: true, env: process.env }) } catch (e) { return resolve({ out: '', err: String(e.message || e), code: -1 }) }
+    const ob = [], eb = []
+    let size = 0, done = false
+    const finish = (extraErr, code) => {
+      if (done) return; done = true; clearTimeout(timer)
+      resolve({ out: decodeCmdBuf(ob), err: decodeCmdBuf(eb) + (extraErr || ''), code })
+    }
+    const timer = setTimeout(() => { try { cp.kill('SIGKILL') } catch { /* ignore */ } finish(`\n[超时] 已终止（${timeoutMs}ms）`, 124) }, Math.min(timeoutMs, 120000))
+    cp.stdout.on('data', (d) => { ob.push(d); size += d.length; if (size > 4 * 1024 * 1024) { try { cp.kill() } catch { /* ignore */ } } })
+    cp.stderr.on('data', (d) => { eb.push(d); size += d.length })
+    cp.on('error', (e) => finish(String(e.message || e), -1))
+    cp.on('close', (code) => finish('', code == null ? 0 : code))
+  })
+}
+// ★ 错误分类（中文，便于模型/用户定位：not_found / permission / 命令不存在）
+function classifyCmdError(err, code) {
+  const s = String(err || '')
+  if (/不是内部或外部命令|is not recognized/i.test(s)) return IS_WIN ? '命令不存在（Windows 请用 dir/type/findstr，或改用 read_file / list_files 工具）' : '命令不存在'
+  if (/No such file or directory|找不到|cannot remove|无法删除/i.test(s)) return '文件或路径不存在（not_found）'
+  if (/Permission denied|拒绝访问|Access is denied/i.test(s)) return '权限不足（permission）'
+  if (/command not found/i.test(s)) return '命令不存在（command_not_found）'
+  return code ? '命令以非零退出码结束' : ''
 }
 function stripHtml(html) {
   return String(html)
@@ -877,8 +971,18 @@ async function toolWebFetch({ url, maxChars = 6000 }) {
   try {
     const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, redirect: 'follow' })
     const text = stripHtml(await r.text())
-    return `抓取 ${url}（HTTP ${r.status}）：\n${text.slice(0, Math.min(Number(maxChars) || 6000, 20000))}`
-  } catch (e) { return `抓取失败：${e.message}` }
+    const note = r.ok ? '' : '（HTTP 状态非 2xx）'
+    return `抓取 ${url}（HTTP ${r.status}）${note}：\n${text.slice(0, Math.min(Number(maxChars) || 6000, 20000))}`
+  } catch (e) {
+    const msg = String(e?.cause?.code || e?.code || e?.message || e)
+    let kind = '未知网络错误'
+    if (/ENOTFOUND|EAI_AGAIN|getaddrinfo/i.test(msg)) kind = 'DNS 解析失败（域名不存在或断网）'
+    else if (/ETIMEDOUT|timeout|aborted|超时/i.test(msg)) kind = '连接超时'
+    else if (/CERT|TLS|SSL/i.test(msg)) kind = 'TLS / 证书错误'
+    else if (/ECONNREFUSED/i.test(msg)) kind = '连接被拒绝'
+    else if (/ECONNRESET|fetch failed|EPROTO/i.test(msg)) kind = '连接被重置（可能被网络阻断，可尝试换用 run_command 的 curl）'
+    return `抓取失败（${kind}）：${url}\n原始错误：${msg}`
+  }
 }
 async function toolHttpCall({ plugin, args = {} }) {
   const p = plugins.find((x) => x.name === plugin || x.id === plugin)
@@ -974,17 +1078,25 @@ async function runTool(call, opts = {}) {
       return (typeof out === 'string' ? out : JSON.stringify(out)).slice(0, 8000)
     }
     if (call.tool === 'write_file') { const abs = resolveInWorkspace(call.path, root, false); await mkdir(path.dirname(abs), { recursive: true }); await writeFile(abs, String(call.content ?? ''), 'utf8'); return `已写入 ${call.path}（${Buffer.byteLength(String(call.content ?? ''))} 字节）` }
-    if (call.tool === 'read_file') { const t = await readFile(resolveInWorkspace(call.path, root, opts.allowOutside), 'utf8'); return t.length > 8000 ? t.slice(0, 8000) + '\n…（截断）' : t }
+    if (call.tool === 'read_file') { const abs = resolveInWorkspace(call.path, root, opts.allowOutside); const st = await stat(abs).catch(() => null); if (!st) return `文件不存在：${call.path}\n（可先用 list_files 查看目录内容）`; if (st.isDirectory()) return `目标是目录（不是文件）：${call.path}\n请用 list_files 列出目录内容，或指定具体文件路径（例如 ${call.path}/readme.md）。`; const t = await readFile(abs, 'utf8'); return t.length > 8000 ? t.slice(0, 8000) + '\n…（截断）' : t }
     if (call.tool === 'list_files') { const es = await readdir(resolveInWorkspace(call.path || '.', root, opts.allowOutside), { withFileTypes: true }); return es.map((e) => (e.isDirectory() ? `[目录] ${e.name}` : `[文件] ${e.name}`)).join('\n') || '(空)' }
     if (call.tool === 'run_command') {
       const cmd = String(call.command || '')
+      if (!cmd.trim()) return '缺少 command'
       if (BLOCKED_CMD.some((re) => re.test(cmd))) return `已拒绝执行（命中安全黑名单）：${cmd}`
-      // ★ Windows 环境：模型常误用 Linux 命令，直接给出可执行的替代方案（避免"结果像丢了"）
-      const first = cmd.trim().split(/\s+/)[0].replace(/^.*[\\/]/, '').toLowerCase()
-      const unixHint = { cat: '读取文件请直接用 read_file 工具（或 Windows 命令 type）', ls: '列目录请直接用 list_files 工具（或 Windows 命令 dir）', grep: '搜索文本可用 Windows 命令 findstr，或先 read_file 再分析', head: '可用 read_file 工具读取（超长内容会截断）', tail: '可用 read_file 工具读取（超长内容会截断）', pwd: '可用 list_files 工具查看当前工作区，或 Windows 命令 cd', rm: '删除文件请说明原因并征得用户同意，或使用 Windows 命令 del' }[first]
-      if (unixHint) return `未执行：${first} 是 Linux 命令，Windows 环境不可用。${unixHint}。`
-      const { stdout, stderr } = await execAsync(cmd, { cwd: root, timeout: Math.min(Number(call.timeoutMs) || 30000, 120000), maxBuffer: 4 * 1024 * 1024, windowsHide: true })
-      return (`$ ${cmd}\n${stdout || ''}${stderr ? '\n[stderr]\n' + stderr : ''}`).slice(0, 8000) || `$ ${cmd}\n(无输出)`
+      try {
+        guardCommandPaths(cmd, root, !!opts.allowOutside) // ★ 路径防护（数据目录永远保护）
+      } catch (e) {
+        return `已拒绝执行：${e.message}`
+      }
+      const { out, err, code } = await runCommandSafe(cmd, root, Math.min(Number(call.timeoutMs) || 30000, 120000))
+      const kind = classifyCmdError((err || '') + '\n' + (out || ''), code) // ★ 有些命令（如 del）把“找不到”写进 stdout，合并判断
+      const parts = [`$ ${cmd}`]
+      if (out) parts.push(out.slice(0, 8000))
+      if (err) parts.push('[stderr]\n' + err.slice(0, 4000))
+      if (code) parts.push(`[退出码 ${code}]${kind ? '：' + kind : ''}`)
+      if (!out && !err) parts.push('(无输出)')
+      return parts.join('\n').slice(0, 12000)
     }
     if (call.tool === 'web_search') return await toolWebSearch(call)
     if (call.tool === 'web_fetch') return await toolWebFetch(call)
@@ -993,7 +1105,7 @@ async function runTool(call, opts = {}) {
       const q = String(call.query || '').trim()
       if (!q) return '缺少 query（要检索的问题/关键词）'
       const res = await kbSearch(root, q, Math.min(8, Number(call.count) || 4))
-      if (!res.length) return '（知识库未命中：可换个关键词，或在设置页点「重建索引」；也可能是工作区暂无文档）'
+      if (!res.length) return '（知识库未命中：工作区可能还没有文档——请先添加 .md/.txt 等文档并到「设置 → 知识库」重建索引，或换个关键词再试）'
       return res.map((r, i) => `${i + 1}. 《${r.path}》（相关度 ${r.score}）\n${r.excerpt}`).join('\n\n')
     }
     if (call.tool === 'http_call') return await toolHttpCall(call)
@@ -1093,7 +1205,7 @@ async function askRoleImpl(call, ctx = {}) {
   const question = String(call.question || call.query || '').slice(0, 2000)
   try {
     const answer = await chatComplete(target.provider, target.model, [
-      { role: 'system', content: roleSystemPrompt(role) },
+      { role: 'system', content: roleSystemPrompt(role) + modelIdentityLine(target.provider, target.model) },
       ...roleChatHistory(role.id, 60, 6000),
       { role: 'user', content: `${ctx.task ? `【总任务】${ctx.task}\n` : ''}【来自队友${caller ? `「${caller.label}」` : ''}的协作询问】${question}\n请用简体中文直接给出你的专业意见，简洁明确（不要调用工具、不要执行任务本身）。` },
     ], {
@@ -2754,7 +2866,7 @@ async function runTeam(task, opts = {}) {
   const enabledOthers = roles.filter((r) => r.enabled !== false && r.id !== 'leader')
   send({ type: 'agent_start', agent: 'leader', label: leader.role.label, model: `${leader.provider.name} / ${leader.model}` })
   const leaderMsgs = [
-    { role: 'system', content: leaderSystemPrompt(leader.role) },
+    { role: 'system', content: leaderSystemPrompt(leader.role) + modelIdentityLine(leader.provider, leader.model) },
     { role: 'user', content: `用户任务：${task}\n\n（当前工作区目录：${root}，所有文件读写与命令执行都在该目录内）\n规划阶段你可以：先调研（web_search/web_fetch 了解题材背景）、必要时用 ask_user 向用户提问确认需求（会暂停等待用户回答）、用 ask_role 与队员商量。信息足够后，只输出 JSON 分工计划，不要执行任务本身。` },
   ]
   let leaderText = '', leaderEmptyRetried = false
@@ -2850,7 +2962,7 @@ async function runTeam(task, opts = {}) {
     kbMaybeRefresh(root).catch(() => {})
     const kb = await kbDigest(root, `${task} ${step.title} ${step.instruction}`)
     const messages = [
-      { role: 'system', content: roleSystemPrompt(agent.role) },
+      { role: 'system', content: roleSystemPrompt(agent.role) + modelIdentityLine(agent.provider, agent.model) },
       { role: 'user', content: `总任务：${task}\n（当前工作区目录：${root}）\n\n${digest}${projMem ? '\n\n' + projMem : ''}${kb ? '\n\n' + kb : ''}\n\n本步骤（${step.title}）：${step.instruction}\n\n此前产出：\n${contextText || '（无）'}\n\n（提示：工作区快照已给出文件现状，请直接据此行动；确需细节时再按需读取个别文件，避免全量重复翻查；项目文档检索可用 kb_search 工具。）` },
     ]
     // ★ 工具调用限制：角色单独设置优先，否则用全局「团队任务」限制；0=无限
@@ -2981,7 +3093,7 @@ async function runTeam(task, opts = {}) {
       const ctxText = results.map((r) => `【${roleById(r.agent)?.label || r.agent}·${r.title}】\n${r.result.slice(0, 2500)}`).join('\n\n')
       const steerText = steersTaken.map((s) => `【${roleById(s.agent)?.label || s.agent}】${s.message}`).join('\n')
       const messages = [
-        { role: 'system', content: `${roleSystemPrompt(leader.role)}\n\n【最终汇总要求】请对团队产出做汇总：完成了什么、产物在哪（workspace 文件名 / 图片素材路径）、遗留问题、下一步建议。若存在「用户中途指令记录」，必须逐条重新评估其对成果的影响并说明处理结果。简洁分点。\n如任务要求产出报告/文档等文件，你必须用 write_file 把内容真实写入工作区（不要只在回复里贴出全文），写完用 list_files 核对文件存在，并在汇总里给出文件名。` },
+        { role: 'system', content: `${roleSystemPrompt(leader.role) + modelIdentityLine(leader.provider, leader.model)}\n\n【最终汇总要求】请对团队产出做汇总：完成了什么、产物在哪（workspace 文件名 / 图片素材路径）、遗留问题、下一步建议。若存在「用户中途指令记录」，必须逐条重新评估其对成果的影响并说明处理结果。简洁分点。\n如任务要求产出报告/文档等文件，你必须用 write_file 把内容真实写入工作区（不要只在回复里贴出全文），写完用 list_files 核对文件存在，并在汇总里给出文件名。` },
         { role: 'user', content: `总任务：${task}\n\n${steerText ? `用户中途指令记录（需重新评估）：\n${steerText}\n\n` : ''}团队产出：\n${ctxText}` },
       ]
       let turn = 0
@@ -3648,7 +3760,7 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
     const history = session ? session.messages.map(toApiMsg) : (body.messages || [])
     // ★ 会话有自己的工作区：工具执行范围跟随会话（缺省用全局当前工作区）
     const chatRoot = session?.workspace && existsSync(session.workspace) ? session.workspace : getActiveRoot()
-    if (toolsEnabled && !history.some((m) => m.role === 'system')) history.unshift({ role: 'system', content: chatSystemPrompt(chatRoot) })
+    if (toolsEnabled && !history.some((m) => m.role === 'system')) history.unshift({ role: 'system', content: chatSystemPrompt(chatRoot) + modelIdentityLine(provider, modelId) })
     try {
       // ★ 工具调用次数限制（设置页可调）：0=无限（默认）、-1=禁止、N=最多 N 次
       const chatLimit = effectiveToolLimit(null, 'chat')
@@ -4046,7 +4158,7 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
       const kb = await kbDigest(root, b.message)
       const userMsg = `【与用户的单独对话】${String(b.message || '').slice(0, 4000)}\n（当前工作区目录：${root}）\n\n${digest}${projMem ? '\n\n' + projMem : ''}${kb ? '\n\n' + kb : ''}${archive ? '\n\n' + archive : ''}\n\n（提示：以上快照与档案已包含当前进度与产物，请直接据此回答，避免不必要的重复读取；如确需细节再调用工具（在项目文档里找答案可用 kb_search）。你可以用 ask_role 询问队友。请以你的角色身份简洁、专业地回复。）`
       const messages = [
-        { role: 'system', content: roleSystemPrompt(role) },
+        { role: 'system', content: roleSystemPrompt(role) + modelIdentityLine(target.provider, target.model) },
         ...roleChatHistory(role.id), // ★ 完整角色记忆（不再只取最后 12 条）
         { role: 'user', content: userMsg },
       ]

@@ -1201,7 +1201,7 @@ function renderChatToolbar() {
   if ($('chat-perm')) $('chat-perm').value = sess?.permission || state.settings.defaultPermission || 'modify'
   setEffortVisual('chat-effort', sess?.effort || state.settings.reasoningEffort || 'default')
   ps.onchange = async () => { state.selectedId = ps.value; if (sess) { await api('PUT', `/api/sessions/${sess.id}`, { providerId: ps.value }); await refreshSessions() } renderChatToolbar() }
- $('chat-model').onchange = async () => { upd(); if (sess) { await api('PUT', `/api/sessions/${sess.id}`, { model: $('chat-model').value }); await refreshSessions() } }
+ $('chat-model').onchange = async () => { upd(); if (sess) { await api('PUT', `/api/sessions/${sess.id}`, { model: $('chat-model').value }); await refreshSessions() } api('PUT', '/api/settings', { activeChatModel: $('chat-model').value }) }
 }
 function renderChatMessages() {
  const box = $('chat-messages')
@@ -1418,12 +1418,26 @@ function fileToBase64(file) {
   fr.readAsDataURL(file)
  })
 }
+/* ★ 轻提示（上传失败等场景的可见反馈；不依赖第三方库） */
+function oatToast(msg) {
+ let box = document.getElementById('oat-toast')
+ if (!box) {
+  box = document.createElement('div')
+  box.id = 'oat-toast'
+  box.style.cssText = 'position:fixed;left:50%;bottom:70px;transform:translateX(-50%);background:#222;color:#fff;padding:10px 16px;border-radius:10px;font-size:13px;z-index:9999;max-width:86vw;box-shadow:0 6px 24px rgba(0,0,0,.35);transition:opacity .3s'
+  document.body.appendChild(box)
+ }
+ box.textContent = msg
+ box.style.opacity = '1'
+ clearTimeout(box._t)
+ box._t = setTimeout(() => { box.style.opacity = '0' }, 3600)
+}
 async function uploadFiles(files, insertTarget) {
  for (const f of files) {
   try {
    const data = await fileToBase64(f)
    const r = await api('POST', '/api/upload', { name: f.name, data })
-   if (!r.ok) continue
+   if (!r.ok) { oatToast('上传失败：' + f.name + '（' + (r.error || '服务端拒绝') + '）'); continue }
    const ta = insertTarget
    const mention = `[文件已上传: ${r.path}] `
    if (ta) ta.value = (ta.value ? ta.value + ' ' : '') + mention
@@ -1433,7 +1447,7 @@ async function uploadFiles(files, insertTarget) {
     fr.onload = () => setChatImage(fr.result, r.name)
     fr.readAsDataURL(f)
    }
-  } catch { /* ignore */ }
+  } catch (e) { oatToast('上传失败：' + f.name + '（' + ((e && e.message) || e) + '）') }
  }
 }
 function setupDropzone(el, targetInput) {
@@ -1483,6 +1497,7 @@ async function sendChat() {
  if (!state.activeSession) {
  const cr = await api('POST', '/api/sessions', { providerId, model, workspace: state.activeWorkspace, permission: state.pendingPerm || state.settings.defaultPermission || 'modify' })
  if (cr.ok) { state.activeSession = cr.session; state.expanded = new Set([providerId]); await refreshSessions() }
+ api('PUT', '/api/settings', { activeChatModel: model }) // ★ 记录当前对话模型（模型身份自省）
  }
  const tags = modelTags(providerById(providerId), model)
  const content = state.chatImage && tags.includes('视觉') ? [{ type: 'text', text: text || 'see image' }, { type: 'image_url', image_url: { url: state.chatImage } }] : (text || '')
@@ -3984,10 +3999,11 @@ async function main() {
   m.querySelector('[data-k="img"]').onclick = (e) => { e.stopPropagation(); close(); onImage() }
   m.querySelector('[data-k="file"]').onclick = (e) => { e.stopPropagation(); close(); onFile() }
  }
- $('btn-attach').onclick = () => showAttachMenu($('btn-attach'), () => $('chat-image').click(), () => $('chat-file').click())
+ // ★ 窄屏（手机）直接打开系统文件选择（图片/文件均可），避免二级菜单在小屏点不中
+ $('btn-attach').onclick = () => { if (window.innerWidth <= 860) { $('chat-file').click(); return } showAttachMenu($('btn-attach'), () => $('chat-image').click(), () => $('chat-file').click()) }
  $('chat-image').onchange = () => {
  const f = $('chat-image').files[0]; if (!f) return
- const fr = new FileReader(); fr.onload = () =>setChatImage(fr.result, f.name); fr.readAsDataURL(f); $('chat-image').value = ''
+ const fr = new FileReader(); fr.onload = () =>setChatImage(fr.result, f.name); fr.onerror = () => oatToast('图片读取失败，请重试或改用「文件」方式上传'); fr.readAsDataURL(f); $('chat-image').value = ''
  }
  $('chat-file').onchange = async () => {
   const fs = [...$('chat-file').files]; $('chat-file').value = ''
