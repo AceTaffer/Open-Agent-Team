@@ -1500,6 +1500,8 @@ async function sendChat() {
  api('PUT', '/api/settings', { activeChatModel: model }) // ★ 记录当前对话模型（模型身份自省）
  }
  const tags = modelTags(providerById(providerId), model)
+ // ★ FIX-01：非视觉模型附图片时给出明确提示（不再静默丢弃）
+ if (state.chatImage && !tags.includes('视觉')) oatToast('当前模型不支持图片（视觉）：图片未随消息发送，可切换视觉模型后重发')
  const content = state.chatImage && tags.includes('视觉') ? [{ type: 'text', text: text || 'see image' }, { type: 'image_url', image_url: { url: state.chatImage } }] : (text || '')
  $('chat-text').value = ''
  appendMsg('user', text + (state.chatImage ? ' [image]' : ''))
@@ -4001,9 +4003,11 @@ async function main() {
  }
  // ★ 窄屏（手机）直接打开系统文件选择（图片/文件均可），避免二级菜单在小屏点不中
  $('btn-attach').onclick = () => { if (window.innerWidth <= 860) { $('chat-file').click(); return } showAttachMenu($('btn-attach'), () => $('chat-image').click(), () => $('chat-file').click()) }
- $('chat-image').onchange = () => {
- const f = $('chat-image').files[0]; if (!f) return
- const fr = new FileReader(); fr.onload = () =>setChatImage(fr.result, f.name); fr.onerror = () => oatToast('图片读取失败，请重试或改用「文件」方式上传'); fr.readAsDataURL(f); $('chat-image').value = ''
+ $('chat-image').onchange = async () => {
+  const f = $('chat-image').files[0]; if (!f) return
+  $('chat-image').value = ''
+  // ★ FIX-01：图片统一走上传链路——保存到工作区 uploads/ + 自动作为对话附件（视觉）+ 失败有提示
+  await uploadFiles([f], $('chat-text'))
  }
  $('chat-file').onchange = async () => {
   const fs = [...$('chat-file').files]; $('chat-file').value = ''

@@ -304,6 +304,8 @@ function saveStatsDebounced() {
 }
 
 // ★ OAT JS 插件运行时（data/plugins-js/*.mjs）
+// ★ FIX-04：内置工具名保留集（插件不得同名遮蔽内置工具，防“假 run_command”）
+const BUILTIN_TOOL_NAMES = new Set(['write_file', 'read_file', 'list_files', 'run_command', 'web_search', 'web_fetch', 'kb_search', 'http_call', 'vault_call', 'run_exe', 'ask_user', 'ask_role', 'generate_image', 'generate_video', 'generate_speech', 'generate_music', 'clone_voice', 'compose_video', 'make_subtitles', 'media_probe'])
 let jsTools = new Map()      // name -> { description, params, run(pluginTool), plugin }
 let jsPluginMeta = []        // [{ file, name, enabled, tools:[], error }]
 function jsToolDoc() {
@@ -328,6 +330,7 @@ async function loadJsPlugins() {
         rec.name = plugin.name || rec.name
         for (const t of Array.isArray(plugin.tools) ? plugin.tools : []) {
           if (!t?.name || typeof t.run !== 'function') continue
+          if (BUILTIN_TOOL_NAMES.has(t.name)) { rec.error = '工具名与内置工具冲突，已忽略：' + t.name; continue } // ★ FIX-04
           jsTools.set(t.name, { ...t, plugin: rec.name })
           rec.tools.push(t.name)
         }
@@ -401,6 +404,15 @@ async function loadData() {
   // ★ 更新源默认保留：老配置/分享包里为空时自动填官方仓库（避免每次更新后被清空）
   if (!settings.updateRepo) settings.updateRepo = 'AceTaffer/Open-Agent-Team'
   if (!settings.updateBranch) settings.updateBranch = 'main'
+  // ★ FIX-03：EasyTier 网络密码迁移到加密存储（secrets.json）；settings 只保留 hasSecret 标记
+  if (settings.easytier && settings.easytier.networkSecret) {
+    try { await setSecret('easytier', String(settings.easytier.networkSecret)) } catch { /* ignore */ }
+    delete settings.easytier.networkSecret
+    settings.easytier.hasSecret = !!secrets['easytier']
+    await saveSettings()
+  } else if (settings.easytier && settings.easytier.hasSecret == null) {
+    settings.easytier.hasSecret = !!secrets['easytier']
+  }
   // ★ 工作区初始化：至少保留默认 workspace，激活目录不存在时回退
   if (!Array.isArray(settings.workspaces) || !settings.workspaces.length) settings.workspaces = [WORKSPACE_DIR]
   if (!settings.activeWorkspace || !existsSync(settings.activeWorkspace)) settings.activeWorkspace = WORKSPACE_DIR
@@ -899,12 +911,15 @@ function stripHtml(html) {
 }
 async function toolWebSearch({ query, count = 5 }) {
   const n = Math.min(Math.max(Number(count) || 5, 1), 10)
+  // ★ FIX-02：纯拉丁多词查询（如 Anthropic Claude）加引号精确匹配，避免搜索引擎拆词
+  const qRaw = String(query || '').trim()
+  const q = (!/[\u4e00-\u9fff]/.test(qRaw) && /\s/.test(qRaw)) ? `"${qRaw}"` : qRaw
   const UA = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36' }
   const engines = []
 
   // ① DuckDuckGo
   engines.push(async () => {
-    const html = await (await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, { headers: UA })).text()
+    const html = await (await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`, { headers: UA })).text()
     const out = []
     const re = /<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g
     let m
@@ -918,7 +933,7 @@ async function toolWebSearch({ query, count = 5 }) {
 
   // ② Bing
   engines.push(async () => {
-    const html = await (await fetch(`https://cn.bing.com/search?q=${encodeURIComponent(query)}&count=${n + 5}&mkt=zh-CN`, { headers: UA })).text()
+    const html = await (await fetch(`https://cn.bing.com/search?q=${encodeURIComponent(q)}&count=${n + 5}&mkt=zh-CN`, { headers: UA })).text()
     const out = []
     const re = /<li class="b_algo"[\s\S]*?<h2[^>]*>\s*<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?(?:<p[^>]*>([\s\S]*?)<\/p>)?/g
     let m
@@ -933,7 +948,7 @@ async function toolWebSearch({ query, count = 5 }) {
 
   // ③ 百度（国内网络兜底）
   engines.push(async () => {
-    const html = await (await fetch(`https://www.baidu.com/s?wd=${encodeURIComponent(query)}&rn=${n}`, { headers: UA })).text()
+    const html = await (await fetch(`https://www.baidu.com/s?wd=${encodeURIComponent(q)}&rn=${n}`, { headers: UA })).text()
     const out = []
     const re = /<h3[^>]*>\s*<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g
     let m
@@ -948,7 +963,7 @@ async function toolWebSearch({ query, count = 5 }) {
 
   // ④ 搜狗
   engines.push(async () => {
-    const html = await (await fetch(`https://www.sogou.com/web?query=${encodeURIComponent(query)}`, { headers: UA })).text()
+    const html = await (await fetch(`https://www.sogou.com/web?query=${encodeURIComponent(q)}`, { headers: UA })).text()
     const out = []
     const re = /<h3[^>]*class="vr-title"[^>]*>\s*<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g
     let m
@@ -1074,7 +1089,14 @@ async function runTool(call, opts = {}) {
     // ★ OAT JS 插件工具优先分发
     const jt = jsTools.get(call.tool)
     if (jt) {
-      const out = await jt.run(call.args || call, { workspace: root, log: (m) => dbg('jsplugin.log', { plugin: jt.plugin, message: String(m) }) })
+      // ★ FIX-04：插件执行加 30 秒超时（防死循环/挂起拖死对话）
+      let out
+      try {
+        out = await Promise.race([
+          jt.run(call.args || call, { workspace: root, log: (m) => dbg('jsplugin.log', { plugin: jt.plugin, message: String(m) }) }),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('插件执行超时（30 秒）')), 30000)),
+        ])
+      } catch (e) { return `插件「${jt.plugin}」执行失败：${e?.message || e}` }
       return (typeof out === 'string' ? out : JSON.stringify(out)).slice(0, 8000)
     }
     if (call.tool === 'write_file') { const abs = resolveInWorkspace(call.path, root, false); await mkdir(path.dirname(abs), { recursive: true }); await writeFile(abs, String(call.content ?? ''), 'utf8'); return `已写入 ${call.path}（${Buffer.byteLength(String(call.content ?? ''))} 字节）` }
@@ -1205,7 +1227,7 @@ async function askRoleImpl(call, ctx = {}) {
   const question = String(call.question || call.query || '').slice(0, 2000)
   try {
     const answer = await chatComplete(target.provider, target.model, [
-      { role: 'system', content: roleSystemPrompt(role) + modelIdentityLine(target.provider, target.model) },
+      { role: 'system', content: modelIdentityLine(target.provider, target.model) + roleSystemPrompt(role) },
       ...roleChatHistory(role.id, 60, 6000),
       { role: 'user', content: `${ctx.task ? `【总任务】${ctx.task}\n` : ''}【来自队友${caller ? `「${caller.label}」` : ''}的协作询问】${question}\n请用简体中文直接给出你的专业意见，简洁明确（不要调用工具、不要执行任务本身）。` },
     ], {
@@ -2866,7 +2888,7 @@ async function runTeam(task, opts = {}) {
   const enabledOthers = roles.filter((r) => r.enabled !== false && r.id !== 'leader')
   send({ type: 'agent_start', agent: 'leader', label: leader.role.label, model: `${leader.provider.name} / ${leader.model}` })
   const leaderMsgs = [
-    { role: 'system', content: leaderSystemPrompt(leader.role) + modelIdentityLine(leader.provider, leader.model) },
+    { role: 'system', content: modelIdentityLine(leader.provider, leader.model) + leaderSystemPrompt(leader.role) },
     { role: 'user', content: `用户任务：${task}\n\n（当前工作区目录：${root}，所有文件读写与命令执行都在该目录内）\n规划阶段你可以：先调研（web_search/web_fetch 了解题材背景）、必要时用 ask_user 向用户提问确认需求（会暂停等待用户回答）、用 ask_role 与队员商量。信息足够后，只输出 JSON 分工计划，不要执行任务本身。` },
   ]
   let leaderText = '', leaderEmptyRetried = false
@@ -2962,7 +2984,7 @@ async function runTeam(task, opts = {}) {
     kbMaybeRefresh(root).catch(() => {})
     const kb = await kbDigest(root, `${task} ${step.title} ${step.instruction}`)
     const messages = [
-      { role: 'system', content: roleSystemPrompt(agent.role) + modelIdentityLine(agent.provider, agent.model) },
+      { role: 'system', content: modelIdentityLine(agent.provider, agent.model) + roleSystemPrompt(agent.role) },
       { role: 'user', content: `总任务：${task}\n（当前工作区目录：${root}）\n\n${digest}${projMem ? '\n\n' + projMem : ''}${kb ? '\n\n' + kb : ''}\n\n本步骤（${step.title}）：${step.instruction}\n\n此前产出：\n${contextText || '（无）'}\n\n（提示：工作区快照已给出文件现状，请直接据此行动；确需细节时再按需读取个别文件，避免全量重复翻查；项目文档检索可用 kb_search 工具。）` },
     ]
     // ★ 工具调用限制：角色单独设置优先，否则用全局「团队任务」限制；0=无限
@@ -3093,7 +3115,7 @@ async function runTeam(task, opts = {}) {
       const ctxText = results.map((r) => `【${roleById(r.agent)?.label || r.agent}·${r.title}】\n${r.result.slice(0, 2500)}`).join('\n\n')
       const steerText = steersTaken.map((s) => `【${roleById(s.agent)?.label || s.agent}】${s.message}`).join('\n')
       const messages = [
-        { role: 'system', content: `${roleSystemPrompt(leader.role) + modelIdentityLine(leader.provider, leader.model)}\n\n【最终汇总要求】请对团队产出做汇总：完成了什么、产物在哪（workspace 文件名 / 图片素材路径）、遗留问题、下一步建议。若存在「用户中途指令记录」，必须逐条重新评估其对成果的影响并说明处理结果。简洁分点。\n如任务要求产出报告/文档等文件，你必须用 write_file 把内容真实写入工作区（不要只在回复里贴出全文），写完用 list_files 核对文件存在，并在汇总里给出文件名。` },
+        { role: 'system', content: `${modelIdentityLine(leader.provider, leader.model) + roleSystemPrompt(leader.role)}\n\n【最终汇总要求】请对团队产出做汇总：完成了什么、产物在哪（workspace 文件名 / 图片素材路径）、遗留问题、下一步建议。若存在「用户中途指令记录」，必须逐条重新评估其对成果的影响并说明处理结果。简洁分点。\n如任务要求产出报告/文档等文件，你必须用 write_file 把内容真实写入工作区（不要只在回复里贴出全文），写完用 list_files 核对文件存在，并在汇总里给出文件名。` },
         { role: 'user', content: `总任务：${task}\n\n${steerText ? `用户中途指令记录（需重新评估）：\n${steerText}\n\n` : ''}团队产出：\n${ctxText}` },
       ]
       let turn = 0
@@ -3377,9 +3399,10 @@ async function handleApi(req, res, url) {
   if (pathname === '/api/easytier/start' && method === 'POST') {
     if (!existsSync(ET_EXE)) return sendJson(res, 200, { ok: false, error: '尚未安装 EasyTier，请先「一键下载安装」或手动放入 tools/easytier/' })
     const cfg = settings.easytier || {}
-    if (!cfg.networkName || !cfg.networkSecret) return sendJson(res, 200, { ok: false, error: '请先填写网络名称与密码（手机端需填写相同内容）' })
+    const netSecret = await getSecret('easytier') // ★ FIX-03：密码从加密存储读取
+    if (!cfg.networkName || !netSecret) return sendJson(res, 200, { ok: false, error: '请先填写网络名称与密码（手机端需填写相同内容）' })
     if (await etRunning()) return sendJson(res, 200, { ok: true, running: true, message: 'EasyTier 已在运行' })
-    const args = ['--network-name', cfg.networkName, '--network-secret', cfg.networkSecret, '-p', cfg.peerUrl || 'tcp://public.easytier.cn:11010']
+    const args = ['--network-name', cfg.networkName, '--network-secret', netSecret, '-p', cfg.peerUrl || 'tcp://public.easytier.cn:11010']
     if (cfg.virtualIp) args.push('--ipv4', cfg.virtualIp)
     const psArgs = args.map((a) => `'${String(a).replace(/'/g, "''")}'`).join(',')
     try {
@@ -3451,7 +3474,15 @@ async function handleApi(req, res, url) {
     if (b.voiceStudio && typeof b.voiceStudio === 'object') b.voiceStudio = { ...(settings.voiceStudio || {}), ...b.voiceStudio } // ★ 本地声音引擎配置合并
     if (b.qwenTts && typeof b.qwenTts === 'object') b.qwenTts = { ...(settings.qwenTts || {}), ...b.qwenTts } // ★ Qwen-TTS 配置合并
     // ★ TAT：EasyTier 组网配置合并
-    if (b.easytier && typeof b.easytier === 'object') b.easytier = { ...(settings.easytier || {}), ...b.easytier }
+    // ★ FIX-03：网络密码加密存储（settings 只留 hasSecret；留空表示保持不变）
+    if (b.easytier && typeof b.easytier === 'object') {
+      const et = { ...b.easytier }
+      if (typeof et.networkSecret === 'string') {
+        if (et.networkSecret.trim()) await setSecret('easytier', et.networkSecret.trim())
+        delete et.networkSecret
+      }
+      b.easytier = { ...(settings.easytier || {}), ...et, hasSecret: !!secrets['easytier'] }
+    }
     settings = { ...settings, ...b }
     await saveSettings()
     return sendJson(res, 200, { ok: true, settings })
@@ -3760,7 +3791,7 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
     const history = session ? session.messages.map(toApiMsg) : (body.messages || [])
     // ★ 会话有自己的工作区：工具执行范围跟随会话（缺省用全局当前工作区）
     const chatRoot = session?.workspace && existsSync(session.workspace) ? session.workspace : getActiveRoot()
-    if (toolsEnabled && !history.some((m) => m.role === 'system')) history.unshift({ role: 'system', content: chatSystemPrompt(chatRoot) + modelIdentityLine(provider, modelId) })
+    if (toolsEnabled && !history.some((m) => m.role === 'system')) history.unshift({ role: 'system', content: modelIdentityLine(provider, modelId) + chatSystemPrompt(chatRoot) })
     try {
       // ★ 工具调用次数限制（设置页可调）：0=无限（默认）、-1=禁止、N=最多 N 次
       const chatLimit = effectiveToolLimit(null, 'chat')
@@ -4158,7 +4189,7 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
       const kb = await kbDigest(root, b.message)
       const userMsg = `【与用户的单独对话】${String(b.message || '').slice(0, 4000)}\n（当前工作区目录：${root}）\n\n${digest}${projMem ? '\n\n' + projMem : ''}${kb ? '\n\n' + kb : ''}${archive ? '\n\n' + archive : ''}\n\n（提示：以上快照与档案已包含当前进度与产物，请直接据此回答，避免不必要的重复读取；如确需细节再调用工具（在项目文档里找答案可用 kb_search）。你可以用 ask_role 询问队友。请以你的角色身份简洁、专业地回复。）`
       const messages = [
-        { role: 'system', content: roleSystemPrompt(role) + modelIdentityLine(target.provider, target.model) },
+        { role: 'system', content: modelIdentityLine(target.provider, target.model) + roleSystemPrompt(role) },
         ...roleChatHistory(role.id), // ★ 完整角色记忆（不再只取最后 12 条）
         { role: 'user', content: userMsg },
       ]
@@ -4625,7 +4656,7 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dlg.Select
       const srcRoot = tops.find((x) => existsSync(path.join(x, 'server.mjs'))) || tops[0]
       if (!srcRoot || !existsSync(path.join(srcRoot, 'server.mjs'))) throw new Error('压缩包内未找到 server.mjs（请确认仓库根目录就是应用文件）')
       // 白名单覆盖：只更新程序文件；data/ workspace/ node_modules/ 一律不动
-      const ITEMS = ['server.mjs', 'package.json', 'package-lock.json', 'version.json', 'web', 'desktop', 'README.md', '插件开发说明.md', '使用说明.txt', '启动工作站.bat', '启动桌面版.bat']
+      const ITEMS = ['server.mjs', 'package.json', 'package-lock.json', 'version.json', 'web', 'desktop', 'LICENSE', 'README.md', '插件开发说明.md', '使用说明.txt', '启动工作站.bat', '启动桌面版.bat']
       const updated = []
       for (const it of ITEMS) {
         const from = path.join(srcRoot, it)

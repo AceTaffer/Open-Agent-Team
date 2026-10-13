@@ -37,6 +37,7 @@
 3. 详细说明见《使用说明.txt》
 
 ## 许可与致谢
+- 本项目采用 **MIT 许可**（见根目录 `LICENSE`）
 - 第三方组件与许可证见 `THIRD_PARTY_NOTICES.md` 与 `licenses/`（qrcode-generator MIT、EasyTier LGPL-3.0 使用方式说明、VoiceStudio AGPL-3.0 使用方式说明、ffmpeg 许可证提示等）
 - "手机端互联"功能合并自作者的实验分支 **Turing Agent Team**；该分支名仅为致敬艾伦·图灵，无官方关联
 
