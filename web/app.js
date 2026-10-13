@@ -307,8 +307,22 @@ const TEAM_PRESETS = {
 }
 
 /* 版本迭代记录（设置页展示） */
-const APP_VERSION = '1.9.1'
+const APP_VERSION = '2.0.1' // ★ 兜底值（实际显示以服务端版本为准）
 const CHANGELOG = [
+  ['P9.13', '2026-10', [
+    '安全：EasyTier 网络密码改为 AES-256-GCM 加密存储（设置页只显示"已设置"标记，启动时自动迁移旧明文）；插件安全边界——插件工具不得与内置工具同名遮蔽（防"假 run_command"），插件执行加 30 秒超时',
+    '修复：搜索专有名词（如 "Anthropic Claude"）自动加引号精确匹配，不再被搜索引擎拆词',
+    '修复：图片上传统一走工作区保存（uploads/ 持久化 + 自动视觉附件 + 失败明确提示）；非视觉模型附图片时给出提示（不再静默丢弃）',
+    '增强：模型身份提示前置到系统提示最前（问"你是什么模型"更稳定如实回答）；补齐 MIT LICENSE（README 同步）',
+  ]],
+  ['P9.12', '2026-10', [
+    '安全加固（重点）：应用数据目录（密钥/会话/设备/设置）永不可被智能体工具访问——read_file / run_command / 符号链接均按真实路径校验并拒绝；命令路径防护（越界按权限拒绝）；危险命令黑名单扩充；Windows 命令输出中文乱码修复（GBK 智能解码）',
+    '平台自适应：自动识别 Windows / Android / Linux——运行环境提示与命令建议随平台变化（不再硬编码 Windows），并探测系统真实可用命令清单注入提示',
+    '错误分类：命令不存在 / 文件不存在（not_found）/ 权限不足（permission）/ DNS / 超时 / 网络阻断等中文提示，替代笼统的 Command failed',
+    '模型身份自省：系统提示注入当前供应商与模型名，问"你是什么模型"可如实回答（单智能体 / 角色对话 / 团队任务全生效）',
+    '手机端修复：上传失败不再静默（弹出具体错误）；窄屏附件按钮直接打开系统文件选择；WebView 文件访问权限补全；本地模式内置新版引擎',
+    '网页端：当前模型记录（activeChatModel）、读目录中文引导、知识库空库引导、搜索专有名词不拆词',
+  ]],
   ['P9.11', '2026-10', [
     '修复：好人玩家能看到「狼人夜聊 / 法官频道」内容的问题——实时事件（消息/流式发言）此前未按身份过滤，现在状态快照与实时推送使用同一套可见性规则（服务端 SSE 写入 + 前端双重过滤）',
     '观战改为全知视角：观战可查看狼人夜聊、法官频道、全部身份与票型明细（与法官同级）；玩家视角保持严格隔离',
@@ -796,7 +810,7 @@ function renderSettings() {
  $('set-effort').value = state.settings.reasoningEffort || 'low'
  $('set-spacing').value = ui.spacing || 'normal'
  $('set-teampos').value = ui.teamInputPos || 'bottom'
- $('update-current').textContent = 'v' + APP_VERSION
+ $('update-current').textContent = 'v' + (state.appVersion || APP_VERSION)
  $('set-update-repo').value = state.settings.updateRepo || ''
   $('set-update-branch').value = state.settings.updateBranch || 'main'
   renderSchedules() // ★ 定时任务列表
@@ -817,7 +831,7 @@ function renderSettings() {
   num.onchange = () => saveToolLimit(key, sel, num)
   upd()
  }
- $('changelog').innerHTML = `<div class="dim small" style="margin-bottom:6px">v${APP_VERSION}</div>` + CHANGELOG.map(([v, date, items]) => `
+ $('changelog').innerHTML = `<div class="dim small" style="margin-bottom:6px">v${state.appVersion || APP_VERSION}</div>` + CHANGELOG.map(([v, date, items]) => `
  <div class="cl-block"><div class="cl-head"><b>${esc(v)}</b><span class="dim small">${esc(date)}</span></div>
  <ul>${items.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>`).join('')
  renderMobileCard()
@@ -3665,6 +3679,7 @@ async function doUpdateCheck(manual) {
   return r
  }
  if (st) st.textContent = r.newer ? `${t('updateNew')} v${r.latest}${r.notes ? '：' + r.notes : ''}` : `${t('updateUpToDate')}（v${r.current}）`
+ const uc = $('update-current'); if (uc && r.current) uc.textContent = 'v' + r.current // ★ 动态刷新当前版本显示
  $('btn-update-apply')?.classList.toggle('hidden', !r.newer)
  if (r.newer) {
   const dismissed = localStorage.getItem('oat-update-dismissed')
@@ -3820,6 +3835,7 @@ async function loadState() {
  const r = await api('GET', '/api/state')
  if (r.ok) {
  state.providers = r.providers; state.roles = r.roles || []; state.settings = r.settings || {}; state.plugins = r.plugins || []
+ if (r.version) state.appVersion = r.version // ★ 服务端真实版本（更新卡片/版本迭代显示用）
   state.skills = r.skills || []; state.jsPlugins = r.jsPlugins || []
   try { const pr = await api('GET', '/api/presets'); state.customPresets = pr.presets || {} } catch { state.customPresets = {} }
  if (!state.selectedId && state.providers.length) state.selectedId = state.providers[0].id

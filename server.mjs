@@ -3451,7 +3451,7 @@ async function handleApi(req, res, url) {
   if (pathname === '/api/state' && method === 'GET') {
     const list = []
     for (const p of providers) { const k = await getSecret(p.id); list.push({ ...p, keyMasked: maskKey(k), hasKey: !!k }) }
-    return sendJson(res, 200, { ok: true, providers: list, roles, settings, plugins, skills, jsPlugins: jsPluginMeta, stats })
+    return sendJson(res, 200, { ok: true, providers: list, roles, settings, plugins, skills, jsPlugins: jsPluginMeta, stats, version: appVersion() })
   }
   // 设置
   if (pathname === '/api/settings' && method === 'GET') return sendJson(res, 200, { ok: true, settings })
